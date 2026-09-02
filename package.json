@@ -9,7 +9,8 @@
     "smoke": "node tools/debug/smoke.mjs",
     "verify": "npm test && npm run smoke",
     "assets": "node scripts/fetch-assets.mjs",
-    "dev": "node scripts/serve.mjs"
+    "dev": "node scripts/serve.mjs",
+    "bench:assets": "node scripts/fetch-bench-models.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35"

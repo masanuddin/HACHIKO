@@ -13,7 +13,8 @@
  */
 
 import {
-  HachikoAI, FaceLandmarkerEngine, CONFIG, AIState, ScenarioTruth,
+  HachikoAI, FaceLandmarkerEngine, ObjectDetectorEngine,
+  CONFIG, withOverrides, AIState, ScenarioTruth, PresenceStatus,
 } from '../../src/ai/index.js';
 import { TelemetryLogger } from '../telemetry/TelemetryLogger.js';
 
@@ -27,6 +28,13 @@ export class DebugHarness {
     this.els = els;
     this.ai = new HachikoAI(CONFIG);
     this.engine = new FaceLandmarkerEngine(CONFIG, deps);
+    // v0.3: second model, throttled to its own cadence.
+    this.objectEngine = deps.ObjectDetector
+      ? new ObjectDetectorEngine(CONFIG, deps)
+      : null;
+    this._lastObjects = null;
+    this._lastObjectInferenceMs = 0;
+    this._lastRawDetections = [];
     // The harness owns its logger and attaches it to the AI's frame stream.
     // The AI itself knows nothing about it.
     this.logger = new TelemetryLogger(CONFIG);
@@ -78,6 +86,31 @@ export class DebugHarness {
   }
 
   /**
+   * Toggle raw-observation mode for the object detector.
+   *
+   * Rebuilds the detector WITHOUT the category allowlist and with a low score
+   * floor, so every class is visible for inspection. Only affects diagnostics:
+   * PresenceFusion and PhoneEventTracker still consume accepted detections
+   * only, and the production config object is never mutated.
+   *
+   * @returns {boolean} the new state
+   */
+  toggleDiagnosticMode() {
+    this._diagnostic = !this._diagnostic;
+    const diagConfig = withOverrides({
+      objectDetector: { diagnosticMode: this._diagnostic },
+    });
+    this.objectEngine = this.deps.ObjectDetector
+      ? new ObjectDetectorEngine(diagConfig, this.deps)
+      : null;
+    this._lastObjects = null;
+    this._lastRawDetections = [];
+    return this._diagnostic;
+  }
+
+  isDiagnosticMode() { return this._diagnostic; }
+
+  /**
    * Set the manual ground-truth scenario label.
    * Annotation only — it cannot influence the prediction.
    */
@@ -103,9 +136,19 @@ export class DebugHarness {
     video.srcObject = this.stream;
     await video.play();
 
-    this._setStatus('loading model…');
+    this._setStatus('loading face model…');
     await this.engine.initialize();
-    this._setStatus(`ready (delegate: ${this.engine.activeDelegate})`);
+    if (this.objectEngine && CONFIG.objectDetector.enabled) {
+      this._setStatus('loading object model…');
+      try {
+        await this.objectEngine.initialize();
+      } catch (err) {
+        console.warn('[HACHIKO] object detector unavailable:', err);
+        this.objectEngine = null;
+      }
+    }
+    this._setStatus(`ready (face: ${this.engine.activeDelegate}`
+      + (this.objectEngine ? `, object: ${this.objectEngine.activeDelegate})` : ', object: off)'));
 
     this.running = true;
     this._loop();
@@ -119,6 +162,7 @@ export class DebugHarness {
       this.stream = null;
     }
     this.engine.close();
+    if (this.objectEngine) this.objectEngine.close();
     this._setStatus('stopped');
   }
 
@@ -140,11 +184,26 @@ export class DebugHarness {
     const now = performance.now();
 
     try {
+      // Object detection runs on its own slower cadence; between ticks we
+      // reuse the previous result, which PresenceFusion tolerates by design.
+      if (this.objectEngine) {
+        const obj = this.objectEngine.detect(this.els.video, now);
+        if (obj.ran) {
+          this._lastObjects = obj.detections;
+          this._lastObjectInferenceMs = obj.inferenceMs;
+          this._lastRawDetections = obj.rawDetections ?? [];
+        }
+      }
+
       const { measurement, inferenceMs, skipped } = this.engine.detect(this.els.video, now);
       if (!skipped && measurement) {
         this._lastMeasurement = measurement;
         this._trackExtremes(measurement);
-        const frame = this.ai.processFrame(measurement, now, inferenceMs);
+        const frame = this.ai.processFrame(measurement, now, {
+          faceInferenceMs: inferenceMs,
+          objectInferenceMs: this._lastObjectInferenceMs,
+          objectDetections: this._lastObjects,
+        });
         this._render(frame);
       }
     } catch (err) {
@@ -165,6 +224,10 @@ export class DebugHarness {
 
     e.face.textContent = m.facePresent ? 'YES' : 'NO';
     e.face.className = `val ${m.facePresent ? 'ok' : 'bad'}`;
+    if (e.face2) {
+      e.face2.textContent = e.face.textContent;
+      e.face2.className = e.face.className;
+    }
 
     e.poseValid.textContent = m.poseValid ? 'VALID' : `INVALID (${m.poseInvalidReason})`;
     e.poseValid.className = `val ${m.poseValid ? 'ok' : 'bad'}`;
@@ -223,6 +286,81 @@ export class DebugHarness {
         ? 'eligible'
         : `ineligible (${frame.evidence?.eyeIneligibleReason ?? '?'})`;
       e.eyeElig.className = `val ${ok ? 'ok' : 'warn'}`;
+    }
+
+    // v0.3 person / presence / phone readouts.
+    const obj = frame.objects ?? {};
+    const pres = frame.presence ?? {};
+    if (e.objPerson) {
+      const n = (obj.detections ?? []).filter((d) => d.category === 'person').length;
+      e.objPerson.textContent = n > 0 ? `YES (${n})` : 'no';
+      e.objPerson.className = `val ${n > 0 ? 'ok' : 'dimval'}`;
+    }
+    if (e.objPrimary) {
+      const on = obj.primaryPersonPresent;
+      e.objPrimary.textContent = on
+        ? `YES ${obj.primaryPersonConfidence ? obj.primaryPersonConfidence.toFixed(2) : ''}`
+          + (obj.primaryPersonTracked ? ' (held)' : '')
+        : 'no';
+      e.objPrimary.className = `val ${on ? 'ok' : 'bad'}`;
+    }
+    if (e.objAssoc) e.objAssoc.textContent = obj.associationMethod ?? '—';
+    if (e.presStatus) {
+      const st = pres.status;
+      e.presStatus.textContent = st ?? '—';
+      e.presStatus.className = `val ${
+        st === PresenceStatus.PRESENT ? 'ok'
+        : st === PresenceStatus.ABSENT ? 'bad' : 'warn'}`;
+    }
+    if (e.presBoth) e.presBoth.textContent = `${Math.round(pres.bothMissingMs ?? 0)} ms`;
+    if (e.stateValid) {
+      const ok = frame.validity?.stateSignalValid;
+      e.stateValid.textContent = ok ? 'VALID' : 'NOT OBSERVABLE';
+      e.stateValid.className = `val ${ok ? 'ok' : 'warn'}`;
+    }
+    if (e.objPhone) {
+      const on = obj.phonePresent;
+      e.objPhone.textContent = on
+        ? `YES ${obj.phoneConfidence ? obj.phoneConfidence.toFixed(2) : ''}` : 'no';
+      e.objPhone.className = `val ${on ? 'warn' : 'dimval'}`;
+    }
+    if (e.phoneEvent) {
+      const id = frame.phoneEvent?.activeEventId;
+      e.phoneEvent.textContent = id
+        ? `#${id} · ${(frame.phoneEvent.activeDurationMs / 1000).toFixed(1)}s`
+        : `none (${this.ai.getPhoneEvents().length} total)`;
+    }
+    if (e.objInference) {
+      e.objInference.textContent =
+        `${fmt(frame.performance?.objectInferenceMs, 1)} ms`;
+    }
+
+    // ── RAW MODEL OUTPUT (diagnostics) ─────────────────────────────────
+    // Deliberately shown SEPARATELY from the filtered detections above: the
+    // whole Gate-4 question was whether the model saw nothing, or saw things
+    // we failed to identify.
+    if (e.rawCount && this.objectEngine) {
+      const d = this.objectEngine.getDiagnostics();
+      e.rawCount.textContent = String(d.rawDetectionCount);
+      e.rawCount.className = `val ${d.rawDetectionCount > 0 ? 'ok' : 'bad'}`;
+      e.acceptedCount.textContent = String(d.acceptedDetectionCount);
+      e.acceptedCount.className = `val ${d.acceptedDetectionCount > 0 ? 'ok' : 'warn'}`;
+      e.inferCount.textContent = String(d.objectInferenceCount);
+      e.nameAvail.textContent = d.categoryNameAvailable === null
+        ? 'unknown'
+        : d.categoryNameAvailable ? 'YES (names)' : 'NO (index only)';
+      e.nameAvail.className = `val ${d.categoryNameAvailable === false ? 'warn' : 'ok'}`;
+      e.videoDims.textContent = d.lastVideoWidth
+        ? `${d.lastVideoWidth}x${d.lastVideoHeight}` : '—';
+      const rejects = Object.entries(d.lastRejectReasons ?? {});
+      e.rejects.textContent = rejects.length
+        ? rejects.map(([k, v]) => `${k}:${v}`).join(' ')
+        : (d.rawDetectionCount === 0 ? 'model returned nothing' : 'none');
+      e.rawTop.textContent = this._lastRawDetections.length
+        ? this._lastRawDetections.slice(0, 6)
+            .map((r) => `[${r.index}]${r.categoryName || '""'} ${r.score.toFixed(2)}`)
+            .join('  ')
+        : '—';
     }
 
     // Presence/absence is its own concern, not an evidence tier: it decides
@@ -308,6 +446,9 @@ export class DebugHarness {
       note: 'PROVISIONAL thresholds. d_/g_ separation: prediction is never ground truth.',
       delegate: this.engine.activeDelegate,
       observedRanges: this.extremes,
+      phoneEvents: this.ai.getPhoneEvents(),
+      diagnosticMode: this._diagnostic,
+      objectDiagnostics: this.objectEngine ? this.objectEngine.getDiagnostics() : null,
       calibration: this.ai.getCalibrationSnapshot(),
       analysis: this.logger.analyze(),
     };

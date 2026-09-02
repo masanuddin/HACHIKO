@@ -1,6 +1,6 @@
 # Manual Acceptance Protocol — HACHIKO AI v0.2
 
-The automated suite (`npm test`, **156 tests**) proves the pipeline logic with
+The automated suite (`npm test`, **193 tests**) proves the pipeline logic with
 synthetic measurements. It cannot prove that **MediaPipe's real output** on
 **real faces** behaves as expected. That is what this protocol is for.
 
@@ -30,6 +30,60 @@ synthetic measurements. It cannot prove that **MediaPipe's real output** on
 >    valid low reading counts as closure.
 >
 > **Gates 2–3 must be re-run on hardware to confirm all three fixes.**
+
+---
+
+## GATE 4 — v0.3 PERSON PRESENCE & PHONE  (PENDING HUMAN EXECUTION)
+
+v0.3 adds a second model (EfficientDet-Lite0) detecting `person` and
+`cell phone`, plus PresenceFusion. It fixes the confirmed v0.2 limitation:
+**face not detected != person absent**.
+
+Watch the **v0.3 — Person / presence / phone** panel.
+
+### Person / presence scenarios
+
+| # | Scenario | Face | Person | Expected presence | Expected state |
+|---|---|---|---|---|---|
+| P1 | Frontal normal, 30 s | yes | yes | `PRESENT` | `FOKUS` |
+| P2 | **Extreme yaw until FACE=no, body visible — hold 10 s** | no | yes | `PRESENT_FACE_UNAVAILABLE` | **NOT `TIDAK_HADIR`** |
+| P3 | Cover face with hand, body visible, 8 s | no | yes | `PRESENT_FACE_UNAVAILABLE` | **NOT `TIDAK_HADIR`** |
+| P4 | Leave the frame entirely, 6 s | no | no | `ABSENT` | `TIDAK_HADIR` |
+| P5 | Return to the frame | yes | yes | `PRESENT` | `FOKUS` |
+| P6 | Second person walks behind you | yes | yes (2) | `PRESENT` | `FOKUS` |
+
+**P2 is the whole point of v0.3.** Under v0.2 this reported TIDAK_HADIR for a
+user sitting right there. `BOTH MISSING` must stay at 0 ms throughout.
+
+For P6, check `association` reads `FACE_CONTAINED` — the face anchors identity,
+so a background person is not adopted as the user.
+
+### Phone scenarios
+
+Phone must change ONLY the phone rows — never the state.
+
+| # | Scenario | Expected |
+|---|---|---|
+| H1 | No phone, 30 s | no events |
+| H2 | Flash phone in and out (<0.4 s) | **no event created** |
+| H3 | Hold phone steady 10 s | exactly **one** ACTIVE event |
+| H4 | Briefly hide phone (<0.9 s), show again | **same** event, not split |
+| H5 | Remove phone > 1 s | event closes, `COMPLETED` |
+| H6 | Show phone again | a **second** event |
+| H7 | Phone partly occluded / at angles / distances | record confidence + misses |
+
+Throughout H1–H7 the state must stay driven by face behaviour alone.
+
+Record from **Download Analysis** (now includes `phoneEvents`): event count,
+durations, confidence, and any false positives/negatives.
+
+### Performance
+
+Face-only baseline was ~29–30 FPS, ~9–13 ms face inference. Record now:
+effective FPS p50/p95, face inference p50/p95, object inference p50/p95, and
+whether the UI stutters. Object detection runs every
+`OBJECT_INFERENCE_INTERVAL_MS` (150 ms), not per frame. If the single thread is
+visibly blocking, report it for v0.5 rather than hiding it.
 
 ## Setup
 

@@ -29,6 +29,9 @@ import { FeatureSmoother } from './pipeline/FeatureSmoother.js';
 import { TemporalTracker } from './pipeline/TemporalTracker.js';
 import { EvidenceEngine } from './pipeline/EvidenceEngine.js';
 import { StateEngine } from './pipeline/StateEngine.js';
+import { PresenceFusion } from './pipeline/PresenceFusion.js';
+import { PhoneEventTracker } from './pipeline/PhoneEventTracker.js';
+import { PresenceStatus } from './types.js';
 import { isFiniteNumber } from './core/math.js';
 
 /** Rolling mean of the last N frame intervals, for effective FPS. */
@@ -72,6 +75,10 @@ export class HachikoAI {
     this.evidenceEngine = new EvidenceEngine(config);
     this.temporal = new TemporalTracker(config, this.evidenceEngine);
     this.stateEngine = new StateEngine(config, this.evidenceEngine);
+    // v0.3: presence and phone are separate concerns from Face AI. Neither
+    // touches the face pipeline; presence overrides only the ABSENCE verdict.
+    this.presenceFusion = new PresenceFusion(config);
+    this.phoneTracker = new PhoneEventTracker(config);
     this.fpsMeter = new FpsMeter();
     this._listeners = new Set();
     this._lastState = null;
@@ -149,6 +156,8 @@ export class HachikoAI {
     this.smoother.reset();
     this.temporal.reset();
     this.stateEngine.reset();
+    this.presenceFusion.reset();
+    this.phoneTracker.reset();
     this.fpsMeter.reset();
     this._lastState = null;
     this.sessionId += 1;
@@ -162,10 +171,24 @@ export class HachikoAI {
    *
    * @param {Object} measurement from FaceLandmarkerEngine
    * @param {number} nowMs monotonic
-   * @param {number} [inferenceMs=0]
+   * @param {number|Object} [inferenceMsOrOpts=0] face inference ms, or an
+   *        options object for the v0.3 call form.
+   * @param {number} [inferenceMsOrOpts.faceInferenceMs]
+   * @param {number} [inferenceMsOrOpts.objectInferenceMs]
+   * @param {Array|null} [inferenceMsOrOpts.objectDetections] null when the
+   *        throttled detector did not run this frame — NOT "nothing detected".
    * @returns {import('./types.js').TelemetryFrame}
    */
-  processFrame(measurement, nowMs, inferenceMs = 0) {
+  processFrame(measurement, nowMs, inferenceMsOrOpts = 0) {
+    // Accept both the v0.2 form (a number) and the v0.3 form (an options
+    // object), so existing callers and tests keep working unchanged.
+    const opts = typeof inferenceMsOrOpts === 'number'
+      ? { faceInferenceMs: inferenceMsOrOpts }
+      : (inferenceMsOrOpts ?? {});
+    const inferenceMs = opts.faceInferenceMs ?? 0;
+    const objectInferenceMs = opts.objectInferenceMs ?? 0;
+    const objectDetections = opts.objectDetections ?? null;
+
     this.fpsMeter.update(nowMs);
 
     // 1. Calibration ------------------------------------------------------
@@ -212,6 +235,25 @@ export class HachikoAI {
       nowMs
     );
 
+    // 5b. Presence fusion (v0.3) ------------------------------------------
+    // Presence is decided from face AND primary-person detection, with its own
+    // timer. This replaces face-only absence as the authority for TIDAK_HADIR.
+    const faceCenter = this._faceCenterOf(measurement);
+    const presence = this.presenceFusion.update(
+      {
+        faceAvailable: measurement.facePresent,
+        faceCenter,
+        personDetections: objectDetections,
+        frameWidth: measurement.frameWidth ?? this.config.camera.width,
+      },
+      nowMs
+    );
+
+    // 5c. Phone events (v0.3) ---------------------------------------------
+    // Deliberately NOT passed to the state engine. Phone context is a separate
+    // stream the app resolves with the student later.
+    const phone = this.phoneTracker.update(objectDetections, nowMs);
+
     // 6. State ------------------------------------------------------------
     // While still collecting the baseline we deliberately do not classify:
     // reporting TERALIH during calibration would be judging a student against
@@ -234,6 +276,41 @@ export class HachikoAI {
       );
       classification.calibrating = false;
     }
+
+    // 6b. Presence override (v0.3) ----------------------------------------
+    // PresenceFusion, not the face-only timer, is now the authority on absence.
+    // Two corrections, in order of importance:
+    //
+    //  1. The face pipeline may have reached TIDAK_HADIR because it lost the
+    //     face — but if the primary person is visible, the user is THERE. This
+    //     is the confirmed v0.2 failure, and this line is the fix.
+    //  2. Conversely, sustained loss of BOTH signals is genuine absence.
+    //
+    // Face AI itself is untouched: we override only the absence verdict.
+    if (this.config.presence.enabled && !classification.calibrating) {
+      if (presence.absent) {
+        if (classification.state !== AIState.TIDAK_HADIR) {
+          classification.state = AIState.TIDAK_HADIR;
+          classification.primaryReason = StateReason.ABSENCE;
+          classification.reason = StateReason.ABSENCE;
+        }
+      } else if (classification.state === AIState.TIDAK_HADIR) {
+        // The user is present after all. We must not invent a behavioural
+        // reading from a face we cannot see, so fall back to the conservative
+        // default and mark the state as not currently observable.
+        classification.state = AIState.FOKUS;
+        classification.primaryReason = StateReason.NONE;
+        classification.reason = StateReason.NONE;
+        classification.holding = true;
+      }
+    }
+
+    // Whether the BEHAVIOURAL reading is currently trustworthy. Separate from
+    // the state value itself, so downstream research/app logic can tell
+    // "user is focused" from "we cannot currently tell".
+    const stateSignalValid =
+      signalValid && presence.status === PresenceStatus.PRESENT;
+    classification.stateSignalValid = stateSignalValid;
 
     // 7. Telemetry frame --------------------------------------------------
     const frame = {
@@ -282,12 +359,41 @@ export class HachikoAI {
         eyeIneligibleReason: temporal.eyeIneligibleReason,
       },
       classification,
+      /**
+       * v0.3 — object detector results. RAW MEASUREMENT, kept separate from the
+       * presence interpretation below. Boxes and scores only; no imagery.
+       */
+      objects: {
+        detectorRan: objectDetections !== null,
+        detections: objectDetections ?? [],
+        primaryPersonPresent: presence.primaryPersonPresent,
+        primaryPersonConfidence: presence.primaryPersonConfidence,
+        primaryPersonTracked: presence.primaryPersonTracked,
+        associationMethod: presence.associationMethod,
+        phonePresent: phone.phonePresent,
+        phoneConfidence: phone.phoneConfidence,
+      },
+      /** v0.3 — DERIVED presence interpretation. */
+      presence: {
+        status: presence.status,
+        bothMissingMs: presence.bothMissingMs,
+        primaryPersonTracked: presence.primaryPersonTracked,
+        faceAvailable: measurement.facePresent,
+      },
+      /** v0.3 — phone context stream. Never an input to `classification`. */
+      phoneEvent: {
+        activeEventId: phone.activeEventId,
+        activeDurationMs: phone.activeDurationMs,
+      },
       performance: {
         inferenceMs,
+        faceInferenceMs: inferenceMs,
+        objectInferenceMs,
         fps: this.fpsMeter.fps,
       },
       validity: {
         signalValid,
+        stateSignalValid,
         poseValid: measurement.poseValid,
         calibrationValid,
         calibrationStatus: this.calibration.status,
@@ -309,7 +415,29 @@ export class HachikoAI {
     return frame;
   }
 
+  /**
+   * Face centre in PIXELS, for anchoring primary-person association.
+   *
+   * FaceLandmarkerEngine may supply it directly; otherwise we fall back to the
+   * frame centre, which is where a seated user's face sits in a webcam view.
+   * Returns null when there is no face, so association cannot be anchored to a
+   * fabricated point.
+   */
+  _faceCenterOf(measurement) {
+    if (!measurement.facePresent) return null;
+    if (measurement.faceCenter
+        && isFiniteNumber(measurement.faceCenter.x)
+        && isFiniteNumber(measurement.faceCenter.y)) {
+      return measurement.faceCenter;
+    }
+    const w = measurement.frameWidth ?? this.config.camera.width;
+    const h = measurement.frameHeight ?? this.config.camera.height;
+    return { x: w / 2, y: h / 2 };
+  }
+
   getCalibrationSnapshot() { return this.calibration.snapshot(); }
+  /** All phone events this session, internal accumulators stripped. */
+  getPhoneEvents() { return this.phoneTracker.getEvents(); }
 }
 
 export { AIState, StateReason, CalibrationStatus, ScenarioTruth };

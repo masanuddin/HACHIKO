@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HACHIKO AI v0.2 — Debug Harness</title>
+<title>HACHIKO AI v0.3 — Debug Harness</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #30363d;
@@ -94,7 +94,7 @@
 </style>
 </head>
 <body>
-  <h1>HACHIKO AI v0.2 — Debug Harness</h1>
+  <h1>HACHIKO AI v0.3 — Debug Harness</h1>
   <div class="sub">Measurement &amp; state engine verification. Not product UI.</div>
 
   <div class="warnbar">
@@ -119,6 +119,7 @@
           <button id="btnCsv" disabled>Download CSV</button>
           <button id="btnJson" disabled>Download JSON</button>
           <button id="btnAnalysis" disabled>Download Analysis</button>
+          <button id="btnDiag">Diagnostic mode: OFF</button>
         </div>
         <div id="status">idle</div>
         <div class="note">
@@ -212,6 +213,62 @@
       </div>
 
       <div class="panel" style="margin-top:16px">
+        <h2>v0.3 — Person / presence / phone</h2>
+        <div class="cols">
+          <div class="grid">
+            <span class="k">FACE</span><span id="face2" class="val">—</span>
+            <span class="k">PERSON</span><span id="objPerson" class="val dimval">no</span>
+            <span class="k">PRIMARY PERSON</span><span id="objPrimary" class="val bad">no</span>
+            <span class="k">association</span><span id="objAssoc" class="val">—</span>
+          </div>
+          <div class="grid">
+            <span class="k">PRESENCE</span><span id="presStatus" class="val">—</span>
+            <span class="k">BOTH MISSING</span><span id="presBoth" class="val">0 ms</span>
+            <span class="k">STATE SIGNAL</span><span id="stateValid" class="val">—</span>
+            <span class="k">object infer</span><span id="objInference" class="val">—</span>
+          </div>
+        </div>
+        <div class="tierhead">RAW MODEL OUTPUT — before HACHIKO filtering</div>
+        <div class="cols">
+          <div class="grid">
+            <span class="k">raw detections</span><span id="rawCount" class="val">—</span>
+            <span class="k">accepted</span><span id="acceptedCount" class="val">—</span>
+            <span class="k">inferences</span><span id="inferCount" class="val">—</span>
+          </div>
+          <div class="grid">
+            <span class="k">categoryName</span><span id="nameAvail" class="val">unknown</span>
+            <span class="k">video dims</span><span id="videoDims" class="val">—</span>
+            <span class="k">rejects</span><span id="rejects" class="val">—</span>
+          </div>
+        </div>
+        <div class="grid" style="margin-top:6px">
+          <span class="k">top raw</span><span id="rawTop" class="val" style="font-size:10.5px">—</span>
+        </div>
+        <div class="note">
+          <strong>Diagnosis key.</strong> <code>raw detections = 0</code> means the
+          model genuinely saw nothing (check framing/lighting/input). <code>raw &gt; 0
+          but accepted = 0</code> means it saw objects we failed to identify — read
+          <code>rejects</code> and <code>top raw</code>. If <code>categoryName</code>
+          reads <em>NO (index only)</em>, the runtime label map is unavailable and
+          matching falls back to COCO index.
+        </div>
+
+        <div class="tierhead support">PHONE — contextual only, NEVER changes state</div>
+        <div class="grid">
+          <span class="k">phone</span><span id="objPhone" class="val dimval">no</span>
+          <span class="k">active event</span><span id="phoneEvent" class="val">none</span>
+        </div>
+        <div class="note">
+          <strong>P2 is the v0.3 fix:</strong> turn far enough that FACE goes to
+          <em>no</em> while your body stays visible. PRESENCE must read
+          <code>PRESENT_FACE_UNAVAILABLE</code> and the state must
+          <strong>never</strong> become TIDAK_HADIR. Leave the frame entirely and
+          BOTH MISSING fills to <code>BOTH_MISSING_ENTER_MS</code> before
+          TIDAK_HADIR. A phone changes the event row only — never the state.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
         <h2>Scenario ground truth — annotation, not an AI input</h2>
         <div id="truthBar" class="truthbar"></div>
         <div class="grid" style="margin-top:8px">
@@ -270,7 +327,7 @@
   </div>
 
   <script type="module">
-    import { FilesetResolver, FaceLandmarker } from '/public/assets/vision_bundle.mjs';
+    import { FilesetResolver, FaceLandmarker, ObjectDetector } from '/public/assets/vision_bundle.mjs';
     import { DebugHarness } from '/tools/debug/DebugHarness.js';
     import { ScenarioTruth } from '/src/ai/index.js';
 
@@ -286,6 +343,13 @@
       evYaw: id('evYaw'), evPitchUp: id('evPitchUp'), evEye: id('evEye'),
       evPitchDown: id('evPitchDown'), evRoll: id('evRoll'),
       evAbsence: id('evAbsence'), eyeElig: id('eyeElig'),
+      face2: id('face2'), objPerson: id('objPerson'), objPrimary: id('objPrimary'),
+      objAssoc: id('objAssoc'), presStatus: id('presStatus'), presBoth: id('presBoth'),
+      stateValid: id('stateValid'), objPhone: id('objPhone'),
+      phoneEvent: id('phoneEvent'), objInference: id('objInference'),
+      rawCount: id('rawCount'), acceptedCount: id('acceptedCount'),
+      inferCount: id('inferCount'), nameAvail: id('nameAvail'),
+      videoDims: id('videoDims'), rejects: id('rejects'), rawTop: id('rawTop'),
       fps: id('fps'), inference: id('inference'), frames: id('frames'),
       calStatus: id('calStatus'), calDetail: id('calDetail'),
       yawBar: id('yawBar'), pitchUpBar: id('pitchUpBar'), eyeBar: id('eyeBar'),
@@ -296,7 +360,7 @@
       anomalies: id('anomalies'), truthActive: id('truthActive'),
     };
 
-    const harness = new DebugHarness({ FilesetResolver, FaceLandmarker }, els);
+    const harness = new DebugHarness({ FilesetResolver, FaceLandmarker, ObjectDetector }, els);
 
     // Scenario ground-truth buttons (Gate 8). Annotation only.
     const truthBar = id('truthBar');
@@ -331,6 +395,18 @@
     id('btnCsv').onclick = () => harness.downloadCSV();
     id('btnJson').onclick = () => harness.downloadJSON();
     id('btnAnalysis').onclick = () => harness.downloadAnalysis();
+
+    // Diagnostic mode drops the category allowlist and the score floor so RAW
+    // model output can be inspected. Must be set BEFORE Start Camera, since it
+    // changes how the detector is created. Production config is untouched.
+    id('btnDiag').onclick = () => {
+      const on = harness.toggleDiagnosticMode();
+      id('btnDiag').textContent = `Diagnostic mode: ${on ? 'ON' : 'OFF'}`;
+      id('btnDiag').className = on ? 'primary' : '';
+      els.status.textContent = on
+        ? 'diagnostic ON — press Start Camera (or Stop then Start) to apply'
+        : 'diagnostic OFF — restart camera to apply';
+    };
 
     // Keyboard shortcuts so the tester can tag scenarios without looking away
     // from the camera. 1-9/0 map to the first ten labels after NONE.

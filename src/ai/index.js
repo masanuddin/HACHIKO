@@ -57,6 +57,11 @@ export { HachikoAI } from './HachikoAI.js';
 // ── MediaPipe boundary (needs a video element; app owns the stream) ───────
 export { FaceLandmarkerEngine } from './pipeline/FaceLandmarkerEngine.js';
 
+// ── v0.3: object detection (person + cell phone) ─────────────────────────
+// A second, independent model. Person answers "is the user still there when
+// the face is lost?"; phone is a contextual stream that never drives state.
+export { ObjectDetectorEngine } from './pipeline/ObjectDetectorEngine.js';
+
 // ── Configuration ────────────────────────────────────────────────────────
 export { CONFIG, withOverrides } from './config.js';
 
@@ -68,6 +73,9 @@ export {
   PoseInvalidReason,
   ScenarioTruth,
   EvidenceTier,
+  PresenceStatus,
+  PhoneEventStatus,
+  PhoneContext,
 } from './types.js';
 
 // ── Evidence model ───────────────────────────────────────────────────────
@@ -82,6 +90,8 @@ export { CalibrationEngine } from './pipeline/CalibrationEngine.js';
 export { FeatureSmoother } from './pipeline/FeatureSmoother.js';
 export { TemporalTracker, PersistenceTimer, FaceMissingTracker } from './pipeline/TemporalTracker.js';
 export { StateEngine } from './pipeline/StateEngine.js';
+export { PresenceFusion, iou, boxCenter, boxContains } from './pipeline/PresenceFusion.js';
+export { PhoneEventTracker } from './pipeline/PhoneEventTracker.js';
 export { HeadPoseExtractor } from './pipeline/HeadPoseExtractor.js';
 export { EyeFeatureExtractor } from './pipeline/EyeFeatureExtractor.js';
 

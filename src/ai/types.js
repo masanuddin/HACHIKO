@@ -76,6 +76,45 @@ export const ScenarioTruth = Object.freeze({
 });
 
 /**
+ * v0.3 presence status — richer than the public 3-state, kept internal.
+ *
+ * The whole point of v0.3: PRESENT_FACE_UNAVAILABLE is a real, common state
+ * (user turned away, hand over face) that v0.2 eventually mislabelled
+ * TIDAK_HADIR. It must never become absence.
+ * @readonly
+ */
+export const PresenceStatus = Object.freeze({
+  /** Face detected. Sufficient proof of presence on its own. */
+  PRESENT: 'PRESENT',
+  /** No face, but the primary person is visible. NOT absence. */
+  PRESENT_FACE_UNAVAILABLE: 'PRESENT_FACE_UNAVAILABLE',
+  /** Neither face nor primary person, but not yet long enough to conclude. */
+  MISSING_PENDING: 'MISSING_PENDING',
+  /** Sustained loss of both signals. This is the only path to TIDAK_HADIR. */
+  ABSENT: 'ABSENT',
+});
+
+/**
+ * Lifecycle of a phone-use event.
+ * @readonly
+ */
+export const PhoneEventStatus = Object.freeze({
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+});
+
+/**
+ * Whether a phone event was study-related.
+ *
+ * Always PENDING in v0.3. The app (v0.4+) asks the user during a break; the AI
+ * never guesses, because a phone can legitimately be a study tool.
+ * @readonly
+ */
+export const PhoneContext = Object.freeze({
+  PENDING: 'PENDING',
+});
+
+/**
  * Evidence tier. Strong evidence may independently produce TERALIH; support
  * evidence may only corroborate.
  * @readonly
@@ -185,7 +224,27 @@ export const PoseInvalidReason = Object.freeze({
  * @property {string} status
  */
 
+/**
+ * @typedef {Object} ObjectDetection  One accepted detector result.
+ * @property {string} category    exact model label ('person' | 'cell phone')
+ * @property {number} confidence  0..1
+ * @property {{originX:number, originY:number, width:number, height:number}} boundingBox pixels
+ * @property {number} timestampMs
+ */
+
+/**
+ * @typedef {Object} PhoneEvent
+ * @property {number} eventId
+ * @property {number} startMs
+ * @property {number|null} endMs        null while ACTIVE
+ * @property {number} durationMs
+ * @property {number} confidenceMean
+ * @property {number} confidenceMax
+ * @property {string} status            one of PhoneEventStatus
+ * @property {string} context           one of PhoneContext (always PENDING in v0.3)
+ */
+
 export default {
   AIState, StateReason, CalibrationStatus, PoseInvalidReason,
-  ScenarioTruth, EvidenceTier,
+  ScenarioTruth, EvidenceTier, PresenceStatus, PhoneEventStatus, PhoneContext,
 };

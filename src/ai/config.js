@@ -316,6 +316,132 @@ export const CONFIG = deepFreeze({
   },
 
   // ── Telemetry ──────────────────────────────────────────────────────────
+  // ── v0.3: Object detector (person + cell phone) ────────────────────────
+  /**
+   * A SECOND, independent model. It does not touch Face AI v0.2 in any way.
+   * It answers exactly two questions:
+   *
+   *   person     -> "is the user still physically there when the face is lost?"
+   *   cell phone -> a separate contextual event stream, never a state input.
+   */
+  objectDetector: {
+    enabled: true,
+    modelAssetPath: './assets/efficientdet_lite0.tflite',
+    delegate: 'GPU',            // falls back to CPU automatically
+    /**
+     * EXACT label strings, read from the model's own metadata (labels.txt
+     * inside the .tflite bundle), not guessed. EfficientDet-Lite0 is COCO-90:
+     * line 1 = "person", line 77 = "cell phone" (two words, lowercase).
+     * Verified identical across the int8 and float32 variants.
+     */
+    labels: {
+      PERSON: 'person',
+      PHONE: 'cell phone',
+    },
+    /** Only these categories are returned; everything else is dropped. */
+    categoryAllowlist: ['person', 'cell phone'],
+    maxResults: 8,
+    /**
+     * Model-level floor. Per-category thresholds below are applied on top, so
+     * this stays permissive enough not to pre-filter them away.
+     */
+    scoreThreshold: 0.30,          // PROVISIONAL — must be revalidated after pilot.
+    /** Per-category acceptance. Person is the safety-critical one: a missed */
+    /** person can cause a false TIDAK_HADIR, so it is deliberately lower.   */
+    minPersonConfidence: 0.40,     // PROVISIONAL — must be revalidated after pilot.
+    minPhoneConfidence: 0.50,      // PROVISIONAL — must be revalidated after pilot.
+    /**
+     * Object detection does NOT run at camera FPS. Face AI keeps its own
+     * cadence; this throttles only the second model to protect runtime.
+     * ~6.7 detections/sec at 150 ms.
+     */
+    OBJECT_INFERENCE_INTERVAL_MS: 150, // PROVISIONAL — must be revalidated after pilot.
+
+    /**
+     * ── DIAGNOSTIC MODE (v0.3 Gate-4 investigation) ───────────────────────
+     * Observation only. It NEVER changes what PresenceFusion or
+     * PhoneEventTracker consume — those still see only accepted detections.
+     *
+     * When enabled:
+     *   - `categoryAllowlist` is NOT sent to the model, so every class is
+     *     returned and can be inspected. The allowlist is the prime suspect for
+     *     "inference runs but nothing is accepted": if runtime `categoryName`
+     *     is empty (MediaPipe returns `categoryName: labels[index] ?? ""`),
+     *     a string allowlist matches nothing and silently drops everything.
+     *   - the model-level score floor drops to `diagnosticScoreThreshold`.
+     *   - raw, unfiltered detections are captured for the debug UI.
+     *
+     * Production values above are untouched by this flag.
+     */
+    diagnosticMode: false,
+    diagnosticScoreThreshold: 0.10,
+    /** How many raw detections to retain per inference for inspection. */
+    diagnosticMaxRawDetections: 20,
+    /**
+     * Fallback identification when runtime `categoryName` is empty.
+     *
+     * COCO-90 class indices, read from the model's own labels.txt
+     * (line 1 = person, line 77 = cell phone -> zero-based 0 and 76).
+     * Matching on index is robust to a missing/unmapped label map, which
+     * string matching is not.
+     */
+    matchByIndexWhenNameMissing: true,
+    labelIndices: {
+      PERSON: 0,
+      PHONE: 76,
+    },
+  },
+
+  // ── v0.3: Presence fusion ──────────────────────────────────────────────
+  /**
+   * Fixes the confirmed v0.2 failure: a user who turns far enough that the face
+   * detector loses them is NOT absent. "face not detected" != "person absent".
+   *
+   * Presence now has its own timer, independent of the head-pose evidence
+   * timers, and becomes the authority for TIDAK_HADIR.
+   */
+  presence: {
+    enabled: true,
+    /** Both face AND primary person missing this long -> ABSENT. */
+    BOTH_MISSING_ENTER_MS: 2000,        // PROVISIONAL — must be revalidated after pilot.
+    /** Sustained re-detection required before absence clears. */
+    PRIMARY_PERSON_RECOVER_MS: 500,     // PROVISIONAL — must be revalidated after pilot.
+    /**
+     * How long a remembered primary-person box stays valid without a fresh
+     * associated detection — covers detector dropout between inference ticks.
+     */
+    PRIMARY_PERSON_TRACK_HOLD_MS: 1000, // PROVISIONAL — must be revalidated after pilot.
+    /** Minimum IoU to treat a new person box as the same primary user. */
+    PRIMARY_PERSON_MIN_IOU: 0.30,       // PROVISIONAL — must be revalidated after pilot.
+    /**
+     * Fallback when IoU is 0 (person moved between sparse inference ticks):
+     * accept if box centres are within this fraction of frame width.
+     */
+    PRIMARY_PERSON_MAX_CENTER_DIST_RATIO: 0.25, // PROVISIONAL — must be revalidated after pilot.
+    /**
+     * With no prior primary user and no face, adopt a lone person only if
+     * there is exactly one candidate. Prevents a background person from
+     * silently becoming "the user".
+     */
+    adoptSinglePersonWhenUnassociated: true,
+  },
+
+  // ── v0.3: Phone event tracking ─────────────────────────────────────────
+  /**
+   * A phone detection NEVER changes FOKUS/TERALIH/TIDAK_HADIR. It produces a
+   * separate event stream that the app (v0.4+) will ask the user about during a
+   * break — a phone may legitimately be a study tool.
+   */
+  phoneEvents: {
+    enabled: true,
+    /** Sustained detection before an event opens — kills single-frame noise. */
+    PHONE_ENTER_MS: 400,        // PROVISIONAL — must be revalidated after pilot.
+    /** Detection may vanish this long without closing the event. */
+    PHONE_EXIT_GRACE_MS: 900,   // PROVISIONAL — must be revalidated after pilot.
+    /** Ring-buffer cap on completed events held in memory. */
+    maxEvents: 500,
+  },
+
   telemetry: {
     enabled: true,
     /** Ring-buffer capacity. ~30 fps * 600 s = 18000 frames. */
@@ -334,17 +460,10 @@ export const CONFIG = deepFreeze({
  * Shallow-merges one level deep per section, which is all the shape needs.
  */
 export function withOverrides(overrides = {}) {
-  const merged = structuredClone({
-    landmarker: CONFIG.landmarker,
-    camera: CONFIG.camera,
-    headPose: CONFIG.headPose,
-    eye: CONFIG.eye,
-    calibration: CONFIG.calibration,
-    temporal: CONFIG.temporal,
-    state: CONFIG.state,
-    validity: CONFIG.validity,
-    telemetry: CONFIG.telemetry,
-  });
+  // Clone EVERY section by enumeration rather than a hand-maintained list —
+  // a hardcoded list silently drops newly added sections (which is exactly how
+  // the v0.3 objectDetector/presence/phoneEvents sections first went missing).
+  const merged = structuredClone({ ...CONFIG });
   for (const [section, values] of Object.entries(overrides)) {
     merged[section] = { ...(merged[section] ?? {}), ...values };
   }

@@ -153,10 +153,18 @@ export class TelemetryLogger {
       'e_yawStrong', 'e_pitchUpStrong', 'e_eyeClosureStrong',
       'e_pitchDownSupport', 'e_rollSupport',
       'e_eyeEligible', 'e_eyeIneligibleReason',
+      // o_ = OBJECT DETECTOR raw measurement (v0.3)
+      'o_detectorRan', 'o_personCount', 'o_primaryPersonPresent',
+      'o_primaryPersonConfidence', 'o_primaryPersonTracked', 'o_associationMethod',
+      'o_phonePresent', 'o_phoneConfidence',
+      // pr_ = DERIVED presence interpretation (v0.3)
+      'pr_status', 'pr_faceAvailable', 'pr_bothMissingMs',
+      // ph_ = phone context stream (never a state input)
+      'ph_activeEventId', 'ph_activeDurationMs',
       // d_ = DERIVED PREDICTION — NOT ground truth
       'd_state', 'd_primaryReason', 'd_stateDurationMs', 'd_holding',
-      'v_signalValid', 'v_calibrationValid',
-      'p_inferenceMs', 'p_fps',
+      'v_signalValid', 'v_stateSignalValid', 'v_calibrationValid',
+      'p_faceInferenceMs', 'p_objectInferenceMs', 'p_fps',
       // g_ = GROUND TRUTH (human annotation, never an engine input)
       'g_manualScenarioTruth',
     ];
@@ -181,10 +189,20 @@ export class TelemetryLogger {
         bit(e.yawStrong), bit(e.pitchUpStrong), bit(e.eyeClosureStrong),
         bit(e.pitchDownSupport), bit(e.rollSupport),
         bit(f.evidence?.eyeEligible), f.evidence?.eyeIneligibleReason ?? '',
+        bit(f.objects?.detectorRan),
+        (f.objects?.detections ?? []).filter((x) => x.category === 'person').length,
+        bit(f.objects?.primaryPersonPresent),
+        num(f.objects?.primaryPersonConfidence, 3),
+        bit(f.objects?.primaryPersonTracked),
+        f.objects?.associationMethod ?? '',
+        bit(f.objects?.phonePresent), num(f.objects?.phoneConfidence, 3),
+        f.presence?.status ?? '', bit(f.presence?.faceAvailable),
+        Math.round(f.presence?.bothMissingMs ?? 0),
+        f.phoneEvent?.activeEventId ?? '', Math.round(f.phoneEvent?.activeDurationMs ?? 0),
         d.state, d.primaryReason ?? d.reason,
         Math.round(d.stateDurationMs ?? 0), bit(d.holding),
-        bit(v.signalValid), bit(v.calibrationValid),
-        num(p.inferenceMs, 2), num(p.fps, 1),
+        bit(v.signalValid), bit(v.stateSignalValid), bit(v.calibrationValid),
+        num(p.faceInferenceMs ?? p.inferenceMs, 2), num(p.objectInferenceMs, 2), num(p.fps, 1),
         f.manualScenarioTruth ?? 'NONE',
       ].join(','));
     }

@@ -270,23 +270,21 @@ test('absence reports empty evidence (nothing observable to judge)', () => {
   }
 });
 
-test('stable return clears absence only after the recovery window', () => {
+test('stable return clears absence', () => {
   const { ai, t0 } = calibratedAI();
   run(ai, t0, 1000, () => measurement());
   run(ai, t0 + 1000, 5000, absent);
   assert.equal(ai.stateEngine.state, AIState.TIDAK_HADIR);
 
-  let t = t0 + 6000;
-  // A single detected frame must not clear it.
-  ai.processFrame(measurement(), t); t += FRAME_MS;
-  assert.equal(ai.stateEngine.state, AIState.TIDAK_HADIR);
-
-  // Nor should less than FACE_PRESENT_RECOVER_MS (500 ms).
-  const shortFrames = run(ai, t, 300, () => measurement());
-  assert.equal(lastOf(shortFrames).classification.state, AIState.TIDAK_HADIR);
-
-  // Sustained presence does.
-  const frames = run(ai, t + 300, 3000, () => measurement());
+  // v0.3: a DETECTED FACE is by itself sufficient proof of presence, so
+  // absence clears as soon as the face is back — no recovery window needed.
+  // (The face-only recovery window this test previously asserted still governs
+  // the internal face-missing tracker; PresenceFusion is now the authority for
+  // the public state, and it treats a visible face as conclusive.)
+  //
+  // The recovery window still applies to the PERSON-only path, where evidence
+  // is weaker — covered in tests/presence.test.js.
+  const frames = run(ai, t0 + 6000, 3000, () => measurement());
   assert.equal(lastOf(frames).classification.state, AIState.FOKUS);
 });
 
