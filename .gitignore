@@ -1,2 +1,6 @@
 .venv
 .python-version
+node_modules/
+public/assets/wasm/
+public/assets/vision_bundle.mjs
+public/assets/face_landmarker.task

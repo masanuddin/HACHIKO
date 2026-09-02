@@ -1,0 +1,20 @@
+{
+  "name": "hachiko-ai",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "description": "HACHIKO AI core v0.2.1 - framework-agnostic browser focus/distraction measurement engine (face landmarks -> head pose + EAR -> calibration -> temporal -> tiered evidence -> 3 states)",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "smoke": "node tools/debug/smoke.mjs",
+    "verify": "npm test && npm run smoke",
+    "assets": "node scripts/fetch-assets.mjs",
+    "dev": "node scripts/serve.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35"
+  },
+  "exports": {
+    ".": "./src/ai/index.js"
+  }
+}
