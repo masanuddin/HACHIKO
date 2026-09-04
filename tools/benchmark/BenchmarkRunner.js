@@ -41,9 +41,15 @@ export class BenchmarkRunner {
     /** @type {Map<string, {candidate:Object, instance:Object, delegate:string}>} */
     this.loaded = new Map();
     this.activeId = null;
-    /** Recorded trials, appended by `recordTrial`. */
+    /** Recorded VALID trials, appended by `recordTrial`. */
     this.trials = [];
+    /** Aborted attempts — never committed, so nothing is deleted here. */
+    this.abortedCount = 0;
     this.lastObservation = null;
+    this.sessionId = `bench_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    this.sessionStartedIso = new Date().toISOString();
+    /** Repetitions required per scenario before it counts as complete. */
+    this.requiredRepetitions = 3;
   }
 
   /** Candidates this runner knows about. */
@@ -130,6 +136,8 @@ export class BenchmarkRunner {
     observation.modelId = entry.candidate.id;
     observation.delegate = entry.delegate;
     observation.timestampMs = nowMs;
+    observation.videoWidth = video?.videoWidth ?? null;
+    observation.videoHeight = video?.videoHeight ?? null;
 
     this.lastObservation = observation;
     return observation;
@@ -226,7 +234,7 @@ export class BenchmarkRunner {
    * @param {boolean} input.expected
    * @param {Object} input.observation  peak observation for the window
    */
-  recordTrial({ task, scenarioId, expected, observation }) {
+  recordTrial({ task, scenarioId, expected, observation, stage = 1, notes = '' }) {
     const detected = task === 'phone'
       ? observation.phoneDetected
       : observation.personDetected;
@@ -234,22 +242,76 @@ export class BenchmarkRunner {
       ? observation.phoneMaxScore
       : observation.personMaxScore;
 
+    // Repetition auto-increments per (model + task + scenario). The tester
+    // never labels trial 1/2/3 by hand — that is bookkeeping the tool should do,
+    // and hand-numbering is exactly where operator error creeps into a dataset.
+    const repetition = this.repetitionCount(observation.modelId, task, scenarioId) + 1;
+
+    const competing = (observation.topOther ?? [])[0] ?? null;
+
     const trial = {
+      trialId: `${observation.modelId}_${task}_${scenarioId}_r${repetition}`,
+      sessionId: this.sessionId,
       modelId: observation.modelId,
       task,
+      stage,
       scenarioId,
-      expected,
+      repetition,
+      // Explicit, so an analyst reading the CSV never has to infer intent.
+      scenarioType: expected ? 'positive' : 'negative_control',
+      expectedTargetPresent: expected,
+      expected,                       // retained: existing scorer reads this
       detected,
       maxScore,
-      // On a negative-control scenario, any detection IS the false positive.
+      // On a negative-control scenario, any detection IS a false positive.
       falsePositive: !expected && detected,
+      falseNegative: expected && !detected,
+      competingClass: competing ? (competing.categoryName || `index_${competing.index}`) : null,
+      competingScore: competing ? competing.score : null,
+      rawDetectionCount: observation.rawCount ?? null,
       inferenceMs: observation.inferenceMs,
       delegate: observation.delegate,
+      videoWidth: observation.videoWidth ?? null,
+      videoHeight: observation.videoHeight ?? null,
+      valid: true,
+      notes,
       recordedAtIso: new Date().toISOString(),
     };
     this.trials.push(trial);
     return trial;
   }
+
+  /** How many trials already exist for this model+task+scenario. */
+  repetitionCount(modelId, task, scenarioId) {
+    return this.trials.filter(
+      (t) => t.modelId === modelId && t.task === task
+        && t.scenarioId === scenarioId
+    ).length;
+  }
+
+  /**
+   * Delete the MOST RECENT saved trial, literally.
+   *
+   * Removes the trial from memory so it contributes nothing to progress,
+   * metrics, ranking, or any export. No tombstone is kept — a deleted trial
+   * must behave as though it never existed.
+   *
+   * Only the last trial is deletable: reshaping an already-collected benchmark
+   * by removing arbitrary earlier rows would undermine its fairness.
+   *
+   * @returns {Object|null} the removed trial, or null if there was none
+   */
+  deleteLastTrial() {
+    return this.trials.length ? this.trials.pop() : null;
+  }
+
+  /** The trial Delete Last Trial would remove, for the confirm dialog. */
+  lastTrial() {
+    return this.trials.length ? this.trials[this.trials.length - 1] : null;
+  }
+
+  /** Every stored trial is valid — invalid ones are removed on the spot. */
+  getValidTrials() { return this.trials; }
 
   /**
    * Peak-hold across a sampling window, so a scenario is judged on the model's
@@ -274,6 +336,43 @@ export class BenchmarkRunner {
   }
 
   getTrials() { return [...this.trials]; }
+
+  /**
+   * Progress for one model+task+stage: which scenarios are done, what is next.
+   * This is what lets the UI answer "what should I do next?" without the
+   * tester counting rows by hand.
+   *
+   * @param {string} modelId
+   * @param {string} task
+   * @param {{id:string, expect:boolean, critical?:boolean}[]} scenarios
+   */
+  progressFor(modelId, task, scenarios) {
+    const required = this.requiredRepetitions;
+    const items = scenarios.map((s) => {
+      const done = this.repetitionCount(modelId, task, s.id);
+      return {
+        scenarioId: s.id,
+        label: s.label,
+        expect: s.expect,
+        critical: !!s.critical,
+        done: Math.min(done, required),
+        required,
+        complete: done >= required,
+      };
+    });
+    const completeCount = items.filter((i) => i.complete).length;
+    const trialsDone = items.reduce((a, i) => a + i.done, 0);
+    const next = items.find((i) => !i.complete) ?? null;
+    return {
+      items,
+      scenariosComplete: completeCount,
+      scenariosTotal: items.length,
+      trialsDone,
+      trialsRequired: items.length * required,
+      allComplete: completeCount === items.length,
+      nextScenario: next,
+    };
+  }
 
   /** Export for offline analysis. Numbers only. */
   toJSON() {

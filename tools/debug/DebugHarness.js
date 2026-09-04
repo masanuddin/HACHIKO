@@ -16,7 +16,11 @@ import {
   HachikoAI, FaceLandmarkerEngine, ObjectDetectorEngine,
   CONFIG, withOverrides, AIState, ScenarioTruth, PresenceStatus,
 } from '../../src/ai/index.js';
-import { TelemetryLogger } from '../telemetry/TelemetryLogger.js';
+import { TrialController, TrialState, statusLabel } from '../shared/TrialController.js';
+import { DebugSession, toSample } from './DebugSession.js';
+import { getScenario } from './scenarios.js';
+import { buildZip } from '../shared/zip.js';
+import { buildDebugViewModel, Absent } from './debugViewModel.js';
 
 export class DebugHarness {
   /**
@@ -28,21 +32,40 @@ export class DebugHarness {
     this.els = els;
     this.ai = new HachikoAI(CONFIG);
     this.engine = new FaceLandmarkerEngine(CONFIG, deps);
-    // v0.3: second model, throttled to its own cadence.
-    this.objectEngine = deps.ObjectDetector
-      ? new ObjectDetectorEngine(CONFIG, deps)
-      : null;
+
+    // ── FACE AI ONLY (v0.3 interim) ────────────────────────────────────
+    // The physical-presence and phone models have NOT been selected — the
+    // Bake-off is still running. Executing the old provisional detector here
+    // would present unselected, known-weak output as if it were the product's
+    // perception layer. So it is not constructed and not run: presence and
+    // phone read PENDING BAKE-OFF instead of showing misleading numbers.
+    this.objectEngine = null;
+    this.perceptionPending = true;
     this._lastObjects = null;
     this._lastObjectInferenceMs = 0;
     this._lastRawDetections = [];
-    // The harness owns its logger and attaches it to the AI's frame stream.
-    // The AI itself knows nothing about it.
-    this.logger = new TelemetryLogger(CONFIG);
-    this.logger.attach(this.ai, { harness: 'tools/debug' });
+
+    // ── Experiment recording ───────────────────────────────────────────
+    this.session = new DebugSession(CONFIG);
+    this.trials = new TrialController({
+      requiredRepetitions: this.session.requiredRepetitions,
+      onStateChange: (info) => this._onTrialState(info),
+      onTrialComplete: (trial) => this._onTrialComplete(trial),
+    });
+    this.onTrialEvent = () => {};
+    /** Page-supplied renderer for panels this class does not own. */
+    this.onViewModel = null;
+    this.lastTrialRecord = null;
     this.stream = null;
     this.running = false;
     this._rafId = null;
     this._lastMeasurement = null;
+    /**
+     * Rolling face-inference latency, for p50/p95 in the Runtime tab.
+     * Owned here, not in the AI core: percentile reporting is a debug-tool
+     * concern and the core stays a per-frame reporter.
+     */
+    this.latency = [];
     /** Live min/max tracking for the sign-convention gate. */
     this.extremes = null;
     this._resetExtremes();
@@ -138,19 +161,11 @@ export class DebugHarness {
 
     this._setStatus('loading face model…');
     await this.engine.initialize();
-    if (this.objectEngine && CONFIG.objectDetector.enabled) {
-      this._setStatus('loading object model…');
-      try {
-        await this.objectEngine.initialize();
-      } catch (err) {
-        console.warn('[HACHIKO] object detector unavailable:', err);
-        this.objectEngine = null;
-      }
-    }
-    this._setStatus(`ready (face: ${this.engine.activeDelegate}`
-      + (this.objectEngine ? `, object: ${this.objectEngine.activeDelegate})` : ', object: off)'));
+    // Presence/phone perception is PENDING BAKE-OFF, so no second model loads.
+    this._setStatus(`camera on — NOT RECORDING (face: ${this.engine.activeDelegate})`);
 
     this.running = true;
+    this.trials.cameraStarted();
     this._loop();
   }
 
@@ -162,21 +177,100 @@ export class DebugHarness {
       this.stream = null;
     }
     this.engine.close();
-    if (this.objectEngine) this.objectEngine.close();
+    this.trials.cameraStopped();
     this._setStatus('stopped');
   }
 
   calibrate() {
     this.ai.startCalibration(performance.now());
+    // Record the baseline alongside the trials it will be used to interpret.
+    setTimeout(() => {
+      this.session.calibrationSnapshot = this.ai.getCalibrationSnapshot();
+    }, CONFIG.calibration.CALIBRATION_DURATION_MS + 250);
     this._setStatus('calibrating — look at the screen normally');
   }
 
   reset() {
     this.ai.reset();
-    // Re-attach so the logger starts a fresh session with current provenance.
-    this.logger.attach(this.ai, { harness: 'tools/debug' });
+    this.trials.abort('reset');
     this._resetExtremes();
-    this._setStatus('reset');
+    this._setStatus('reset — calibration and AI state cleared');
+  }
+
+  // ── Trial control ────────────────────────────────────────────────────
+
+  /** Select (or clear) the scenario. Never begins recording. */
+  selectScenario(scenarioId) {
+    const scenario = scenarioId ? getScenario(scenarioId) : null;
+    if (scenario?.pending) return { ok: false, reason: scenario.pendingReason };
+    const ok = this.trials.selectScenario(scenario);
+    if (ok) {
+      // The ground-truth label is attached for telemetry provenance only; the
+      // engine cannot read it.
+      this.setScenarioTruth(scenarioId ?? ScenarioTruth.NONE);
+      this._setStatus(scenario
+        ? `ready — ${scenario.id} (press START TRIAL)` : 'camera on — NOT RECORDING');
+    }
+    return { ok, scenario };
+  }
+
+  /** Begin countdown -> recording -> auto-stop for the selected scenario. */
+  startTrial() {
+    const scenario = this.trials.scenario;
+    if (!scenario) return { ok: false, reason: 'no scenario selected' };
+    const ref = this.session.nextTrialRef(scenario.id);
+    const ok = this.trials.startTrial(performance.now(), ref);
+    return { ok, ...ref };
+  }
+
+  abortTrial(reason = 'aborted by operator') {
+    const wasRecording = this.trials.abort(reason);
+    if (wasRecording) this.session.abortedCount += 1;
+    return wasRecording;
+  }
+
+  /** Mark the most recent (or a named) trial invalid. Evidence is retained. */
+  /**
+   * Delete the most recent saved trial, literally. It leaves no row in any
+   * export, no telemetry, and no tombstone — as though it never happened.
+   */
+  deleteLastTrial() {
+    const removed = this.session.deleteLastTrial();
+    if (removed) this.lastTrialRecord = null;
+    return removed;
+  }
+
+  /** The trial Delete Last Trial would remove, for the confirm dialog. */
+  lastTrial() { return this.session.lastTrial(); }
+
+  getProgress(scenarios) { return this.session.progress(scenarios); }
+
+  _onTrialState(info) {
+    this.onTrialEvent({ type: 'state', ...info });
+  }
+
+  _onTrialComplete(trial) {
+    const scenario = getScenario(trial.scenario);
+    const record = this.session.addTrial(trial, scenario);
+    this.lastTrialRecord = record;
+    this.onTrialEvent({ type: 'complete', trial: record });
+  }
+
+  _renderTrialStatus(tick, nowMs) {
+    const e = this.els;
+    if (!e.recState) return;
+    const ctx = {
+      scenarioId: this.trials.scenario?.id,
+      remainingMs: tick.remainingMs,
+      elapsedMs: tick.elapsedMs,
+      durationMs: this.trials.scenario?.recordingDurationMs ?? 0,
+      repetition: this.trials.currentRepetition,
+    };
+    e.recState.textContent = statusLabel(tick.state, ctx);
+    e.recState.className = 'val ' + (
+      tick.state === TrialState.RECORDING ? 'bad'
+        : tick.state === TrialState.COUNTDOWN ? 'warn'
+          : tick.state === TrialState.CAMERA_OFF ? 'dimval' : 'ok');
   }
 
   _loop = () => {
@@ -184,27 +278,27 @@ export class DebugHarness {
     const now = performance.now();
 
     try {
-      // Object detection runs on its own slower cadence; between ticks we
-      // reuse the previous result, which PresenceFusion tolerates by design.
-      if (this.objectEngine) {
-        const obj = this.objectEngine.detect(this.els.video, now);
-        if (obj.ran) {
-          this._lastObjects = obj.detections;
-          this._lastObjectInferenceMs = obj.inferenceMs;
-          this._lastRawDetections = obj.rawDetections ?? [];
-        }
-      }
-
+      // FACE AI ONLY while the perception Bake-off is unresolved. No object
+      // detector is constructed or executed here, so nothing provisional can
+      // be mistaken for the final presence/phone layer.
       const { measurement, inferenceMs, skipped } = this.engine.detect(this.els.video, now);
       if (!skipped && measurement) {
         this._lastMeasurement = measurement;
         this._trackExtremes(measurement);
         const frame = this.ai.processFrame(measurement, now, {
           faceInferenceMs: inferenceMs,
-          objectInferenceMs: this._lastObjectInferenceMs,
-          objectDetections: this._lastObjects,
+          objectInferenceMs: 0,
+          objectDetections: null,
         });
+
+        // Advance the trial clock, then offer the frame. `offerSample` is the
+        // single gate: it accepts ONLY inside the recording window, so preview,
+        // countdown and post-trial frames can never enter the experiment.
+        const tick = this.trials.tick(now);
+        this.trials.offerSample({ ...toSample(frame), timestampMs: now });
+
         this._render(frame);
+        this._renderTrialStatus(tick, now);
       }
     } catch (err) {
       console.error('[HACHIKO] frame error:', err);
@@ -214,8 +308,44 @@ export class DebugHarness {
     this._rafId = requestAnimationFrame(this._loop);
   };
 
+  /**
+   * Rolling inference-latency stats for the Runtime tab.
+   * Owned here rather than in the AI core: percentile reporting is a debug-tool
+   * concern and the core stays a per-frame reporter.
+   */
+  _latencyStats() {
+    if (!this.latency.length) return { p50: null, p95: null, count: 0 };
+    const sorted = this.latency.slice().sort((a, b) => a - b);
+    const at = (f) => sorted[Math.min(sorted.length - 1, Math.floor(f * (sorted.length - 1)))];
+    return { p50: at(0.5), p95: at(0.95), count: sorted.length };
+  }
+
+  /**
+   * The canonical per-frame view model.
+   *
+   * Every panel reads THIS. The centre and the Signal Inspector cannot
+   * disagree, because there is only one derivation and only one subscriber.
+   */
+  buildViewModel(frame) {
+    const v = this.els.video;
+    return buildDebugViewModel(frame, {
+      cameraOn: this.running,
+      calibration: this.ai.getCalibrationSnapshot(),
+      config: CONFIG,
+      extremes: this.extremes,
+      latency: this._latencyStats(),
+      delegate: this.engine.activeDelegate,
+      video: v?.videoWidth ? { width: v.videoWidth, height: v.videoHeight } : null,
+    });
+  }
+
   _render(frame) {
     const e = this.els;
+    const perf = frame.performance ?? {};
+    if (typeof perf.inferenceMs === 'number' && Number.isFinite(perf.inferenceMs)) {
+      this.latency.push(perf.inferenceMs);
+      if (this.latency.length > 240) this.latency.shift();
+    }
     const m = frame.measurement, c = frame.calibrated;
     const t = frame.temporal, d = frame.classification, p = frame.performance;
 
@@ -232,16 +362,59 @@ export class DebugHarness {
     e.poseValid.textContent = m.poseValid ? 'VALID' : `INVALID (${m.poseInvalidReason})`;
     e.poseValid.className = `val ${m.poseValid ? 'ok' : 'bad'}`;
 
-    e.yaw.textContent = `${fmt(m.yawRaw)}° / ${fmt(c.yawDelta)}° / ${fmt(t.yawSmoothed)}°`;
-    e.pitch.textContent = `${fmt(m.pitchRaw)}° / ${fmt(c.pitchDelta)}° / ${fmt(t.pitchSmoothed)}°`;
-    e.roll.textContent = `${fmt(m.rollRaw)}° / ${fmt(c.rollDelta)}° / ${fmt(t.rollSmoothed)}°`;
+    // Head pose, one authoritative write per cell.
+    //   raw      -> HeadPoseExtractor, valid only when poseValid
+    //   delta    -> raw minus calibration baseline, needs a valid baseline
+    //   smoothed -> FeatureSmoother output
+    // Each is state-aware: a missing value says WHY rather than showing a dash.
+    const calValid = this.ai.getCalibrationSnapshot().status === 'VALID';
+    const poseCell = (el, v, needsBaseline = false) => {
+      if (!el) return;
+      if (!m.facePresent) { el.textContent = 'No face'; el.className = 'dimval'; return; }
+      if (!m.poseValid) { el.textContent = 'Signal invalid'; el.className = 'warn'; return; }
+      if (needsBaseline && !calValid) {
+        el.textContent = 'Requires calibration'; el.className = 'warn'; return;
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        el.textContent = 'Unavailable'; el.className = 'bad'; return;
+      }
+      el.textContent = `${v.toFixed(1)}°`;
+      el.className = '';
+    };
+    poseCell(e.yawRaw, m.yawRaw);
+    poseCell(e.yawDelta, c.yawDelta, true);
+    poseCell(e.yawSm, t.yawSmoothed);
+    poseCell(e.pitchRaw, m.pitchRaw);
+    poseCell(e.pitchDelta, c.pitchDelta, true);
+    poseCell(e.pitchSm, t.pitchSmoothed);
+    // "Head Tilt" in the UI; roll stays the internal/export name.
+    poseCell(e.rollRaw, m.rollRaw);
+    poseCell(e.rollDelta, c.rollDelta, true);
+    poseCell(e.rollSm, t.rollSmoothed);
 
-    e.earL.textContent = fmt(m.earLeft, 3);
-    e.earR.textContent = fmt(m.earRight, 3);
-    e.earMean.textContent = fmt(m.earMean, 3);
-    e.earRel.textContent = fmt(c.earRelative, 3);
-    e.earSm.textContent = fmt(t.earSmoothed, 3);
-    e.missing.textContent = `${Math.round(t.faceMissingMs)} ms`;
+    const earCell = (el, v, needsBaseline = false) => {
+      if (!el) return;
+      if (!m.facePresent) { el.textContent = 'No face'; el.className = 'dimval'; return; }
+      if (needsBaseline && !calValid) {
+        el.textContent = 'Requires calibration'; el.className = 'warn'; return;
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        el.textContent = 'Unavailable'; el.className = 'bad'; return;
+      }
+      el.textContent = v.toFixed(3);
+      el.className = '';
+    };
+    earCell(e.earL, m.earLeft);
+    earCell(e.earR, m.earRight);
+    earCell(e.earMean, m.earMean);
+    earCell(e.earRel, c.earRelative, true);
+    earCell(e.earSm, t.earSmoothed);
+    // Face-missing is only meaningful while the face is actually missing.
+    const missingMs = Math.round(t.faceMissingMs ?? 0);
+    if (e.missing) e.missing.textContent = `${missingMs} ms`;
+    if (e.faceMissingRow) {
+      e.faceMissingRow.style.display = missingMs > 0 ? '' : 'none';
+    }
 
     e.state.textContent = d.state;
     e.state.className = `state ${d.state}`;
@@ -288,79 +461,35 @@ export class DebugHarness {
       e.eyeElig.className = `val ${ok ? 'ok' : 'warn'}`;
     }
 
-    // v0.3 person / presence / phone readouts.
-    const obj = frame.objects ?? {};
-    const pres = frame.presence ?? {};
-    if (e.objPerson) {
-      const n = (obj.detections ?? []).filter((d) => d.category === 'person').length;
-      e.objPerson.textContent = n > 0 ? `YES (${n})` : 'no';
-      e.objPerson.className = `val ${n > 0 ? 'ok' : 'dimval'}`;
-    }
-    if (e.objPrimary) {
-      const on = obj.primaryPersonPresent;
-      e.objPrimary.textContent = on
-        ? `YES ${obj.primaryPersonConfidence ? obj.primaryPersonConfidence.toFixed(2) : ''}`
-          + (obj.primaryPersonTracked ? ' (held)' : '')
-        : 'no';
-      e.objPrimary.className = `val ${on ? 'ok' : 'bad'}`;
-    }
-    if (e.objAssoc) e.objAssoc.textContent = obj.associationMethod ?? '—';
-    if (e.presStatus) {
-      const st = pres.status;
-      e.presStatus.textContent = st ?? '—';
-      e.presStatus.className = `val ${
-        st === PresenceStatus.PRESENT ? 'ok'
-        : st === PresenceStatus.ABSENT ? 'bad' : 'warn'}`;
-    }
-    if (e.presBoth) e.presBoth.textContent = `${Math.round(pres.bothMissingMs ?? 0)} ms`;
+    // ── PRESENCE / PHONE: PENDING BAKE-OFF ─────────────────────────────
+    // The physical-presence and phone models are not selected yet, so no
+    // provisional detector runs. These readouts say so plainly rather than
+    // showing zeros or stale values that could read as real measurements.
+    const PENDING = 'PENDING BAKE-OFF';
+    if (e.presenceModel) e.presenceModel.textContent = PENDING;
+    if (e.phoneModel) e.phoneModel.textContent = PENDING;
+    // §14: no per-field N/A rows. Until a model is selected there is nothing
+    // to report, and a column of "N/A" reads as measurement rather than
+    // absence. These nodes are proxies now; the cards say PENDING BAKE-OFF.
     if (e.stateValid) {
       const ok = frame.validity?.stateSignalValid;
       e.stateValid.textContent = ok ? 'VALID' : 'NOT OBSERVABLE';
       e.stateValid.className = `val ${ok ? 'ok' : 'warn'}`;
     }
-    if (e.objPhone) {
-      const on = obj.phonePresent;
-      e.objPhone.textContent = on
-        ? `YES ${obj.phoneConfidence ? obj.phoneConfidence.toFixed(2) : ''}` : 'no';
-      e.objPhone.className = `val ${on ? 'warn' : 'dimval'}`;
-    }
-    if (e.phoneEvent) {
-      const id = frame.phoneEvent?.activeEventId;
-      e.phoneEvent.textContent = id
-        ? `#${id} · ${(frame.phoneEvent.activeDurationMs / 1000).toFixed(1)}s`
-        : `none (${this.ai.getPhoneEvents().length} total)`;
-    }
-    if (e.objInference) {
-      e.objInference.textContent =
-        `${fmt(frame.performance?.objectInferenceMs, 1)} ms`;
-    }
 
-    // ── RAW MODEL OUTPUT (diagnostics) ─────────────────────────────────
-    // Deliberately shown SEPARATELY from the filtered detections above: the
-    // whole Gate-4 question was whether the model saw nothing, or saw things
-    // we failed to identify.
-    if (e.rawCount && this.objectEngine) {
-      const d = this.objectEngine.getDiagnostics();
-      e.rawCount.textContent = String(d.rawDetectionCount);
-      e.rawCount.className = `val ${d.rawDetectionCount > 0 ? 'ok' : 'bad'}`;
-      e.acceptedCount.textContent = String(d.acceptedDetectionCount);
-      e.acceptedCount.className = `val ${d.acceptedDetectionCount > 0 ? 'ok' : 'warn'}`;
-      e.inferCount.textContent = String(d.objectInferenceCount);
-      e.nameAvail.textContent = d.categoryNameAvailable === null
-        ? 'unknown'
-        : d.categoryNameAvailable ? 'YES (names)' : 'NO (index only)';
-      e.nameAvail.className = `val ${d.categoryNameAvailable === false ? 'warn' : 'ok'}`;
-      e.videoDims.textContent = d.lastVideoWidth
-        ? `${d.lastVideoWidth}x${d.lastVideoHeight}` : '—';
-      const rejects = Object.entries(d.lastRejectReasons ?? {});
-      e.rejects.textContent = rejects.length
-        ? rejects.map(([k, v]) => `${k}:${v}`).join(' ')
-        : (d.rawDetectionCount === 0 ? 'model returned nothing' : 'none');
-      e.rawTop.textContent = this._lastRawDetections.length
-        ? this._lastRawDetections.slice(0, 6)
-            .map((r) => `[${r.index}]${r.categoryName || '""'} ${r.score.toFixed(2)}`)
-            .join('  ')
-        : '—';
+    // ── PERCEPTION RAW: PENDING BAKE-OFF ───────────────────────────────
+    // Nothing to show: no perception model is running. Once the Bake-off picks
+    // a winner this becomes its raw detections, scores and rejections.
+    if (e.rawCount) {
+      for (const key of ['rawCount', 'acceptedCount', 'inferCount',
+                         'nameAvail', 'rejects', 'rawTop']) {
+        if (e[key]) { e[key].textContent = 'PENDING BAKE-OFF'; e[key].className = 'val dimval'; }
+      }
+      if (e.videoDims) {
+        const v = this.els.video;
+        e.videoDims.textContent = v?.videoWidth ? `${v.videoWidth}x${v.videoHeight}` : '—';
+        e.videoDims.className = 'val';
+      }
     }
 
     // Presence/absence is its own concern, not an evidence tier: it decides
@@ -396,14 +525,53 @@ export class DebugHarness {
     e.fps.textContent = fmt(p.fps, 1);
     e.inference.textContent = `${fmt(p.inferenceMs, 2)} ms`;
 
+    // Percentiles and the rest of the Runtime tab are rendered from the view
+    // model below, so every panel agrees by construction.
+
     const cal = this.ai.getCalibrationSnapshot();
+
+    // ── HEADER ────────────────────────────────────────────────────────
+    // The header previously had no writer at all, so it showed a permanent
+    // dash while the body showed live values. It now reads the SAME frame and
+    // the SAME calibration snapshot the body does, so the two cannot diverge.
+    if (e.hState) {
+      e.hState.textContent = d.state;
+      e.hState.className = 'val ' + (d.state === AIState.FOKUS ? 'ok'
+        : d.state === AIState.TIDAK_HADIR ? 'bad' : 'warn');
+    }
+    if (e.hCal) {
+      e.hCal.textContent = cal.status;
+      e.hCal.className = 'val ' + (cal.status === 'VALID' ? 'ok'
+        : cal.status === 'FAILED' ? 'bad' : 'warn');
+    }
+    if (e.hPerf) {
+      e.hPerf.textContent = `${fmt(p.fps, 0)} fps · ${fmt(p.inferenceMs, 1)} ms`;
+    }
+    if (e.calSamples) {
+      e.calSamples.textContent = cal.baseline
+        ? String(cal.baseline.sampleCount)
+        : (cal.status === 'NONE' ? 'Not started'
+           : `${cal.validSamples} valid / ${cal.totalFrames} frames`);
+    }
     e.calStatus.textContent = cal.status;
     e.calStatus.className = `val ${cal.status === 'VALID' ? 'ok' : cal.status === 'FAILED' ? 'bad' : 'warn'}`;
     e.calDetail.textContent = cal.baseline
       ? `yaw ${cal.baseline.yaw.toFixed(1)}° · pitch ${cal.baseline.pitch.toFixed(1)}° · EAR ${cal.baseline.ear.toFixed(3)} (n=${cal.baseline.sampleCount})`
       : (cal.failureReason ?? `${cal.validSamples} valid / ${cal.totalFrames} frames`);
 
-    e.frames.textContent = String(this.logger.length);
+    if (e.frames) e.frames.textContent = String(this.session.trials.length);
+
+    // ── ONE SUBSCRIBER ────────────────────────────────────────────────
+    // The page used to attach its OWN ai.onFrame listener for the Signal
+    // Inspector. HachikoAI isolates a throwing listener, so a single error in
+    // that handler silently blanked the whole right panel while this one kept
+    // working. Now the page registers a renderer here and receives the same
+    // view model this method used, so the two cannot diverge — and if the page
+    // renderer throws, it throws where we can see it.
+    if (this.onViewModel) {
+      this.onViewModel(this.buildViewModel(frame));
+    }
+
     if (d.calibrating) {
       const prog = Math.round(this.ai.calibration.progress(frame.timestampMs) * 100);
       this._setStatus(`calibrating… ${prog}%`);
@@ -429,48 +597,40 @@ export class DebugHarness {
     if (this.els.status) this.els.status.textContent = text;
   }
 
-  /** Download telemetry. Derived numbers only — never imagery. */
-  downloadCSV() {
-    this._download(this.logger.toCSV(), 'text/csv', 'csv');
-  }
-  downloadJSON() {
-    this._download(this.logger.toJSON(), 'application/json', 'json');
-  }
   /**
-   * Offline analysis pack: distributions, transitions, detection delays, and
-   * ground-truth-vs-prediction agreement. Fills report sections I-K.
+   * Export the bounded experiment as ONE archive containing
+   * debug_results.json + debug_trials.csv + debug_telemetry.csv.
+   *
+   * Derived numbers only — never imagery. Only trial-window telemetry is
+   * included; live preview frames never reach this path.
+   *
+   * A single ZIP rather than three downloads: browsers block consecutive
+   * downloads as "multiple downloads" after the first, and the tester should
+   * not have to work out which files belong to the same session.
    */
-  downloadAnalysis() {
-    const report = {
-      generatedAt: new Date().toISOString(),
-      note: 'PROVISIONAL thresholds. d_/g_ separation: prediction is never ground truth.',
-      delegate: this.engine.activeDelegate,
-      observedRanges: this.extremes,
-      phoneEvents: this.ai.getPhoneEvents(),
-      diagnosticMode: this._diagnostic,
-      objectDiagnostics: this.objectEngine ? this.objectEngine.getDiagnostics() : null,
-      calibration: this.ai.getCalibrationSnapshot(),
-      analysis: this.logger.analyze(),
-    };
-    this._download(JSON.stringify(report, null, 2), 'application/json', 'analysis.json');
+  exportSession() {
+    const bundle = this.session.buildExportBundle({
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      viewport: typeof window !== 'undefined'
+        ? `${window.innerWidth}x${window.innerHeight}` : null,
+      videoWidth: this.els.video?.videoWidth ?? null,
+      videoHeight: this.els.video?.videoHeight ?? null,
+      hardwareConcurrency: typeof navigator !== 'undefined'
+        ? navigator.hardwareConcurrency ?? null : null,
+    });
+    this._downloadZip(bundle);
+    return bundle;
   }
-  /** Console helper for live manual testing. */
-  printAnalysis() {
-    const a = this.logger.analyze();
-    console.table(a.distributions);
-    console.log('transitions:', a.transitionCount, a.transitions);
-    console.log('groundTruth vs prediction:', a.groundTruth);
-    console.log('detectionDelays:', a.detectionDelays);
-    return a;
-  }
-  _download(content, mime, ext) {
-    const blob = new Blob([content], { type: mime });
+
+  _downloadZip(bundle) {
+    const blob = new Blob([buildZip(bundle.files)], { type: 'application/zip' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `hachiko_ai_v0.1_${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+    a.download = bundle.archiveName;
     a.click();
     URL.revokeObjectURL(a.href);
   }
+
 }
 
 export { AIState };

@@ -101,52 +101,55 @@ export const CANDIDATES = [
   },
 ];
 
+/**
+ * Bake-off trial window. Unlike the Debug Harness — which tests temporal rules
+ * and therefore needs per-scenario durations — a Bake-off trial only samples a
+ * detector's opinion of a held scene, so one bounded window suits every
+ * scenario. The countdown gives the operator time to set the scene BEFORE any
+ * data is recorded.
+ */
+export const BENCH_COUNTDOWN_MS = 3000;
+export const BENCH_RECORDING_MS = 3000;
+
 /** Shared observation-only score floor. Never a production threshold. */
 export const BENCH_SCORE_THRESHOLD = 0.05;
 /** Keep enough results to see what competes with the target classes. */
 export const BENCH_MAX_RESULTS = 25;
 
 /**
- * STAGE 1 — quick elimination.
+ * ── CANONICAL OFFICIAL SCENARIO MATRIX ───────────────────────────────────
+ * Every candidate runs EVERY scenario for its task, three valid repetitions
+ * each. The matrix is not reduced for any candidate — that is what makes the
+ * comparison fair, and why there is no "quick subset" any more.
  *
- * A short subset that exposes the failure modes fastest. A candidate that
- * cannot find a frontal seated person, or that fires on an empty frame, does
- * not deserve the full 18-scenario matrix.
+ * `code` is the stable identifier used in reports (P01…, H01…); `id` stays the
+ * lowercase key already present in recorded data.
  */
-export const QUICK_PERSON_SCENARIOS = [
-  'frontal_seated', 'extreme_yaw', 'back_facing', 'empty_frame',
-];
-export const QUICK_PHONE_SCENARIOS = [
-  'screen_portrait', 'study_distance', 'on_desk', 'no_phone',
-];
-/** Pose is presence-only, so it runs the person-side subset plus occlusion. */
-export const QUICK_POSE_SCENARIOS = [
-  'frontal_seated', 'extreme_yaw', 'back_facing', 'face_covered', 'empty_frame',
-];
-
-/** Scenario scripts for the live matrix. */
 export const PERSON_SCENARIOS = [
-  { id: 'frontal_seated', label: 'Frontal seated, upper body', expect: true },
-  { id: 'closer', label: 'Closer to camera', expect: true },
-  { id: 'farther', label: 'Farther from camera', expect: true },
-  { id: 'upper_body_only', label: 'Upper body only (tight crop)', expect: true },
-  { id: 'extreme_yaw', label: 'Extreme yaw (face lost, body visible)', expect: true, critical: true },
-  { id: 'back_facing', label: 'Back-facing', expect: true, critical: true },
-  { id: 'face_covered', label: 'Face covered by hand', expect: true, critical: true },
-  { id: 'reading_writing', label: 'Reading / writing posture (head down)', expect: true, critical: true },
-  { id: 'empty_frame', label: 'Empty frame (negative control)', expect: false, critical: true },
+  { code: 'P01', id: 'frontal_seated', label: 'Frontal seated, upper body visible', expect: true },
+  { code: 'P02', id: 'closer', label: 'Closer to the camera', expect: true },
+  { code: 'P03', id: 'farther', label: 'Farther from the camera', expect: true },
+  { code: 'P04', id: 'upper_body_only', label: 'Upper body only (tight crop)', expect: true },
+  { code: 'P05', id: 'extreme_yaw', label: 'Extreme yaw — face lost, body visible', expect: true, critical: true },
+  { code: 'P06', id: 'back_facing', label: 'Back-facing', expect: true, critical: true },
+  { code: 'P07', id: 'face_covered', label: 'Face covered by a hand', expect: true, critical: true },
+  { code: 'P08', id: 'reading_writing', label: 'Reading / writing posture (head down)', expect: true, critical: true },
+  { code: 'P09', id: 'empty_frame', label: 'Empty frame — negative control', expect: false, critical: true },
 ];
 
 export const PHONE_SCENARIOS = [
-  { id: 'screen_portrait', label: 'Screen-facing, portrait', expect: true },
-  { id: 'screen_landscape', label: 'Screen-facing, landscape', expect: true },
-  { id: 'back_portrait', label: 'Back-facing, portrait', expect: true },
-  { id: 'back_landscape', label: 'Back-facing, landscape', expect: true },
-  { id: 'near_camera', label: 'Near camera (large in frame)', expect: true },
-  { id: 'study_distance', label: 'Normal study distance', expect: true, critical: true },
-  { id: 'on_desk', label: 'Resting on desk', expect: true, critical: true },
-  { id: 'partly_occluded', label: 'Partially occluded by hand', expect: true, critical: true },
-  { id: 'no_phone', label: 'No phone (negative control)', expect: false, critical: true },
+  { code: 'H01', id: 'screen_portrait', label: 'Screen-facing, portrait', expect: true },
+  { code: 'H02', id: 'screen_landscape', label: 'Screen-facing, landscape', expect: true },
+  { code: 'H03', id: 'back_portrait', label: 'Back-facing, portrait', expect: true },
+  { code: 'H04', id: 'back_landscape', label: 'Back-facing, landscape', expect: true },
+  { code: 'H05', id: 'near_camera', label: 'Near the camera (large in frame)', expect: true },
+  { code: 'H06', id: 'study_distance', label: 'Normal study distance', expect: true, critical: true },
+  { code: 'H07', id: 'on_desk', label: 'Resting on the desk', expect: true, critical: true },
+  { code: 'H08', id: 'partly_occluded', label: 'Partially occluded by a hand', expect: true, critical: true },
+  { code: 'H09', id: 'no_phone', label: 'No phone — negative control', expect: false, critical: true },
+  // A phone-shaped object that is NOT a phone. Without it a detector that fires
+  // on any dark rectangle would look perfect on H09 alone.
+  { code: 'H10', id: 'non_phone_rectangle', label: 'Phone-shaped object that is not a phone — negative control', expect: false, critical: true },
 ];
 
 /**

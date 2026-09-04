@@ -1,10 +1,10 @@
 /**
- * Debug smoke test — verifies the harness wiring without a browser.
+ * Debug smoke test — verifies harness wiring without a browser.
  *
  * Loads DebugHarness through the real module graph with minimal stubs for the
- * browser globals it needs, then drives a full session through the public API.
- * Catches import-path breakage and AI<->logger wiring regressions that unit
- * tests on the core alone would miss.
+ * browser globals it needs, then drives a full bounded trial through the public
+ * API. Catches import-path breakage and, above all, verifies the experiment
+ * boundary: camera-on must not record, and only the trial window is stored.
  *
  * Run: npm run smoke
  */
@@ -13,107 +13,160 @@ globalThis.document = { createElement: () => ({ click() {}, style: {} }) };
 globalThis.Blob = class { constructor(p) { this.parts = p; } };
 globalThis.URL.createObjectURL ??= () => 'blob:stub';
 globalThis.URL.revokeObjectURL ??= () => {};
+globalThis.navigator ??= { userAgent: 'node-smoke', hardwareConcurrency: 8 };
+globalThis.window ??= { innerWidth: 1440, innerHeight: 900 };
+globalThis.requestAnimationFrame ??= () => 0;
+globalThis.cancelAnimationFrame ??= () => {};
 
 const { DebugHarness } = await import('./DebugHarness.js');
-const { CONFIG, ScenarioTruth, AIState } = await import('../../src/ai/index.js');
+const { CONFIG, AIState } = await import('../../src/ai/index.js');
+const { getScenario } = await import('./scenarios.js');
+const { TrialState } = await import('../shared/TrialController.js');
+const { toSample } = await import('./DebugSession.js');
 
 const fail = (m) => { console.error('FAIL:', m); process.exitCode = 1; };
 const ok = (c, m) => (c ? console.log('  ok  ', m) : fail(m));
 
 console.log('debug smoke test\n');
 
-// Minimal DOM element map.
-const el = () => ({ textContent: '', className: '', style: {} });
+const el = () => ({ textContent: '', className: '', style: {}, innerHTML: '' });
 const els = {};
-for (const k of ['video','status','face','poseValid','yaw','pitch','roll','earL','earR',
-  'earMean','earRel','earSm','missing','presentMs','state','reason','stateDur',
-  'evYaw','evPitchUp','evEye','evPitchDown','evRoll','evAbsence',
-  'fps','inference','frames','calStatus','calDetail',
-  'yawBar','pitchUpBar','eyeBar','pitchDownBar','rollBar','faceBar',
-  'rangeYaw','rangePitch','rangeRoll','rangeEar','anomalies','truthActive']) els[k] = el();
+for (const k of ['video', 'status', 'face', 'poseValid', 'yaw', 'pitch', 'roll',
+  'earL', 'earR', 'earMean', 'earRel', 'earSm', 'missing', 'presentMs',
+  'state', 'reason', 'stateDur', 'evYaw', 'evPitchUp', 'evEye', 'evPitchDown',
+  'evRoll', 'evAbsence', 'eyeElig', 'objPerson', 'objPrimary', 'objAssoc',
+  'presStatus', 'presBoth', 'presenceModel', 'phoneModel', 'stateValid',
+  'objPhone', 'phoneEvent', 'objInference', 'rawCount', 'acceptedCount',
+  'inferCount', 'nameAvail', 'videoDims', 'rejects', 'rawTop', 'fps',
+  'inference', 'frames', 'calStatus', 'calDetail', 'yawBar', 'pitchUpBar',
+  'eyeBar', 'pitchDownBar', 'rollBar', 'faceBar', 'rangeYaw', 'rangePitch',
+  'rangeRoll', 'rangeEar', 'anomalies', 'truthActive', 'recState']) els[k] = el();
 
 const harness = new DebugHarness({ FilesetResolver: {}, FaceLandmarker: {} }, els);
 ok(harness.ai, 'harness constructs a HachikoAI via the public API');
-ok(harness.logger, 'harness owns its own TelemetryLogger');
-ok(typeof harness.ai.getTelemetry === 'undefined', 'AI core exposes no storage');
-ok(harness.engine.assetPaths.modelAssetPath === CONFIG.landmarker.modelAssetPath,
-   'asset paths resolve from config by default');
+ok(harness.session, 'harness owns a DebugSession');
+ok(harness.trials, 'harness owns a TrialController');
 
-// Drive a session directly through the AI (no camera involved).
+// ── Perception must be pending, not provisional ────────────────────────
+ok(harness.objectEngine === null,
+   'no provisional object detector is constructed while the Bake-off is open');
+ok(harness.perceptionPending === true, 'perception is flagged PENDING');
+
+// ── Camera on must NOT record ──────────────────────────────────────────
+ok(harness.trials.state === TrialState.CAMERA_OFF, 'starts CAMERA_OFF');
+harness.trials.cameraStarted();
+harness.running = true;
+ok(harness.trials.state === TrialState.CAMERA_READY, 'camera on -> CAMERA_READY');
+ok(!harness.trials.isRecording(), 'camera on is NOT recording');
+
 const F = 1000 / 30;
+const B = { yaw: -2.8, pitchCanon: -2.3, ear: 0.394 };
 const m = (o = {}) => ({
   facePresent: true, poseValid: true, poseInvalidReason: 'NONE',
-  yawRaw: 0, pitchRaw: 0, rollRaw: 0,
-  earLeft: 0.3, earRight: 0.3, earMean: 0.3, ...o,
+  yawRaw: B.yaw, pitchRaw: B.pitchCanon, rollRaw: 0,
+  earLeft: B.ear, earRight: B.ear, earMean: B.ear, ...o,
 });
+
 let t = 0;
 harness.ai.startCalibration(t);
-for (; t < 5100; t += F) harness.ai.processFrame(m(), t, 3);
+for (; t < 5100; t += F) harness.ai.processFrame(m(), t);
 ok(harness.ai.calibration.isValid(), 'calibration completes');
+harness.session.calibrationSnapshot = harness.ai.getCalibrationSnapshot();
 
-harness.setScenarioTruth(ScenarioTruth.READ_BOOK);
-for (const e = t + 12000; t < e; t += F) harness.ai.processFrame(m({ pitchRaw: -45 }), t, 3);
-ok(harness.ai.stateEngine.state === AIState.FOKUS, 'READ_BOOK stays FOKUS (support-only)');
-
-harness.setScenarioTruth(ScenarioTruth.LOOK_LEFT_LONG);
-for (const e = t + 7000; t < e; t += F) harness.ai.processFrame(m({ yawRaw: 45 }), t, 3);
-ok(harness.ai.stateEngine.state === AIState.TERALIH, 'sustained yaw becomes TERALIH');
-
-// Logger received everything through onFrame.
-ok(harness.logger.length > 500, `logger captured frames via onFrame (${harness.logger.length})`);
-const csv = harness.logger.toCSV().split('\n');
-ok(csv[0].includes('d_state') && csv[0].includes('g_manualScenarioTruth'),
-   'CSV keeps prediction and ground truth in separate columns');
-ok(csv.length - 1 === harness.logger.length, 'CSV row count matches frame count');
-
-const a = harness.logger.analyze();
-ok(a.groundTruth.READ_BOOK && a.groundTruth.LOOK_LEFT_LONG, 'analysis buckets ground truth');
-ok(a.groundTruth.READ_BOOK.states.FOKUS > 0, 'READ_BOOK recorded as FOKUS');
-ok(a.transitionCount >= 1, 'transitions counted');
-
-// Rendering path must not throw on a real frame.
-try {
-  harness._render(harness.ai.processFrame(m(), t, 3));
-  ok(els.state.textContent.length > 0, '_render populates the DOM map');
-} catch (err) { fail('_render threw: ' + err.message); }
-
-// ── Debug UI observability (v0.2.1 UI change) ───────────────────────────
-// Support bars must fill during head-down / tilt, while staying muted and
-// leaving the state alone.
-let t2 = t + 5000;
-harness.ai.reset();
-harness.ai.startCalibration(t2);
-for (const e = t2 + 5100; t2 < e; t2 += F) harness.ai.processFrame(m(), t2, 3);
-let last;
-for (const e = t2 + 12000; t2 < e; t2 += F) {
-  last = harness.ai.processFrame(m({ pitchRaw: -45, rollRaw: 35 }), t2, 3);
+// 3 s of live preview while idle — must store nothing.
+for (const e = t + 3000; t < e; t += F) {
+  const f = harness.ai.processFrame(m(), t);
+  harness.trials.offerSample({ ...toSample(f), timestampMs: t });
 }
-harness._render(last);
-ok(parseFloat(els.pitchDownBar.style.width) >= 100, 'pitchDown bar fills');
-ok(parseFloat(els.rollBar.style.width) >= 100, 'roll bar fills');
-ok(els.pitchDownBar.className.includes('support'), 'pitchDown bar stays muted (support)');
-ok(els.rollBar.className.includes('support'), 'roll bar stays muted (support)');
-ok(last.classification.state === AIState.FOKUS, 'filled support bars do NOT change state');
+ok(harness.trials.samples.length === 0, 'idle preview stores no experiment data');
+ok(harness.session.trials.length === 0, 'no trials exist before START TRIAL');
 
-// Presence/absence section tracks its own signal.
-harness._render(harness.ai.processFrame(m(), t2, 3));
-ok(els.evAbsence.textContent === 'present', 'absence reads "present" with a face');
-for (const e = t2 + 5000; t2 < e; t2 += F) {
-  last = harness.ai.processFrame({
-    facePresent: false, poseValid: false, poseInvalidReason: 'NO_FACE',
-    yawRaw: null, pitchRaw: null, rollRaw: null,
-    earLeft: null, earRight: null, earMean: null,
-  }, t2, 3);
+// ── One bounded trial ──────────────────────────────────────────────────
+const sc = getScenario('LOOK_LEFT_LONG');
+const sel = harness.selectScenario(sc.id);
+ok(sel.ok, 'scenario selected');
+ok(!harness.trials.isRecording(), 'selecting a scenario does NOT start recording');
+
+const ref = harness.session.nextTrialRef(sc.id);
+ok(ref.repetition === 1, 'first repetition is 1');
+harness.trials.startTrial(t, ref);
+
+let countdownAccepted = 0;
+for (const e = t + sc.countdownMs; t < e; t += F) {
+  harness.trials.tick(t);
+  const f = harness.ai.processFrame(m({ yawRaw: B.yaw + 45 }), t);
+  if (harness.trials.offerSample({ ...toSample(f), timestampMs: t })) countdownAccepted++;
 }
-harness._render(last);
-ok(els.evAbsence.textContent === 'ABSENT', 'absence reads ABSENT after sustained loss');
-ok(parseFloat(els.faceBar.style.width) >= 100, 'absence bar fills');
-ok(els.presentMs.textContent.endsWith('ms'), 'face-present duration rendered');
+ok(countdownAccepted === 0, 'countdown frames are NOT recorded');
 
-// Detach isolates the logger.
-harness.logger.detach();
-const before = harness.logger.length;
-harness.ai.processFrame(m(), t + 1000, 3);
-ok(harness.logger.length === before, 'detach stops recording');
+harness.trials.tick(t);
+let completed = null;
+for (const e = t + sc.recordingDurationMs + 500; t < e; t += F) {
+  const r = harness.trials.tick(t);
+  const f = harness.ai.processFrame(m({ yawRaw: B.yaw + 45 }), t);
+  harness.trials.offerSample({ ...toSample(f), timestampMs: t });
+  if (r.trial) { completed = r.trial; break; }
+}
+ok(completed !== null, 'trial auto-stops at its configured duration');
+ok(harness.session.trials.length === 1, 'the trial was stored');
+
+const rec = harness.session.trials[0];
+ok(rec.sampleCount > 50, `window captured ${rec.sampleCount} samples`);
+ok(rec.samples.every((s) => s.timestampMs >= rec.recordingStartedAt
+   && s.timestampMs <= rec.recordingEndedAt), 'every sample is inside the window');
+ok(rec.summary.triggerOccurred, 'sustained yaw triggered inside the window');
+ok(rec.summary.observedFinalState === AIState.TERALIH,
+   `final state ${rec.summary.observedFinalState}`);
+
+// Post-trial frames must not leak.
+const before = rec.sampleCount;
+for (let i = 0; i < 30; i++, t += F) {
+  const f = harness.ai.processFrame(m(), t);
+  harness.trials.offerSample({ ...toSample(f), timestampMs: t });
+}
+ok(harness.session.trials[0].sampleCount === before, 'post-trial frames do not leak');
+
+// ── Repetition + invalidation ──────────────────────────────────────────
+ok(harness.session.repetitionCount(sc.id) === 1, 'repetition count is 1');
+ok(harness.session.nextTrialRef(sc.id).repetition === 2, 'next repetition is 2');
+const deleted = harness.deleteLastTrial();
+ok(deleted && deleted.trialId === rec.trialId, 'Delete Last Trial removes the newest trial');
+ok(harness.session.trials.length === 0, 'the trial is REMOVED, not flagged');
+ok(harness.session.discarded === undefined, 'no tombstone list is retained');
+ok(deleted.samples === null, 'linked telemetry is dropped with it');
+ok(harness.session.repetitionCount(sc.id) === 0, 'progress rolls back');
+
+// ── Export ─────────────────────────────────────────────────────────────
+const bundle = harness.session.buildExportBundle({ userAgent: 'node-smoke' });
+// Look files up by NAME, never by index: positional access silently breaks the
+// moment the bundle order changes.
+const fileNamed = (n) => bundle.files.find((f) => f.name === n);
+ok(bundle.files.length === 3, 'export produces exactly three files');
+ok(!!fileNamed('debug_results.json'), 'results.json present');
+ok(!!fileNamed('debug_trials.csv'), 'trials CSV present');
+ok(!!fileNamed('debug_telemetry.csv'), 'telemetry CSV present');
+ok(/\.zip$/.test(bundle.archiveName), 'delivered as one archive');
+
+const doc = JSON.parse(fileNamed('debug_results.json').content);
+ok(doc.perception.presenceModel === 'PENDING BAKE-OFF', 'JSON declares perception PENDING');
+ok(Array.isArray(doc.scenarios) && doc.scenarios.length > 0, 'JSON carries the protocol');
+ok(!!doc.config.state, 'JSON carries the thresholds');
+// The perception columns exist on every trial row; this session deleted its
+// only trial, so assert the header carries them rather than a row value.
+ok(/perception_presence_model/.test(fileNamed('debug_trials.csv').content),
+   'trials CSV records which perception model was active');
+
+// The deleted trial must leave no trace in any artefact.
+for (const f of bundle.files) {
+  ok(!f.content.includes(rec.trialId), `${f.name} excludes the deleted trial`);
+}
+const trialRows = fileNamed('debug_trials.csv').content
+  .split(String.fromCharCode(10)).filter(Boolean);
+ok(trialRows.length - 1 === 0, 'no valid trials remain after the delete');
+ok(doc.trials.length === 0, 'the JSON has no trial entries either');
+
+for (const f of bundle.files) {
+  ok(!/data:image|blob:|ImageData|base64/.test(f.content), `${f.name} has no imagery`);
+}
 
 console.log(process.exitCode ? '\nSMOKE TEST FAILED' : '\nsmoke test passed');

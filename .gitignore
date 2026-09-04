@@ -5,3 +5,8 @@ public/assets/wasm/
 public/assets/vision_bundle.mjs
 public/assets/face_landmarker.task
 public/assets/bench/
+
+# Scratch files from headless probes (extracted page scripts, module stubs).
+# These are generated, never authored — if one survives, a probe crashed.
+_*.mjs
+_*.py
