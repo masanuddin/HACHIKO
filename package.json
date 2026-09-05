@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node tools/copy-wasm.mjs",
+    "predev": "node tools/copy-wasm.mjs && node tools/fetch-assets.mjs",
     "dev": "vite",
     "prebuild": "node tools/copy-wasm.mjs && node tools/fetch-assets.mjs",
     "build": "tsc --noEmit && vite build",
