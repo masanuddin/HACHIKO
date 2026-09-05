@@ -421,11 +421,11 @@ export async function runSession(
   cone: Cone,
   declaredMedia: Media[],
 ): Promise<boolean> {
-  const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia)
+  const { record, telemetryJsonl } = await runWorkPhase(root, video, bundle, cone, declaredMedia)
 
-  if (!endedManually) {
-    await renderBreak(root)
-  }
+  // The 5-minute break now shows for BOTH endings - timer finishing or
+  // the student ending manually - before the report, so no skip guard here.
+  await renderBreak(root)
 
   if (record.uncertainMs > 0) {
     const answer = await renderClarify(root)
