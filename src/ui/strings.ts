@@ -134,6 +134,10 @@ export const strings = {
       'Bagian "belum jelas" sesi ini agak besar. HACHIKO lebih baik mengaku belum tahu daripada menebak asal.',
     downloadLabel: 'Unduh data sesi',
     downloadNote: 'File ini cuma berisi angka (sudut kepala, waktu, label objek), tidak ada gambar sama sekali.',
+    repeatLabel: 'Ulangi sesi',
+    repeatConfirmTitle: 'Siap mulai sesi lagi?',
+    repeatConfirmStart: 'Mulai',
+    repeatConfirmCancel: 'Batal',
     doneLabel: 'Selesai',
     milestoneSessionCount: (n: number) =>
       n === 1 ? 'Sesi pertamamu bareng Hachiko selesai!' : `Sudah ${n} sesi kamu bareng Hachiko!`,

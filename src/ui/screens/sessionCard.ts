@@ -63,7 +63,7 @@ export function renderSessionCard(
   record: SessionRecord,
   telemetryJsonl: string,
   milestone: Milestone | null,
-): Promise<void> {
+): Promise<'repeat' | 'done'> {
   return new Promise((resolve) => {
     const s = strings.sessionCard
     const { root: screenEl, content } = screen()
@@ -89,14 +89,35 @@ export function renderSessionCard(
 
     let settled = false
     let remainingMs = AUTO_CLOSE_MS
+    let timer: number | null = null
+
     const autoNote = el('p', { class: 'note' }, [s.autoCloseNote(Math.ceil(remainingMs / 1000))])
 
-    const finish = () => {
+    function stopTimer(): void {
+      if (timer !== null) {
+        window.clearInterval(timer)
+        timer = null
+      }
+    }
+
+    function startTimer(): void {
+      stopTimer()
+      timer = window.setInterval(() => {
+        remainingMs -= 1000
+        if (remainingMs <= 0) {
+          finish('done')
+          return
+        }
+        autoNote.textContent = s.autoCloseNote(Math.ceil(remainingMs / 1000))
+      }, 1000)
+    }
+
+    function finish(decision: 'repeat' | 'done'): void {
       if (settled) return
       settled = true
-      window.clearInterval(interval)
+      stopTimer()
       root.replaceChildren()
-      resolve()
+      resolve(decision)
     }
 
     const downloadBtn = button(s.downloadLabel, () => {
@@ -104,7 +125,39 @@ export function renderSessionCard(
       downloadJsonl(`hachiko-${record.id}.jsonl`, telemetryJsonl)
     }, { variant: 'secondary' })
 
-    const doneBtn = button(s.doneLabel, finish)
+    const doneBtn = button(s.doneLabel, () => finish('done'))
+
+    const repeatBtn = button(s.repeatLabel, showConfirm, { variant: 'secondary' })
+
+    const reportActions = actions(downloadBtn, repeatBtn, doneBtn)
+
+    // Inline confirmation (no modal system) - the same card + actions
+    // pattern as the in-session nudges. Swapped in place of the report
+    // actions while open; "Batal" restores them and resumes auto-close.
+    const confirmCard = card(
+      el('h2', { class: 'card__title' }, [s.repeatConfirmTitle]),
+      actions(
+        button(s.repeatConfirmCancel, hideConfirm, { variant: 'secondary' }),
+        button(s.repeatConfirmStart, () => finish('repeat')),
+      ),
+    )
+    confirmCard.style.display = 'none'
+
+    function showConfirm(): void {
+      stopTimer()
+      reportActions.style.display = 'none'
+      autoNote.style.display = 'none'
+      confirmCard.style.display = 'flex'
+    }
+
+    function hideConfirm(): void {
+      remainingMs = AUTO_CLOSE_MS
+      autoNote.textContent = s.autoCloseNote(Math.ceil(remainingMs / 1000))
+      confirmCard.style.display = 'none'
+      reportActions.style.display = 'flex'
+      autoNote.style.display = ''
+      startTimer()
+    }
 
     const celebration: (Node | string)[] = milestone ? [celebrationBlock(milestone)] : []
 
@@ -113,19 +166,13 @@ export function renderSessionCard(
       ...celebration,
       card(...cardChildren),
       body(s.downloadNote),
-      actions(downloadBtn, doneBtn),
+      reportActions,
+      confirmCard,
       autoNote,
     )
 
     root.replaceChildren(screenEl)
 
-    const interval = window.setInterval(() => {
-      remainingMs -= 1000
-      if (remainingMs <= 0) {
-        finish()
-        return
-      }
-      autoNote.textContent = s.autoCloseNote(Math.ceil(remainingMs / 1000))
-    }, 1000)
+    startTimer()
   })
 }

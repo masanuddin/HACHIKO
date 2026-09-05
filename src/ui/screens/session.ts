@@ -1,10 +1,12 @@
 import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
+import { cssVar } from '../theme'
 import { HachikoView } from '../hachiko'
 import { BREAK_MS, EXTENSION_MS, STIRRING_RATIO, WORK_MS } from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { startPerceptionLoop } from '../../perception/camera'
+import type { FaceReading } from '../../perception/face'
 import { FrameAdapter } from '../../perception/adapter'
 import { FocusEngine } from '../../engine/focusEngine'
 import { DEFAULT_CONFIG } from '../../engine/config'
@@ -40,6 +42,97 @@ interface WorkPhaseResult {
   record: SessionRecord
   telemetryJsonl: string
   endedManually: boolean
+}
+
+// The mentoring panel's preview box uses the same 4:3 that base.css's
+// `.mentor-panel__video` declares, mirroring the calibration preview.
+const PANEL_ASPECT = 4 / 3
+
+/**
+ * The mentor panel is a thin visualization layer only (see CLAUDE.md /
+ * plan): one existing camera stream, one existing perception loop, and
+ * the FaceLandmarker landmarks the loop already produces. Nothing here
+ * runs a detector or reads the clock.
+ */
+function isMentorMode(): boolean {
+  return new URLSearchParams(location.search).has('mentor')
+}
+
+/**
+ * Same cover-crop math as calibration.ts's preview (object-fit: cover
+ * into a fixed aspect box). Kept local so calibration.ts stays untouched.
+ */
+function coverCrop(rawW: number, rawH: number, boxAspect: number) {
+  const rawAspect = rawW / rawH
+  let cropX = 0
+  let cropY = 0
+  let visibleW = rawW
+  let visibleH = rawH
+  if (rawAspect > boxAspect) {
+    visibleW = rawH * boxAspect
+    cropX = (rawW - visibleW) / 2
+  } else if (rawAspect < boxAspect) {
+    visibleH = rawW / boxAspect
+    cropY = (rawH - visibleH) / 2
+  }
+  return { cropX, cropY, visibleW, visibleH }
+}
+
+function toDeg(rad: number | null): string {
+  return rad === null ? '-' : `${(rad * (180 / Math.PI)).toFixed(0)}°`
+}
+
+/**
+ * Draws the face bounding box derived from FaceLandmarker's normalized
+ * landmarks (min/max over x/y), transformed from raw video pixels into
+ * the cropped panel space, then mirrored by CSS to match the video.
+ * `face` is null on ticks where the 5fps face clock didn't fire; it's
+ * `faceFound: false` when a face isn't in frame - either way, no box.
+ */
+function drawMentorOverlay(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  face: FaceReading | null,
+  metaEl: HTMLParagraphElement,
+): void {
+  const w = video.videoWidth
+  const h = video.videoHeight
+  if (!w || !h) return
+
+  const crop = coverCrop(w, h, PANEL_ASPECT)
+  const targetW = Math.round(crop.visibleW)
+  const targetH = Math.round(crop.visibleH)
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW
+    canvas.height = targetH
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  const landmarks = face && face.faceFound ? face.landmarks : null
+  if (landmarks && landmarks.length > 0) {
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const lm of landmarks) {
+      if (lm.x < minX) minX = lm.x
+      if (lm.x > maxX) maxX = lm.x
+      if (lm.y < minY) minY = lm.y
+      if (lm.y > maxY) maxY = lm.y
+    }
+    const x = minX * w - crop.cropX
+    const y = minY * h - crop.cropY
+    const bw = (maxX - minX) * w
+    const bh = (maxY - minY) * h
+    ctx.strokeStyle = cssVar('--amber')
+    ctx.lineWidth = 2
+    ctx.strokeRect(x, y, bw, bh)
+  }
+
+  metaEl.textContent = face
+    ? `faceFound: ${face.faceFound} · yaw ${toDeg(face.yaw)} · pitch ${toDeg(face.pitch)}`
+    : ''
 }
 
 /**
@@ -90,6 +183,41 @@ function runWorkPhase(
     // and the perception loop never produced a single tick.
     const hiddenVideo = el('div', { class: 'visually-hidden' }, [video])
 
+    // Mentoring visualization (URL ?mentor=true only) - a thin floating
+    // overlay on the right that reuses the SAME video element and the
+    // SAME perception loop below. No second stream, no second detector.
+    const mentor = isMentorMode()
+    let mentorOverlay: HTMLCanvasElement | null = null
+    let mentorOverlayCtx: CanvasRenderingContext2D | null = null
+    let mentorState: HTMLParagraphElement | null = null
+    let mentorMeta: HTMLParagraphElement | null = null
+
+    if (mentor) {
+      // Calibration set this to '0' for its canvas-drawn preview; the
+      // mentoring panel shows the real <video>, so restore visibility.
+      video.style.opacity = ''
+
+      const overlay = el('canvas', { class: 'mentor-panel__overlay' })
+      const videoWrap = el('div', { class: 'mentor-panel__video' }, [video, overlay])
+      const panelState = el('p', { class: 'mentor-panel__state' }, [''])
+      const panelMeta = el('p', { class: 'mentor-panel__meta' }, [''])
+      const panel = el('div', { class: 'mentor-panel' }, [
+        el('p', { class: 'mentor-panel__title' }, ['CAMERA']),
+        videoWrap,
+        panelState,
+        panelMeta,
+      ])
+
+      mentorOverlay = overlay
+      mentorOverlayCtx = overlay.getContext('2d')
+      mentorState = panelState
+      mentorMeta = panelMeta
+
+      // Appended to the <main> shell (not .screen__content) so the fixed
+      // positioning isn't captured by content's enter animation transform.
+      screenEl.append(panel)
+    }
+
     const sessionWrap = el('div', { class: 'session' }, [
       timerEl,
       progressBar,
@@ -98,10 +226,18 @@ function runWorkPhase(
       nudgeSlot,
       el('div', { class: 'session__controls' }, [jedaBtn, selesaiBtn]),
       dot,
-      hiddenVideo,
+      ...(mentor ? [] : [hiddenVideo]),
     ])
     content.append(sessionWrap)
     root.replaceChildren(screenEl)
+
+    // The same <video> element was fully detached while the report/break/
+    // clarify screens were up (none of them mount it). Once re-attached
+    // here, a MediaStream element's frame delivery can stay stalled, which
+    // would leave requestVideoFrameCallback (and therefore the perception
+    // loop and the countdown) frozen. play() is idempotent - a no-op on an
+    // already-playing video - so this is safe for session #1 too.
+    void video.play().catch(() => {})
 
     const engine = new FocusEngine(DEFAULT_CONFIG, cone, declaredMedia)
     const adapter = new FrameAdapter()
@@ -162,6 +298,9 @@ function runWorkPhase(
     }
 
     const loop = startPerceptionLoop(video, bundle.faceLandmarker, bundle.objectDetector, (tick) => {
+      if (mentorOverlayCtx && mentorOverlay && mentorMeta) {
+        drawMentorOverlay(mentorOverlay, mentorOverlayCtx, video, tick.face, mentorMeta)
+      }
       if (paused || finished) return
       const frame = adapter.toFrame(tick)
       if (!frame) return
@@ -210,6 +349,7 @@ function runWorkPhase(
       timerEl.textContent = formatTimer(remainingMs)
       progressFill.style.width = `${Math.min(1, Math.max(0, 1 - remainingMs / totalMs)) * 100}%`
       stateLabel.textContent = s.stateLabels[out.state]
+      if (mentorState) mentorState.textContent = s.stateLabels[out.state]
       hachiko.setState(out.state, stirring)
 
       if (!nudgeVisible) {
@@ -235,7 +375,11 @@ function runWorkPhase(
       if (finished) return
       finished = true
       loop.stop()
-      bundle.camera.stop()
+      // The camera stream and the perception bundle deliberately stay
+      // alive here: "Ulangi sesi" reuses them for a follow-up session
+      // without re-prompting permission or re-calibrating. main.ts stops
+      // the camera exactly once, after the student finally chooses
+      // "Selesai".
       const telemetryJsonl = telemetry.toJsonl()
       persistRecording(record.id, telemetryJsonl)
       root.replaceChildren()
@@ -276,7 +420,7 @@ export async function runSession(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
-): Promise<void> {
+): Promise<boolean> {
   const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia)
 
   if (!endedManually) {
@@ -294,5 +438,6 @@ export async function runSession(
   const after = deriveCompanionState(listSessions(), now)
   const milestone: Milestone | null = findNewMilestone(before, after)
 
-  await renderSessionCard(root, record, telemetryJsonl, milestone)
+  // true → the student asked to repeat via "Ulangi sesi" on the card.
+  return (await renderSessionCard(root, record, telemetryJsonl, milestone)) === 'repeat'
 }
