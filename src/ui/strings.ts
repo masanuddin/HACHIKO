@@ -83,6 +83,8 @@ export const strings = {
   ready: {
     title: (minutes: number) => `Siap fokus ${minutes} menit?`,
     body: 'Hachiko bakal nemenin dari sini. Begitu kamu tekan Mulai, sesi langsung berjalan.',
+    durationLabel: 'Pilih lama sesi',
+    durationChip: (minutes: number) => `${minutes} menit`,
     continueLabel: 'Mulai',
   },
 
@@ -125,30 +127,39 @@ export const strings = {
     title: 'Kartu Sesi',
     focusMinutesLabel: 'Menit fokus',
     sittingMinutesLabel: 'Waktu duduk',
-    recoveryLabel: 'Waktu balik',
+    recoveryLabel: 'Waktu Away',
     recoveryUnknown: 'belum ada data',
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
     uncertainLabel: 'Belum jelas',
     uncertainThresholdNote:
       'Bagian "belum jelas" sesi ini agak besar. HACHIKO lebih baik mengaku belum tahu daripada menebak asal.',
-    downloadLabel: 'Unduh data sesi',
-    downloadNote: 'File ini cuma berisi angka (sudut kepala, waktu, label objek), tidak ada gambar sama sekali.',
+    downloadLabel: 'Unduh laporan sesi',
+    downloadNote: 'Laporan PDF ini cuma berisi angka hasil sesimu. Tidak ada gambar dan tidak ada yang dikirim ke mana pun.',
+    downloadError: 'Maaf, laporan belum bisa dibuat. Coba lagi ya.',
+    pdfFooter: 'HACHIKO - semua data tetap di perangkatmu saja',
     repeatLabel: 'Ulangi sesi',
     repeatConfirmTitle: 'Siap mulai sesi lagi?',
     repeatConfirmStart: 'Mulai',
     repeatConfirmCancel: 'Batal',
     doneLabel: 'Selesai',
+    historyTitle: 'Sesi sebelumnya',
     milestoneSessionCount: (n: number) =>
       n === 1 ? 'Sesi pertamamu bareng Hachiko selesai!' : `Sudah ${n} sesi kamu bareng Hachiko!`,
     milestoneStreak: (days: number) => `Wah, ${days} hari berturut-turut!`,
-    autoCloseNote: (seconds: number) => `Kalau didiamkan, ini otomatis lanjut dalam ${seconds} detik.`,
   },
 } as const
 
-/** minutes formatter shared across screens, e.g. "14 dari 25 menit" */
-export function formatMinutes(ms: number): string {
-  return String(Math.floor(ms / 60000))
+/**
+ * Unit-aware duration formatter shared across screens. Sub-minute values
+ * render in seconds so a non-zero focus of a few seconds never reads as
+ * "0 menit"; a genuine zero keeps the existing "0 menit" zero-state. Raw
+ * milliseconds are preserved - this is presentation only.
+ */
+export function formatDuration(ms: number): string {
+  if (ms <= 0) return '0 menit'
+  if (ms < 60_000) return `${Math.floor(ms / 1000)} detik`
+  return `${Math.floor(ms / 60_000)} menit`
 }
 
 export function formatMinSec(ms: number): string {
@@ -156,4 +167,29 @@ export function formatMinSec(ms: number): string {
   const m = Math.floor(totalSeconds / 60)
   const s = totalSeconds % 60
   return `${m}m ${s}d`
+}
+
+/** "14 menit dari 25 menit" (or seconds when sub-minute) - shared by the
+ * Session Card grid and the PDF report so the two never disagree. */
+export function formatFocusLine(focusMs: number, sittingMs: number, uncertainMs: number): string {
+  const totalMs = focusMs + sittingMs + uncertainMs
+  return `${formatDuration(focusMs)} dari ${formatDuration(totalMs)}`
+}
+
+export function formatRecovery(medianRecoveryMs: number | null): string {
+  return medianRecoveryMs === null ? strings.sessionCard.recoveryUnknown : formatMinSec(medianRecoveryMs)
+}
+
+/**
+ * One plain observation, never a judgment (PRD §8, BUILD_PROMPTS P4).
+ * "Fokusmu paling kuat di 12 menit pertama." is right.
+ * "Kamu terdistraksi 8 kali." is wrong - this function never counts
+ * distractions, only describes where the strong early stretch was.
+ */
+export function sessionObservation(firstCollapseAtMs: number | null): string {
+  if (firstCollapseAtMs === null) {
+    return 'Fokusmu bertahan sepanjang sesi ini.'
+  }
+  const minutes = Math.max(1, Math.floor(firstCollapseAtMs / 60_000))
+  return `Fokusmu paling kuat di ${minutes} menit pertama.`
 }

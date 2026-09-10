@@ -78,16 +78,17 @@ export function card(...children: (Node | string)[]): HTMLDivElement {
 /** Multi- or single-select chip group. Returns the element and a getter. */
 export function chipGroup(
   options: { value: string; label: string }[],
-  opts: { multi?: boolean } = {},
+  opts: { multi?: boolean; initial?: string; onChange?: (values: string[]) => void } = {},
 ): { element: HTMLDivElement; getSelected: () => string[] } {
   const selected = new Set<string>()
+  if (opts.initial) selected.add(opts.initial)
   const group = el('div', { class: 'chip-group', role: 'group' })
 
   const chips = options.map((opt) => {
     const chip = el('button', {
       class: 'chip',
       type: 'button',
-      'aria-pressed': 'false',
+      'aria-pressed': selected.has(opt.value) ? 'true' : 'false',
     }, [opt.label])
 
     chip.addEventListener('click', () => {
@@ -103,6 +104,7 @@ export function chipGroup(
         selected.add(opt.value)
         chip.setAttribute('aria-pressed', 'true')
       }
+      opts.onChange?.(Array.from(selected))
     })
 
     group.append(chip)

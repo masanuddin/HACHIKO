@@ -7,6 +7,13 @@ export const WORK_MS = 25 * 60_000
 export const BREAK_MS = 5 * 60_000
 
 /**
+ * Preset work durations offered on the Ready screen (minutes). The
+ * default is WORK_MS (25 min); the selection is in-memory only and
+ * reused across "Ulangi sesi" without re-showing Ready.
+ */
+export const WORK_DURATION_OPTIONS_MIN = [15, 25, 50]
+
+/**
  * Adaptive pacing thresholds (from the ADHD-focused brainstorming pass).
  * The app only ever OFFERS an early break or an extension - it never
  * shortens or lengthens the timer on its own. See src/ui/pacing.ts for

@@ -1,31 +1,56 @@
-import { strings, formatMinutes, formatMinSec } from '../strings'
+import { strings, formatDuration, formatFocusLine, formatRecovery, sessionObservation } from '../strings'
 import { actions, body, button, card, el, screen, title } from '../components'
-import { computeMetrics, type SessionRecord } from '../../storage/sessions'
-import { downloadJsonl } from '../../storage/telemetry'
+import { computeMetrics, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
 import type { Milestone } from '../../storage/companion'
 
-// Retunable if the pace feels wrong in practice - not a structural
-// constant. Longer than Clarify's since there's more to read here
-// (metrics, observation, a possible milestone).
-const AUTO_CLOSE_MS = 20_000
-
-/**
- * One plain observation, never a judgment (PRD §8, BUILD_PROMPTS P4).
- * "Fokusmu paling kuat di 12 menit pertama." is right.
- * "Kamu terdistraksi 8 kali." is wrong - this function never counts
- * distractions, only describes where the strong early stretch was.
- */
-function observation(firstCollapseAtMs: number | null): string {
-  if (firstCollapseAtMs === null) {
-    return 'Fokusmu bertahan sepanjang sesi ini.'
-  }
-  const minutes = Math.max(1, Math.floor(firstCollapseAtMs / 60_000))
-  return `Fokusmu paling kuat di ${minutes} menit pertama.`
-}
-
 function metric(label: string, value: string): HTMLDivElement {
   return el('div', { class: 'metric' }, [el('span', { class: 'metric__label' }, [label]), el('span', { class: 'metric__value' }, [value])])
+}
+
+/** The four Session Card numbers (PRD §8), shared by the current card and
+ * the read-only history cards below it. `dari` total is the session's
+ * actual active time (focus + sitting + uncertain) - no new timing here. */
+function metricGrid(m: SessionMetrics): HTMLDivElement {
+  const s = strings.sessionCard
+  return el('div', { class: 'metrics' }, [
+    metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs, m.uncertainMs)),
+    metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
+    metric(s.recoveryLabel, formatRecovery(m.medianRecoveryMs)),
+    metric(s.uncertainLabel, formatDuration(m.uncertainMs)),
+  ])
+}
+
+function sessionTimeLabel(startedAt: number): string {
+  return new Date(startedAt).toLocaleString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/**
+ * Previous completed sessions, newest first, read-only. Storage already
+ * keeps every session (saveSession appends); this just stops the UI from
+ * dropping them. Renders only when there is at least one prior session.
+ */
+function historySection(currentId: string): HTMLElement | null {
+  const previous = listSessions()
+    .filter((r) => r.id !== currentId)
+    .sort((a, b) => b.startedAt - a.startedAt)
+  if (previous.length === 0) return null
+
+  const s = strings.sessionCard
+  const cards = previous.map((r) =>
+    card(el('p', { class: 'history-card__time' }, [sessionTimeLabel(r.startedAt)]), metricGrid(computeMetrics(r))),
+  )
+
+  return el('div', { class: 'session-history' }, [
+    el('h2', { class: 'session-history__title' }, [s.historyTitle]),
+    el('div', { class: 'session-history__list' }, cards),
+  ])
 }
 
 /** Only ever positive - there is no "you missed a milestone" text, because
@@ -61,68 +86,40 @@ function celebrationBlock(milestone: Milestone): HTMLDivElement {
 export function renderSessionCard(
   root: HTMLElement,
   record: SessionRecord,
-  telemetryJsonl: string,
   milestone: Milestone | null,
 ): Promise<'repeat' | 'done'> {
   return new Promise((resolve) => {
     const s = strings.sessionCard
     const { root: screenEl, content } = screen()
     const metrics = computeMetrics(record)
+    const metricsGrid = metricGrid(metrics)
 
-    const totalMinutes = Math.round((metrics.focusMs + metrics.sittingMs + metrics.uncertainMs) / 60_000)
-    const focusLine = `${formatMinutes(metrics.focusMs)} dari ${totalMinutes}`
-
-    const metricsGrid = el('div', { class: 'metrics' }, [
-      metric(s.focusMinutesLabel, focusLine),
-      metric(s.sittingMinutesLabel, `${formatMinutes(metrics.sittingMs)} menit`),
-      metric(s.recoveryLabel, metrics.medianRecoveryMs === null ? s.recoveryUnknown : formatMinSec(metrics.medianRecoveryMs)),
-      metric(
-        s.uncertainLabel,
-        `${formatMinutes(metrics.uncertainMs)} menit`,
-      ),
-    ])
-
-    const cardChildren: (Node | string)[] = [metricsGrid, el('p', { class: 'observation' }, [observation(metrics.firstCollapseAtMs)])]
+    const cardChildren: (Node | string)[] = [metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)])]
     if (metrics.exceedsUncertainThreshold) {
       cardChildren.push(el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote]))
     }
 
     let settled = false
-    let remainingMs = AUTO_CLOSE_MS
-    let timer: number | null = null
-
-    const autoNote = el('p', { class: 'note' }, [s.autoCloseNote(Math.ceil(remainingMs / 1000))])
-
-    function stopTimer(): void {
-      if (timer !== null) {
-        window.clearInterval(timer)
-        timer = null
-      }
-    }
-
-    function startTimer(): void {
-      stopTimer()
-      timer = window.setInterval(() => {
-        remainingMs -= 1000
-        if (remainingMs <= 0) {
-          finish('done')
-          return
-        }
-        autoNote.textContent = s.autoCloseNote(Math.ceil(remainingMs / 1000))
-      }, 1000)
-    }
 
     function finish(decision: 'repeat' | 'done'): void {
       if (settled) return
       settled = true
-      stopTimer()
       root.replaceChildren()
       resolve(decision)
     }
 
+    const errorNote = el('p', { class: 'note' }, [s.downloadError])
+    errorNote.style.display = 'none'
+
     const downloadBtn = button(s.downloadLabel, () => {
-      remainingMs = AUTO_CLOSE_MS
-      downloadJsonl(`hachiko-${record.id}.jsonl`, telemetryJsonl)
+      try {
+        const bytes = buildSessionReportPdf(record)
+        downloadPdf(pdfFilename(record.startedAt), bytes)
+        errorNote.style.display = 'none'
+      } catch (err) {
+        console.error(err)
+        errorNote.style.display = ''
+      }
     }, { variant: 'secondary' })
 
     const doneBtn = button(s.doneLabel, () => finish('done'))
@@ -133,7 +130,7 @@ export function renderSessionCard(
 
     // Inline confirmation (no modal system) - the same card + actions
     // pattern as the in-session nudges. Swapped in place of the report
-    // actions while open; "Batal" restores them and resumes auto-close.
+    // actions while open; "Batal" restores them.
     const confirmCard = card(
       el('h2', { class: 'card__title' }, [s.repeatConfirmTitle]),
       actions(
@@ -144,35 +141,29 @@ export function renderSessionCard(
     confirmCard.style.display = 'none'
 
     function showConfirm(): void {
-      stopTimer()
       reportActions.style.display = 'none'
-      autoNote.style.display = 'none'
       confirmCard.style.display = 'flex'
     }
 
     function hideConfirm(): void {
-      remainingMs = AUTO_CLOSE_MS
-      autoNote.textContent = s.autoCloseNote(Math.ceil(remainingMs / 1000))
       confirmCard.style.display = 'none'
       reportActions.style.display = 'flex'
-      autoNote.style.display = ''
-      startTimer()
     }
 
     const celebration: (Node | string)[] = milestone ? [celebrationBlock(milestone)] : []
+    const history = historySection(record.id)
 
     content.append(
       title(s.title),
       ...celebration,
       card(...cardChildren),
+      ...(history ? [history] : []),
       body(s.downloadNote),
       reportActions,
+      errorNote,
       confirmCard,
-      autoNote,
     )
 
     root.replaceChildren(screenEl)
-
-    startTimer()
   })
 }

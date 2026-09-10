@@ -2,7 +2,7 @@ import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
 import { cssVar } from '../theme'
 import { HachikoView } from '../hachiko'
-import { BREAK_MS, EXTENSION_MS, STIRRING_RATIO, WORK_MS } from '../sessionConfig'
+import { BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { startPerceptionLoop } from '../../perception/camera'
@@ -148,12 +148,13 @@ function runWorkPhase(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  workMs: number,
 ): Promise<WorkPhaseResult> {
   return new Promise((resolve) => {
     const s = strings.session
     const { root: screenEl, content } = screen({ night: true })
 
-    const timerEl = el('p', { class: 'session__timer' }, [formatTimer(WORK_MS)])
+    const timerEl = el('p', { class: 'session__timer' }, [formatTimer(workMs)])
     // A visual mirror of the same time-based countdown the timer text
     // already shows - not a new metric, just another view of it. Never
     // a number of its own (CLAUDE.md: no percentage during the session).
@@ -244,12 +245,12 @@ function runWorkPhase(
     const telemetry = new TelemetryRecorder()
     const record = newSessionRecord(declaredMedia)
 
-    let remainingMs = WORK_MS
+    let remainingMs = workMs
     // Whichever duration currently governs the countdown - reassigned
     // alongside remainingMs when an extension is accepted, so the
     // progress bar re-baselines against the new total instead of
     // reading as "past 100%".
-    let totalMs = WORK_MS
+    let totalMs = workMs
     let lastFrameT: number | null = null
     let sessionStartT: number | null = null
     let previousState: FocusState | null = null
@@ -356,7 +357,7 @@ function runWorkPhase(
         if (
           remainingMs > 0 &&
           !offeredEarlyBreak &&
-          shouldOfferEarlyBreak(WORK_MS, remainingMs, record.durationsMs)
+          shouldOfferEarlyBreak(workMs, remainingMs, record.durationsMs)
         ) {
           offeredEarlyBreak = true
           showEarlyBreakNudge()
@@ -420,8 +421,9 @@ export async function runSession(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  workMs: number,
 ): Promise<boolean> {
-  const { record, telemetryJsonl } = await runWorkPhase(root, video, bundle, cone, declaredMedia)
+  const { record } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
 
   // The 5-minute break now shows for BOTH endings - timer finishing or
   // the student ending manually - before the report, so no skip guard here.
@@ -439,5 +441,5 @@ export async function runSession(
   const milestone: Milestone | null = findNewMilestone(before, after)
 
   // true → the student asked to repeat via "Ulangi sesi" on the card.
-  return (await renderSessionCard(root, record, telemetryJsonl, milestone)) === 'repeat'
+  return (await renderSessionCard(root, record, milestone)) === 'repeat'
 }
