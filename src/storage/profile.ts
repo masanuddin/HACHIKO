@@ -24,3 +24,8 @@ export function loadProfile(): Profile | null {
 export function saveProfile(profile: Profile): void {
   localStorage.setItem(KEY, JSON.stringify(profile))
 }
+
+/** Removes the stored profile; sessions and telemetry are left untouched. */
+export function deleteProfile(): void {
+  localStorage.removeItem(KEY)
+}

@@ -1,4 +1,6 @@
-import { loadProfile, saveProfile } from './storage/profile'
+import { deleteProfile, loadProfile, saveProfile } from './storage/profile'
+import { strings } from './ui/strings'
+import { actions, body, button, card, el, screen, title } from './ui/components'
 import { renderWelcome } from './ui/screens/welcome'
 import { renderConsent } from './ui/screens/consent'
 import { renderFraming } from './ui/screens/framing'
@@ -53,14 +55,44 @@ async function main(): Promise<void> {
   }
 
   bundle.camera.stop()
-  root.replaceChildren()
-  const wrap = document.createElement('div')
-  wrap.className = 'screen'
-  const message = document.createElement('p')
-  message.className = 'screen__body'
-  message.textContent = 'Sesi selesai. Muat ulang halaman untuk mulai sesi baru.'
-  wrap.append(message)
-  root.append(wrap)
+  renderEndScreen(root)
+}
+
+/**
+ * The final, dead-end state after "Selesai". Offers a single destructive
+ * action - delete the stored profile - behind an inline confirmation.
+ * Deleting the profile only clears `hachiko.profile.v1`; session history
+ * and telemetry stay. Reloading re-enters onboarding (Welcome + Consent).
+ */
+function renderEndScreen(root: HTMLElement): void {
+  const s = strings.endScreen
+  const { root: screenEl, content } = screen()
+  const slot = el('div')
+
+  function showActions(): void {
+    slot.replaceChildren(actions(button(s.deleteProfileLabel, showConfirm, { variant: 'secondary' })))
+  }
+
+  function showConfirm(): void {
+    slot.replaceChildren(
+      card(
+        el('h2', { class: 'card__title' }, [s.deleteProfileConfirmTitle]),
+        body(s.deleteProfileConfirmBody),
+        actions(
+          button(s.deleteProfileConfirmCancel, showActions, { variant: 'secondary' }),
+          button(s.deleteProfileConfirmYes, () => {
+            deleteProfile()
+            location.reload()
+          }),
+        ),
+      ),
+    )
+  }
+
+  showActions()
+
+  content.append(title(s.doneTitle), body(s.doneMessage), slot)
+  root.replaceChildren(screenEl)
 }
 
 main().catch((err) => {

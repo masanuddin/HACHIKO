@@ -143,10 +143,25 @@ export const strings = {
     repeatConfirmStart: 'Mulai',
     repeatConfirmCancel: 'Batal',
     doneLabel: 'Selesai',
+    resetLabel: 'Mulai dari awal',
     historyTitle: 'Sesi sebelumnya',
+    deleteSessionLabel: 'Hapus',
+    deleteConfirmTitle: 'Hapus sesi ini?',
+    deleteConfirmYes: 'Hapus',
+    deleteConfirmCancel: 'Batal',
     milestoneSessionCount: (n: number) =>
       n === 1 ? 'Sesi pertamamu bareng Hachiko selesai!' : `Sudah ${n} sesi kamu bareng Hachiko!`,
     milestoneStreak: (days: number) => `Wah, ${days} hari berturut-turut!`,
+  },
+
+  endScreen: {
+    doneTitle: 'Sesi selesai',
+    doneMessage: 'Muat ulang halaman untuk mulai sesi baru.',
+    deleteProfileLabel: 'Hapus profil',
+    deleteProfileConfirmTitle: 'Hapus profilmu?',
+    deleteProfileConfirmBody: 'Nama dan izin orang tua akan dihapus. Riwayat sesimu tetap tersimpan.',
+    deleteProfileConfirmYes: 'Hapus profil',
+    deleteProfileConfirmCancel: 'Batal',
   },
 } as const
 

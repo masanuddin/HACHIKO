@@ -1,6 +1,6 @@
 import { strings, formatDuration, formatFocusLine, formatRecovery, sessionObservation } from '../strings'
 import { actions, body, button, card, el, screen, title } from '../components'
-import { computeMetrics, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { computeMetrics, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
 import type { Milestone } from '../../storage/companion'
@@ -32,20 +32,48 @@ function sessionTimeLabel(startedAt: number): string {
 }
 
 /**
- * Previous completed sessions, newest first, read-only. Storage already
- * keeps every session (saveSession appends); this just stops the UI from
- * dropping them. Renders only when there is at least one prior session.
+ * One read-only history card with an inline-confirmed delete control.
+ * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
+ * current session (excluded from history) can never be deleted here.
  */
-function historySection(currentId: string): HTMLElement | null {
+function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTMLDivElement {
+  const s = strings.sessionCard
+  const controls = el('div', { class: 'history-card__actions' })
+
+  function showDelete(): void {
+    controls.replaceChildren(button(s.deleteSessionLabel, showConfirm, { variant: 'secondary' }))
+  }
+
+  function showConfirm(): void {
+    controls.replaceChildren(
+      el('span', { class: 'history-card__confirm' }, [s.deleteConfirmTitle]),
+      button(s.deleteConfirmYes, () => onDelete(record.id), { variant: 'secondary' }),
+      button(s.deleteConfirmCancel, showDelete, { variant: 'secondary' }),
+    )
+  }
+
+  showDelete()
+
+  return card(
+    el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
+    metricGrid(computeMetrics(record)),
+    controls,
+  )
+}
+
+/**
+ * Previous completed sessions, newest first. Storage already keeps every
+ * session (saveSession appends); this just stops the UI from dropping
+ * them. Renders only when there is at least one prior session.
+ */
+function historySection(currentId: string, onDelete: (id: string) => void): HTMLElement | null {
   const previous = listSessions()
     .filter((r) => r.id !== currentId)
     .sort((a, b) => b.startedAt - a.startedAt)
   if (previous.length === 0) return null
 
   const s = strings.sessionCard
-  const cards = previous.map((r) =>
-    card(el('p', { class: 'history-card__time' }, [sessionTimeLabel(r.startedAt)]), metricGrid(computeMetrics(r))),
-  )
+  const cards = previous.map((r) => historyCard(r, onDelete))
 
   return el('div', { class: 'session-history' }, [
     el('h2', { class: 'session-history__title' }, [s.historyTitle]),
@@ -126,7 +154,12 @@ export function renderSessionCard(
 
     const repeatBtn = button(s.repeatLabel, showConfirm, { variant: 'secondary' })
 
-    const reportActions = actions(downloadBtn, repeatBtn, doneBtn)
+    // Non-destructive "start over": reload the page so the flow re-runs
+    // framing → calibration → media → ready. Profile, history, and
+    // telemetry all persist; the just-finished session is already saved.
+    const resetBtn = button(s.resetLabel, () => location.reload(), { variant: 'secondary' })
+
+    const reportActions = actions(downloadBtn, repeatBtn, resetBtn, doneBtn)
 
     // Inline confirmation (no modal system) - the same card + actions
     // pattern as the in-session nudges. Swapped in place of the report
@@ -151,13 +184,22 @@ export function renderSessionCard(
     }
 
     const celebration: (Node | string)[] = milestone ? [celebrationBlock(milestone)] : []
-    const history = historySection(record.id)
+    const historyWrap = el('div')
+
+    function renderHistory(): void {
+      const history = historySection(record.id, (id) => {
+        deleteSession(id)
+        renderHistory()
+      })
+      historyWrap.replaceChildren(...(history ? [history] : []))
+    }
+    renderHistory()
 
     content.append(
       title(s.title),
       ...celebration,
       card(...cardChildren),
-      ...(history ? [history] : []),
+      historyWrap,
       body(s.downloadNote),
       reportActions,
       errorNote,

@@ -29,6 +29,12 @@ export function saveSession(record: SessionRecord): void {
   localStorage.setItem(KEY, JSON.stringify(all))
 }
 
+/** Removes a single session record by id, leaving every other session intact. */
+export function deleteSession(id: string): void {
+  const all = listSessions()
+  localStorage.setItem(KEY, JSON.stringify(all.filter((s) => s.id !== id)))
+}
+
 export function listSessions(): SessionRecord[] {
   try {
     const raw = localStorage.getItem(KEY)
