@@ -99,8 +99,10 @@ export const strings = {
       MENGANTUK: 'Mulai mengantuk',
     },
     breakTitle: 'Waktunya istirahat',
-    breakBody: 'Regangkan badan sebentar. Sesi berikutnya dimulai otomatis.',
+    breakBody: 'Regangkan badan sebentar. Kalau siap, kamu yang tentuin lanjut atau selesai.',
     goToBreak: 'Istirahat sekarang',
+    breakContinueLabel: 'Fokus lagi',
+    breakStopLabel: 'Selesai untuk hari ini',
     earlyBreak: {
       title: 'Istirahat sekarang?',
       body: 'Kelihatannya lagi berat buat fokus. Boleh istirahat dulu kalau perlu, nggak apa-apa.',

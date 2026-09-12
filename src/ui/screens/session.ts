@@ -2,7 +2,7 @@ import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
 import { cssVar } from '../theme'
 import { HachikoView } from '../hachiko'
-import { BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
+import { BREAK_ABANDON_MS, BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { startPerceptionLoop } from '../../perception/camera'
@@ -389,29 +389,44 @@ function runWorkPhase(
   })
 }
 
-function renderBreak(root: HTMLElement): Promise<void> {
+/**
+ * Two explicit choices, not a countdown-gated single button: the
+ * student decides fresh after each cycle whether to do another one.
+ * Both buttons are available immediately; the countdown keeps ticking
+ * for company but holds at 0:00 rather than auto-picking anything.
+ */
+function renderBreak(root: HTMLElement): Promise<{ continueSession: boolean }> {
   return new Promise((resolve) => {
     const s = strings.session
     const { root: screenEl, content } = screen()
 
     const countdown = el('p', { class: 'screen__title' }, [formatTimer(BREAK_MS)])
     let remaining = BREAK_MS
+    let settled = false
 
-    const finish = () => {
-      window.clearInterval(interval)
+    const choose = (continueSession: boolean) => {
+      if (settled) return
+      settled = true
+      window.clearInterval(countdownInterval)
+      window.clearTimeout(abandonTimeout)
       root.replaceChildren()
-      resolve()
+      resolve({ continueSession })
     }
 
-    const lanjutBtn = button(strings.common.continueLabel, finish)
-    content.append(title(s.breakTitle), body(s.breakBody), countdown, actions(lanjutBtn))
+    const continueBtn = button(s.breakContinueLabel, () => choose(true))
+    const stopBtn = button(s.breakStopLabel, () => choose(false), { variant: 'secondary' })
+    content.append(title(s.breakTitle), body(s.breakBody), countdown, actions(continueBtn, stopBtn))
     root.replaceChildren(screenEl)
 
-    const interval = window.setInterval(() => {
+    const countdownInterval = window.setInterval(() => {
       remaining = Math.max(0, remaining - 1000)
       countdown.textContent = formatTimer(remaining)
-      if (remaining <= 0) finish()
+      if (remaining <= 0) window.clearInterval(countdownInterval)
     }, 1000)
+
+    // Not shown to the student - a silent fallback if the screen is
+    // simply abandoned (see BREAK_ABANDON_MS in sessionConfig.ts).
+    const abandonTimeout = window.setTimeout(() => choose(false), BREAK_ABANDON_MS)
   })
 }
 
