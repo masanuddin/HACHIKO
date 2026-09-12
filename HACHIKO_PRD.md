@@ -278,7 +278,7 @@ Pre-registering a failure condition is good science and a strong line in the pit
 
 ### The break card — maximum one
 
-> *"Tadi ada beberapa momen kamu nunduk lama. Itu lagi baca buku, atau lagi pegang HP?"*
+> *"Tadi ada beberapa momen kamu sepertinya terlihat kurang fokus. Kamu beneran masih fokus kan, atau ada distraksi?"*
 > `Baca buku` · `Pegang HP` · `Campuran` · `Lewati`
 
 Rules:

@@ -35,6 +35,17 @@ export function deleteSession(id: string): void {
   localStorage.setItem(KEY, JSON.stringify(all.filter((s) => s.id !== id)))
 }
 
+/**
+ * Clears the entire user-facing session history. No exception: the
+ * currently-shown session is already persisted before the Session Card
+ * renders, so "Hapus semua sesi" removes it from storage too - the card
+ * keeps showing its in-memory copy until the flow ends, and nothing here
+ * re-saves it afterward.
+ */
+export function deleteAllSessions(): void {
+  localStorage.removeItem(KEY)
+}
+
 export function listSessions(): SessionRecord[] {
   try {
     const raw = localStorage.getItem(KEY)
@@ -51,15 +62,15 @@ export const UNCERTAIN_THRESHOLD = 0.2
 export interface SessionMetrics {
   focusMs: number
   sittingMs: number
+  awayMs: number
   uncertainMs: number
-  medianRecoveryMs: number | null
   firstCollapseAtMs: number | null
   uncertainPercent: number
   exceedsUncertainThreshold: boolean
 }
 
 /**
- * Turns a raw record into the four Session Card numbers (PRD §8).
+ * Turns a raw record into the Session Card numbers (PRD §8).
  *
  * A clarification answer resolves the session's *entire* uncertain total
  * to one bucket - "Baca buku" folds it into focus, "Pegang HP" /
@@ -72,10 +83,16 @@ export interface SessionMetrics {
  * MENGANTUK isn't in PRD §7's timer table. Treated as present-but-not-
  * focused, same bucket as TERALIH, since the timer keeps running (only
  * TIDAK_HADIR pauses it) and drowsy-at-the-desk isn't "focus."
+ *
+ * Presence is the two-sided line the card reports: `sittingMs` is every
+ * moment the student was in frame (FOKUS + TERALIH + MENGANTUK +
+ * UNCERTAIN), and `awayMs` is every moment they were not (TIDAK_HADIR).
+ * Clarification never moves time across that line - only focus-vs-
+ * distraction on the "hadir" side is reclassified.
  */
 export function computeMetrics(record: SessionRecord): SessionMetrics {
-  let focusMs = record.durationsMs.FOKUS
-  let sittingMs = record.durationsMs.TERALIH + record.durationsMs.MENGANTUK
+  const d = record.durationsMs
+  let focusMs = d.FOKUS
   let uncertainMs = record.uncertainMs
 
   const answer = record.clarification?.answer
@@ -83,29 +100,24 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
     focusMs += uncertainMs
     uncertainMs = 0
   } else if (answer === 'phone' || answer === 'mixed') {
-    sittingMs += uncertainMs
     uncertainMs = 0
   }
 
-  const totalActiveMs = focusMs + sittingMs + uncertainMs
+  const sittingMs = d.FOKUS + d.TERALIH + d.MENGANTUK + record.uncertainMs
+  const awayMs = d.TIDAK_HADIR
+
+  const totalActiveMs = sittingMs
   const uncertainPercent = totalActiveMs > 0 ? uncertainMs / totalActiveMs : 0
 
   return {
     focusMs,
     sittingMs,
+    awayMs,
     uncertainMs,
-    medianRecoveryMs: median(record.recoveryTimesMs),
     firstCollapseAtMs: record.firstCollapseAtMs,
     uncertainPercent,
     exceedsUncertainThreshold: uncertainPercent > UNCERTAIN_THRESHOLD,
   }
-}
-
-function median(values: number[]): number | null {
-  if (values.length === 0) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2 : (sorted[mid] as number)
 }
 
 export function emptyDurations(): Record<FocusState, number> {

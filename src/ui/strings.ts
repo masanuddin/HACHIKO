@@ -115,10 +115,10 @@ export const strings = {
 
   clarify: {
     title: 'Boleh dijelaskan sedikit?',
-    body: 'Tadi ada beberapa momen kamu nunduk lama. Itu lagi baca buku, atau lagi pegang HP?',
-    optionBook: 'Baca buku',
-    optionPhone: 'Pegang HP',
-    optionMixed: 'Campuran',
+    body: 'Tadi ada beberapa momen kamu sepertinya terlihat kurang fokus. Kamu beneran masih fokus kan, atau ada distraksi?',
+    optionBook: 'Masih Fokus Kok!',
+    optionPhone: 'Ada Distraksi Tadi',
+    optionMixed: 'Salah Deteksi',
     optionSkip: 'Lewati',
     autoSkipNote: (seconds: number) => `Kalau didiamkan, ini otomatis lewat dalam ${seconds} detik.`,
   },
@@ -127,8 +127,7 @@ export const strings = {
     title: 'Kartu Sesi',
     focusMinutesLabel: 'Menit fokus',
     sittingMinutesLabel: 'Waktu duduk',
-    recoveryLabel: 'Waktu Away',
-    recoveryUnknown: 'belum ada data',
+    awayLabel: 'Waktu Away',
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
     uncertainLabel: 'Belum jelas',
@@ -143,12 +142,14 @@ export const strings = {
     repeatConfirmStart: 'Mulai',
     repeatConfirmCancel: 'Batal',
     doneLabel: 'Selesai',
-    resetLabel: 'Mulai dari awal',
     historyTitle: 'Sesi sebelumnya',
     deleteSessionLabel: 'Hapus',
     deleteConfirmTitle: 'Hapus sesi ini?',
     deleteConfirmYes: 'Hapus',
     deleteConfirmCancel: 'Batal',
+    deleteAllSessionsLabel: 'Hapus semua sesi',
+    deleteAllConfirmTitle: 'Hapus semua sesi?',
+    deleteAllConfirmYes: 'Hapus semua',
     milestoneSessionCount: (n: number) =>
       n === 1 ? 'Sesi pertamamu bareng Hachiko selesai!' : `Sudah ${n} sesi kamu bareng Hachiko!`,
     milestoneStreak: (days: number) => `Wah, ${days} hari berturut-turut!`,
@@ -156,10 +157,11 @@ export const strings = {
 
   endScreen: {
     doneTitle: 'Sesi selesai',
-    doneMessage: 'Muat ulang halaman untuk mulai sesi baru.',
+    doneMessage: 'Terima kasih sudah belajar bareng Hachiko hari ini.',
+    reloadLabel: 'Muat ulang',
     deleteProfileLabel: 'Hapus profil',
     deleteProfileConfirmTitle: 'Hapus profilmu?',
-    deleteProfileConfirmBody: 'Nama dan izin orang tua akan dihapus. Riwayat sesimu tetap tersimpan.',
+    deleteProfileConfirmBody: 'Nama, izin orang tua, dan seluruh riwayat sesimu akan dihapus.',
     deleteProfileConfirmYes: 'Hapus profil',
     deleteProfileConfirmCancel: 'Batal',
   },
@@ -168,31 +170,20 @@ export const strings = {
 /**
  * Unit-aware duration formatter shared across screens. Sub-minute values
  * render in seconds so a non-zero focus of a few seconds never reads as
- * "0 menit"; a genuine zero keeps the existing "0 menit" zero-state. Raw
- * milliseconds are preserved - this is presentation only.
+ * "0 menit"; a genuine zero renders as "0 detik" so an instantly-finished
+ * session reads "0 detik" rather than "0 menit". Raw milliseconds are
+ * preserved - this is presentation only.
  */
 export function formatDuration(ms: number): string {
-  if (ms <= 0) return '0 menit'
   if (ms < 60_000) return `${Math.floor(ms / 1000)} detik`
   return `${Math.floor(ms / 60_000)} menit`
 }
 
-export function formatMinSec(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-  const m = Math.floor(totalSeconds / 60)
-  const s = totalSeconds % 60
-  return `${m}m ${s}d`
-}
-
 /** "14 menit dari 25 menit" (or seconds when sub-minute) - shared by the
- * Session Card grid and the PDF report so the two never disagree. */
-export function formatFocusLine(focusMs: number, sittingMs: number, uncertainMs: number): string {
-  const totalMs = focusMs + sittingMs + uncertainMs
+ * Session Card grid and the PDF report so the two never disagree.
+ * `totalMs` is the session's active (present) time. */
+export function formatFocusLine(focusMs: number, totalMs: number): string {
   return `${formatDuration(focusMs)} dari ${formatDuration(totalMs)}`
-}
-
-export function formatRecovery(medianRecoveryMs: number | null): string {
-  return medianRecoveryMs === null ? strings.sessionCard.recoveryUnknown : formatMinSec(medianRecoveryMs)
 }
 
 /**

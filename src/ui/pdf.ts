@@ -1,4 +1,4 @@
-import { strings, formatDuration, formatFocusLine, formatRecovery, sessionObservation } from './strings'
+import { strings, formatDuration, formatFocusLine, sessionObservation } from './strings'
 import { computeMetrics, type SessionRecord } from '../storage/sessions'
 
 /**
@@ -68,9 +68,9 @@ function buildContent(record: SessionRecord): string {
   const s = strings.sessionCard
   const m = computeMetrics(record)
 
-  const focusValue = formatFocusLine(m.focusMs, m.sittingMs, m.uncertainMs)
+  const focusValue = formatFocusLine(m.focusMs, m.sittingMs)
   const sittingValue = formatDuration(m.sittingMs)
-  const recoveryValue = formatRecovery(m.medianRecoveryMs)
+  const awayValue = formatDuration(m.awayMs)
   const uncertainValue = formatDuration(m.uncertainMs)
 
   const out: string[] = []
@@ -92,8 +92,8 @@ function buildContent(record: SessionRecord): string {
   out.push(drawText('F2', 15, colLeft, 652, C.ink, focusValue))
   out.push(drawText('F1', 11, colRight, 674, C.muted, s.sittingMinutesLabel))
   out.push(drawText('F2', 15, colRight, 652, C.ink, sittingValue))
-  out.push(drawText('F1', 11, colLeft, 622, C.muted, s.recoveryLabel))
-  out.push(drawText('F2', 15, colLeft, 600, C.ink, recoveryValue))
+  out.push(drawText('F1', 11, colLeft, 622, C.muted, s.awayLabel))
+  out.push(drawText('F2', 15, colLeft, 600, C.ink, awayValue))
   out.push(drawText('F1', 11, colRight, 622, C.muted, s.uncertainLabel))
   out.push(drawText('F2', 15, colRight, 600, C.ink, uncertainValue))
 

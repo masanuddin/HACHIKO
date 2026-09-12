@@ -1,4 +1,5 @@
 import { deleteProfile, loadProfile, saveProfile } from './storage/profile'
+import { deleteAllSessions } from './storage/sessions'
 import { strings } from './ui/strings'
 import { actions, body, button, card, el, screen, title } from './ui/components'
 import { renderWelcome } from './ui/screens/welcome'
@@ -59,10 +60,11 @@ async function main(): Promise<void> {
 }
 
 /**
- * The final, dead-end state after "Selesai". Offers a single destructive
- * action - delete the stored profile - behind an inline confirmation.
- * Deleting the profile only clears `hachiko.profile.v1`; session history
- * and telemetry stay. Reloading re-enters onboarding (Welcome + Consent).
+ * The final, dead-end state after "Selesai". Offers a reload and one
+ * destructive action - delete the stored profile - behind an inline
+ * confirmation. "Hapus profil" clears both `hachiko.profile.v1` and the
+ * whole session history, so the next flow starts from zero (Welcome +
+ * Consent) with no stale "sesi bareng Hachiko" count; telemetry stays.
  */
 function renderEndScreen(root: HTMLElement): void {
   const s = strings.endScreen
@@ -70,7 +72,12 @@ function renderEndScreen(root: HTMLElement): void {
   const slot = el('div')
 
   function showActions(): void {
-    slot.replaceChildren(actions(button(s.deleteProfileLabel, showConfirm, { variant: 'secondary' })))
+    slot.replaceChildren(
+      actions(
+        button(s.reloadLabel, () => location.reload(), { variant: 'secondary' }),
+        button(s.deleteProfileLabel, showConfirm, { variant: 'secondary' }),
+      ),
+    )
   }
 
   function showConfirm(): void {
@@ -82,6 +89,7 @@ function renderEndScreen(root: HTMLElement): void {
           button(s.deleteProfileConfirmCancel, showActions, { variant: 'secondary' }),
           button(s.deleteProfileConfirmYes, () => {
             deleteProfile()
+            deleteAllSessions()
             location.reload()
           }),
         ),

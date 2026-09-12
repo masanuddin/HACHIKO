@@ -1,6 +1,6 @@
-import { strings, formatDuration, formatFocusLine, formatRecovery, sessionObservation } from '../strings'
+import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
 import { actions, body, button, card, el, screen, title } from '../components'
-import { computeMetrics, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
 import type { Milestone } from '../../storage/companion'
@@ -9,15 +9,15 @@ function metric(label: string, value: string): HTMLDivElement {
   return el('div', { class: 'metric' }, [el('span', { class: 'metric__label' }, [label]), el('span', { class: 'metric__value' }, [value])])
 }
 
-/** The four Session Card numbers (PRD §8), shared by the current card and
+/** The Session Card numbers (PRD §8), shared by the current card and
  * the read-only history cards below it. `dari` total is the session's
  * actual active time (focus + sitting + uncertain) - no new timing here. */
 function metricGrid(m: SessionMetrics): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'metrics' }, [
-    metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs, m.uncertainMs)),
+    metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs)),
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
-    metric(s.recoveryLabel, formatRecovery(m.medianRecoveryMs)),
+    metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.uncertainLabel, formatDuration(m.uncertainMs)),
   ])
 }
@@ -66,7 +66,7 @@ function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTM
  * session (saveSession appends); this just stops the UI from dropping
  * them. Renders only when there is at least one prior session.
  */
-function historySection(currentId: string, onDelete: (id: string) => void): HTMLElement | null {
+function historySection(currentId: string, onDelete: (id: string) => void, onDeleteAll: () => void): HTMLElement | null {
   const previous = listSessions()
     .filter((r) => r.id !== currentId)
     .sort((a, b) => b.startedAt - a.startedAt)
@@ -75,9 +75,26 @@ function historySection(currentId: string, onDelete: (id: string) => void): HTML
   const s = strings.sessionCard
   const cards = previous.map((r) => historyCard(r, onDelete))
 
+  const allControls = el('div', { class: 'session-history__delete-all' })
+
+  function showDeleteAll(): void {
+    allControls.replaceChildren(button(s.deleteAllSessionsLabel, showDeleteAllConfirm, { variant: 'secondary' }))
+  }
+
+  function showDeleteAllConfirm(): void {
+    allControls.replaceChildren(
+      el('span', { class: 'history-card__confirm' }, [s.deleteAllConfirmTitle]),
+      button(s.deleteAllConfirmYes, onDeleteAll, { variant: 'secondary' }),
+      button(s.deleteConfirmCancel, showDeleteAll, { variant: 'secondary' }),
+    )
+  }
+
+  showDeleteAll()
+
   return el('div', { class: 'session-history' }, [
     el('h2', { class: 'session-history__title' }, [s.historyTitle]),
     el('div', { class: 'session-history__list' }, cards),
+    allControls,
   ])
 }
 
@@ -154,12 +171,7 @@ export function renderSessionCard(
 
     const repeatBtn = button(s.repeatLabel, showConfirm, { variant: 'secondary' })
 
-    // Non-destructive "start over": reload the page so the flow re-runs
-    // framing → calibration → media → ready. Profile, history, and
-    // telemetry all persist; the just-finished session is already saved.
-    const resetBtn = button(s.resetLabel, () => location.reload(), { variant: 'secondary' })
-
-    const reportActions = actions(downloadBtn, repeatBtn, resetBtn, doneBtn)
+    const reportActions = actions(downloadBtn, repeatBtn, doneBtn)
 
     // Inline confirmation (no modal system) - the same card + actions
     // pattern as the in-session nudges. Swapped in place of the report
@@ -187,10 +199,17 @@ export function renderSessionCard(
     const historyWrap = el('div')
 
     function renderHistory(): void {
-      const history = historySection(record.id, (id) => {
-        deleteSession(id)
-        renderHistory()
-      })
+      const history = historySection(
+        record.id,
+        (id) => {
+          deleteSession(id)
+          renderHistory()
+        },
+        () => {
+          deleteAllSessions()
+          renderHistory()
+        },
+      )
       historyWrap.replaceChildren(...(history ? [history] : []))
     }
     renderHistory()

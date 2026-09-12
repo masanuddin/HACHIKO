@@ -25,7 +25,11 @@ export function saveProfile(profile: Profile): void {
   localStorage.setItem(KEY, JSON.stringify(profile))
 }
 
-/** Removes the stored profile; sessions and telemetry are left untouched. */
+/**
+ * Removes only the stored profile key. The end screen's "Hapus profil"
+ * action also clears session history via `deleteAllSessions()`; this
+ * function stays single-purpose so the two storage domains stay decoupled.
+ */
 export function deleteProfile(): void {
   localStorage.removeItem(KEY)
 }
