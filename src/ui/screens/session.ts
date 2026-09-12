@@ -2,7 +2,17 @@ import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
 import { cssVar } from '../theme'
 import { HachikoView } from '../hachiko'
-import { BREAK_ABANDON_MS, BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
+import {
+  BREAK_ABANDON_MS,
+  BREAK_MS,
+  EXTENSION_MS,
+  FAST_DEBUG_BREAK_MS,
+  FAST_DEBUG_LONG_BREAK_MS,
+  LONG_BREAK_MS,
+  NUDGE_AUTO_DISMISS_MS,
+  STIRRING_RATIO,
+  isFastDebugMode,
+} from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { startPerceptionLoop } from '../../perception/camera'
@@ -309,30 +319,42 @@ function runWorkPhase(
 
     function showEarlyBreakNudge(): void {
       nudgeVisible = 'earlyBreak'
+      const decline = () => hideNudge()
       const accept = button(s.goToBreak, () => {
         hideNudge()
         finishNow(false)
       })
-      const decline = button(s.earlyBreak.decline, hideNudge, { variant: 'secondary' })
+      const declineBtn = button(s.earlyBreak.decline, decline, { variant: 'secondary' })
       nudgeSlot.replaceChildren(
-        card(el('h2', { class: 'card__title' }, [s.earlyBreak.title]), body(s.earlyBreak.body), actions(accept, decline)),
+        card(el('h2', { class: 'card__title' }, [s.earlyBreak.title]), body(s.earlyBreak.body), actions(accept, declineBtn)),
       )
+      // Ignored offers must not block the timer reaching 0 forever - see
+      // NUDGE_AUTO_DISMISS_MS in sessionConfig.ts.
+      window.setTimeout(() => {
+        if (!finished && nudgeVisible === 'earlyBreak') decline()
+      }, NUDGE_AUTO_DISMISS_MS)
     }
 
     function showExtensionNudge(): void {
       nudgeVisible = 'extension'
+      const decline = () => {
+        hideNudge()
+        finishNow(false)
+      }
       const accept = button(s.extension.accept, () => {
         hideNudge()
         remainingMs = EXTENSION_MS
         totalMs = EXTENSION_MS
       })
-      const decline = button(s.goToBreak, () => {
-        hideNudge()
-        finishNow(false)
-      }, { variant: 'secondary' })
+      const declineBtn = button(s.goToBreak, decline, { variant: 'secondary' })
       nudgeSlot.replaceChildren(
-        card(el('h2', { class: 'card__title' }, [s.extension.title]), body(s.extension.body), actions(accept, decline)),
+        card(el('h2', { class: 'card__title' }, [s.extension.title]), body(s.extension.body), actions(accept, declineBtn)),
       )
+      // Ignored offers must not block the session from moving on - see
+      // NUDGE_AUTO_DISMISS_MS in sessionConfig.ts.
+      window.setTimeout(() => {
+        if (!finished && nudgeVisible === 'extension') decline()
+      }, NUDGE_AUTO_DISMISS_MS)
     }
 
     const loop = startPerceptionLoop(video, bundle.faceLandmarker, bundle.objectDetector, (tick) => {
@@ -431,14 +453,23 @@ function runWorkPhase(
  * student decides fresh after each cycle whether to do another one.
  * Both buttons are available immediately; the countdown keeps ticking
  * for company but holds at 0:00 rather than auto-picking anything.
+ * `isLongBreak` (see runSession's ROUNDS_PER_SET tracking) swaps in a
+ * longer duration and different copy - everything else is identical.
  */
-function renderBreak(root: HTMLElement): Promise<{ continueSession: boolean }> {
+function renderBreak(root: HTMLElement, isLongBreak: boolean): Promise<{ continueSession: boolean }> {
   return new Promise((resolve) => {
     const s = strings.session
     const { root: screenEl, content } = screen()
 
-    const countdown = el('p', { class: 'screen__title' }, [formatTimer(BREAK_MS)])
-    let remaining = BREAK_MS
+    const breakMs = isLongBreak
+      ? isFastDebugMode()
+        ? FAST_DEBUG_LONG_BREAK_MS
+        : LONG_BREAK_MS
+      : isFastDebugMode()
+        ? FAST_DEBUG_BREAK_MS
+        : BREAK_MS
+    const countdown = el('p', { class: 'screen__title' }, [formatTimer(breakMs)])
+    let remaining = breakMs
     let settled = false
 
     const choose = (continueSession: boolean) => {
@@ -450,9 +481,50 @@ function renderBreak(root: HTMLElement): Promise<{ continueSession: boolean }> {
       resolve({ continueSession })
     }
 
-    const continueBtn = button(s.breakContinueLabel, () => choose(true))
-    const stopBtn = button(s.breakStopLabel, () => choose(false), { variant: 'secondary' })
-    content.append(title(s.breakTitle), body(s.breakBody), countdown, actions(continueBtn, stopBtn))
+    // Both choices are one tap from a real commitment (another full cycle,
+    // or ending the whole multi-cycle plan) - a misclick gets a confirm
+    // card in place of the two buttons, not an immediate action.
+    const slot = el('div')
+
+    function showMainActions(): void {
+      slot.replaceChildren(actions(continueBtn, stopBtn))
+    }
+
+    function showContinueConfirm(): void {
+      slot.replaceChildren(
+        card(
+          el('h2', { class: 'card__title' }, [s.breakContinueConfirmTitle]),
+          actions(
+            button(s.breakConfirmCancel, showMainActions, { variant: 'secondary' }),
+            button(s.breakContinueConfirmYes, () => choose(true)),
+          ),
+        ),
+      )
+    }
+
+    function showStopConfirm(): void {
+      slot.replaceChildren(
+        card(
+          el('h2', { class: 'card__title' }, [s.breakStopConfirmTitle]),
+          actions(
+            button(s.breakConfirmCancel, showMainActions, { variant: 'secondary' }),
+            button(s.breakStopConfirmYes, () => choose(false)),
+          ),
+        ),
+      )
+    }
+
+    const continueBtn = button(s.breakContinueLabel, showContinueConfirm)
+    const stopBtn = button(s.breakStopLabel, showStopConfirm, { variant: 'secondary' })
+
+    showMainActions()
+
+    content.append(
+      title(isLongBreak ? s.breakLongTitle : s.breakTitle),
+      body(isLongBreak ? s.breakLongBody : s.breakBody),
+      countdown,
+      slot,
+    )
     root.replaceChildren(screenEl)
 
     const countdownInterval = window.setInterval(() => {
@@ -474,10 +546,14 @@ export async function runSession(
   cone: Cone,
   declaredMedia: Media[],
   workMs: number,
+  roundsPerSet: number,
 ): Promise<void> {
   const records: SessionRecord[] = []
   const telemetryParts: string[] = []
   let keepGoing = true
+  // Counts completed rounds since the last long break; reset to 0 once
+  // it reaches roundsPerSet, so the next set starts counting fresh.
+  let cycleInSet = 0
 
   // Work -> Break -> Work -> Break -> ... for as long as the student
   // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
@@ -490,7 +566,10 @@ export async function runSession(
     if (endedManually) {
       keepGoing = false
     } else {
-      const { continueSession } = await renderBreak(root)
+      cycleInSet += 1
+      const isLongBreak = cycleInSet >= roundsPerSet
+      const { continueSession } = await renderBreak(root, isLongBreak)
+      if (isLongBreak) cycleInSet = 0
       keepGoing = continueSession
     }
   }

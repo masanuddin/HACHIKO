@@ -81,10 +81,11 @@ export const strings = {
   },
 
   ready: {
-    title: (minutes: number) => `Siap fokus ${minutes} menit?`,
+    title: (durationLabel: string) => `Siap fokus ${durationLabel}?`,
     body: 'Hachiko bakal nemenin dari sini. Begitu kamu tekan Mulai, sesi langsung berjalan.',
     durationLabel: 'Pilih lama sesi',
-    durationChip: (minutes: number) => `${minutes} menit`,
+    roundsLabel: 'Berapa putaran sebelum istirahat panjang?',
+    roundsChip: (n: number) => `${n} putaran`,
     continueLabel: 'Mulai',
   },
 
@@ -103,9 +104,16 @@ export const strings = {
     },
     breakTitle: 'Waktunya istirahat',
     breakBody: 'Regangkan badan sebentar. Kalau siap, kamu yang tentuin lanjut atau selesai.',
+    breakLongTitle: 'Waktunya istirahat panjang',
+    breakLongBody: 'Kamu udah nyelesain beberapa putaran fokus. Istirahat lebih lama dulu, baru lanjut kalau siap.',
     goToBreak: 'Istirahat sekarang',
     breakContinueLabel: 'Fokus lagi',
     breakStopLabel: 'Selesai untuk hari ini',
+    breakContinueConfirmTitle: 'Siap fokus lagi?',
+    breakContinueConfirmYes: 'Ya, mulai',
+    breakStopConfirmTitle: 'Yakin selesai untuk hari ini?',
+    breakStopConfirmYes: 'Ya, selesai',
+    breakConfirmCancel: 'Batal',
     earlyBreak: {
       title: 'Istirahat sekarang?',
       body: 'Kelihatannya lagi berat buat fokus. Boleh istirahat dulu kalau perlu, nggak apa-apa.',
