@@ -44,18 +44,11 @@ async function main(): Promise<void> {
   const { declaredMedia } = await renderMedia(root, video)
   const workMs = await renderReady(root, video)
 
-  // Repeat loop: "Ulangi sesi" on the Session Card starts a fresh Pomodoro
-  // reusing the same calibration (cone), camera stream, and perception
-  // bundle - never re-running onboarding, framing, calibration, media, or
-  // ready. The chosen work duration is reused too (in-memory only). The
-  // camera is stopped exactly once, after the student finally chooses
-  // "Selesai".
-  let repeat = true
-  while (repeat) {
-    repeat = await runSession(root, video, bundle, cone, declaredMedia, workMs)
-  }
+  // runSession now owns the whole multi-cycle loop (Work -> Break ->
+  // Work -> Break -> ...) internally, asking "Fokus lagi?" on its own
+  // Break screen, and stops the camera itself once the student is done.
+  await runSession(root, video, bundle, cone, declaredMedia, workMs)
 
-  bundle.camera.stop()
   renderEndScreen(root)
 }
 
