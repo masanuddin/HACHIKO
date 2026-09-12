@@ -132,7 +132,7 @@ export function renderSessionCard(
   root: HTMLElement,
   record: SessionRecord,
   milestone: Milestone | null,
-): Promise<'repeat' | 'done'> {
+): Promise<void> {
   return new Promise((resolve) => {
     const s = strings.sessionCard
     const { root: screenEl, content } = screen()
@@ -146,11 +146,11 @@ export function renderSessionCard(
 
     let settled = false
 
-    function finish(decision: 'repeat' | 'done'): void {
+    function finish(): void {
       if (settled) return
       settled = true
       root.replaceChildren()
-      resolve(decision)
+      resolve()
     }
 
     const errorNote = el('p', { class: 'note' }, [s.downloadError])
@@ -167,33 +167,9 @@ export function renderSessionCard(
       }
     }, { variant: 'secondary' })
 
-    const doneBtn = button(s.doneLabel, () => finish('done'))
+    const doneBtn = button(s.doneLabel, finish)
 
-    const repeatBtn = button(s.repeatLabel, showConfirm, { variant: 'secondary' })
-
-    const reportActions = actions(downloadBtn, repeatBtn, doneBtn)
-
-    // Inline confirmation (no modal system) - the same card + actions
-    // pattern as the in-session nudges. Swapped in place of the report
-    // actions while open; "Batal" restores them.
-    const confirmCard = card(
-      el('h2', { class: 'card__title' }, [s.repeatConfirmTitle]),
-      actions(
-        button(s.repeatConfirmCancel, hideConfirm, { variant: 'secondary' }),
-        button(s.repeatConfirmStart, () => finish('repeat')),
-      ),
-    )
-    confirmCard.style.display = 'none'
-
-    function showConfirm(): void {
-      reportActions.style.display = 'none'
-      confirmCard.style.display = 'flex'
-    }
-
-    function hideConfirm(): void {
-      confirmCard.style.display = 'none'
-      reportActions.style.display = 'flex'
-    }
+    const reportActions = actions(downloadBtn, doneBtn)
 
     const celebration: (Node | string)[] = milestone ? [celebrationBlock(milestone)] : []
     const historyWrap = el('div')
@@ -222,7 +198,6 @@ export function renderSessionCard(
       body(s.downloadNote),
       reportActions,
       errorNote,
-      confirmCard,
     )
 
     root.replaceChildren(screenEl)
