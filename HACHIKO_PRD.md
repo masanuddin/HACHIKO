@@ -582,3 +582,43 @@ Laptop is much easier than a phone here — it's the presenter machine, already 
 **P1 check 4 is the one that matters:** background the tab for 60 seconds and confirm the detection loop survived. Everything in this spec assumes a student switches to their study tab and HACHIKO keeps watching. If that's false, the laptop premise is broken and you need to know in week 1, not week 5.
 
 In parallel, today: send the recruitment broadcast from the Validation Kit. Consent forms take days to come back and you need a cohort standing by on 13 September.
+
+---
+
+## 18. Current implementation status (handoff note)
+
+> This section reflects the current build and supersedes the single-cycle
+> "25/5" descriptions in §3/§7/§9 for the shipped product. Source of truth for
+> the debugging handoff is `HACHIKO_SOURCE_OF_TRUTH.md`.
+
+### Pomodoro
+
+- Configurable work duration: 15 / 25 / 50 min.
+- Configurable cycles: 1 / 2 / 3 / 4 putaran.
+- Default: **25 min × 4 cycles**.
+- Break: 5 min **between** cycles.
+- No break after the final cycle.
+- One Session Report for the entire sequence.
+
+### Session semantics
+
+One user-started Pomodoro sequence = one `SessionRecord`.
+
+### Repeat
+
+"Ulangi sesi" repeats the same duration + cycle count.
+
+### Report
+
+One report after the entire sequence.
+
+### Status
+
+Multi-cycle browser behavior is: **IMPLEMENTED IN CODE / RUNTIME BUG UNRESOLVED**.
+
+- The source/build contains the expected cycle loop.
+- Browser runtime still returns to the Session Card after the first break
+  (observed `25 → 5 → Report` when 2 or 4 cycles are selected).
+- Tests (`tsc` / `npm test` / `npm run build`) pass but do not verify this
+  runtime behavior. Do not treat the feature as production-verified.
+

@@ -2,7 +2,15 @@
 
 Focus companion for Indonesian junior-high students. Browser app. The webcam watches posture during a Pomodoro; a dog sleeps while the student focuses and wakes when they drift.
 
-Full spec: `HACHIKO_PRD.md`. **The PRD is the source of truth. If this file and the PRD disagree, the PRD wins.**
+Full spec: `HACHIKO_PRD.md`. **The PRD is the source of truth. If this file and the PRD disagree, the PRD wins.** Handoff snapshot: `HACHIKO_SOURCE_OF_TRUTH.md`.
+
+> ⚠️ **Known blocker (handoff):** multi-cycle Pomodoro is implemented at
+> source level (duration 15/25/50, cycles 1/2/3/4, break 5 min between cycles,
+> no break after the last) but the **browser runtime is BLOCKED/UNRESOLVED** —
+> after the first break it returns to the Session Card instead of running the
+> remaining cycles. Tests/build pass; runtime does not. See
+> `HACHIKO_SOURCE_OF_TRUTH.md` §10 and §15. **Do not assume runtime is
+> verified just because `tsc`/`npm test`/build pass.**
 
 ---
 
@@ -95,3 +103,36 @@ class FocusEngine {
 ## Definition of done
 
 Every task ends with: it compiles under `tsc --noEmit`, `npm test` passes, no new dependency appeared in `package.json`, and nothing outside the task's scope changed.
+
+## Handoff constraints for the multi-cycle runtime bug
+
+While the multi-cycle runtime blocker is open, the following apply:
+
+- ❌ Do not treat multi-cycle runtime as verified just because `tsc --noEmit`, `npm test`, or `npm run build` pass. Browser runtime verification is required.
+- ❌ Do not change `FocusEngine`, perception, or the calibration algorithm to fix an orchestration bug — the two layers are unrelated.
+- ❌ Do not redesign the `SessionRecord` schema without a concrete, documented reason.
+- ❌ Do not debug AI / object detection while the open issue is Pomodoro orchestration.
+
+## Current product & storage semantics (handoff)
+
+### Pomodoro / multi-cycle
+- Work duration selector: 15 / 25 / 50 min. Cycle selector: 1 / 2 / 3 / 4, default 4.
+- Break 5 min **between** cycles; no break after the final cycle.
+- One sequence = one `SessionRecord` + one `TelemetryRecorder` + one history entry + one Session Card.
+- Clarification is shown once, at the end of the sequence. "Ulangi sesi" repeats the same duration + cycle count; "Selesai" ends the whole sequence.
+- `runSession` owns the cycle loop; `runWorkPhase` runs a single cycle and accumulates into the shared `record`/`telemetry`.
+
+### Metrics
+- **Waktu Away** = `durationsMs.TIDAK_HADIR`.
+- **Waktu Duduk** = `FOKUS + TERALIH + MENGANTUK + UNCERTAIN` (present time).
+- Focus line zero state renders `"0 detik dari 0 detik"`.
+- Recovery time is recorded but not displayed as a metric.
+
+### Storage
+- Delete Session → one record. Delete All Sessions → clear `hachiko.sessions.v1`.
+- Delete Profile → `deleteProfile()` + `deleteAllSessions()`.
+- Telemetry and calibration are never deleted by the above.
+
+### Report / PDF
+- PDF and Session Card share `computeMetrics` + the same formatters. Sub-minute durations render in seconds. Zero-dependency PDF writer.
+
