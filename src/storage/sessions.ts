@@ -123,3 +123,54 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
 export function emptyDurations(): Record<FocusState, number> {
   return { FOKUS: 0, TERALIH: 0, TIDAK_HADIR: 0, UNCERTAIN: 0, MENGANTUK: 0 }
 }
+
+/**
+ * Combines every cycle of a multi-cycle Pomodoro session into the one
+ * record that actually gets saved and shown - durations summed, spans
+ * concatenated onto one continuous timeline (each cycle's own spans are
+ * offset by every prior cycle's total elapsed time, since each cycle's
+ * timestamps start over at zero), uncertain time summed. `clarification`
+ * is always null here - the caller sets it once, after this merge, from
+ * a single end-of-loop Clarify screen covering the combined uncertain
+ * time. `records` is assumed non-empty - the caller's loop always runs
+ * at least one cycle before ever merging.
+ */
+export function mergeSessionRecords(id: string, records: SessionRecord[]): SessionRecord {
+  const durationsMs = emptyDurations()
+  const distractionEvents: DistractionSpan[] = []
+  const recoveryTimesMs: number[] = []
+  let uncertainMs = 0
+  let firstCollapseAtMs: number | null = null
+  let elapsedOffset = 0
+
+  for (const record of records) {
+    for (const key of Object.keys(durationsMs) as FocusState[]) {
+      durationsMs[key] += record.durationsMs[key]
+    }
+    for (const span of record.distractionEvents) {
+      distractionEvents.push({ start: span.start + elapsedOffset, end: span.end + elapsedOffset })
+    }
+    recoveryTimesMs.push(...record.recoveryTimesMs)
+    uncertainMs += record.uncertainMs
+    if (record.firstCollapseAtMs !== null && firstCollapseAtMs === null) {
+      firstCollapseAtMs = record.firstCollapseAtMs + elapsedOffset
+    }
+
+    const cycleElapsedMs = Object.values(record.durationsMs).reduce((sum, ms) => sum + ms, 0)
+    elapsedOffset += cycleElapsedMs
+  }
+
+  const first = records[0] as SessionRecord
+
+  return {
+    id,
+    startedAt: first.startedAt,
+    declaredMedia: first.declaredMedia,
+    durationsMs,
+    distractionEvents,
+    recoveryTimesMs,
+    uncertainMs,
+    firstCollapseAtMs,
+    clarification: null,
+  }
+}
