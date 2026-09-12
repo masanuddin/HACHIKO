@@ -15,7 +15,8 @@ export const BREAK_ABANDON_MS = 10 * 60_000
 /**
  * Preset work durations offered on the Ready screen (minutes). The
  * default is WORK_MS (25 min); the selection is in-memory only and
- * reused across "Ulangi sesi" without re-showing Ready.
+ * reused for every cycle within a multi-cycle sitting (the Break
+ * screen's loop), without ever re-showing Ready mid-sitting.
  */
 export const WORK_DURATION_OPTIONS_MIN = [15, 25, 50]
 

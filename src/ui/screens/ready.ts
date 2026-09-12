@@ -11,8 +11,9 @@ import { WORK_MS, WORK_DURATION_OPTIONS_MIN } from '../sessionConfig'
  * requestVideoFrameCallback doesn't stall while this screen is up.
  *
  * Resolves with the selected work duration in ms (default WORK_MS). The
- * choice is in-memory only; "Ulangi sesi" reuses it without re-showing
- * this screen.
+ * choice is in-memory only and is reused for every cycle across a
+ * multi-cycle sitting (the Break screen's "Fokus lagi" loop), without
+ * ever re-showing this screen.
  */
 export function renderReady(root: HTMLElement, video: HTMLVideoElement): Promise<number> {
   return new Promise((resolve) => {

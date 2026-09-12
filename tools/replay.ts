@@ -69,6 +69,16 @@ interface RunResult {
   transitions: number
 }
 
+// A telemetry file can now be a joined multi-cycle recording (several
+// Work cycles' rows concatenated by session.ts's runSession), with a
+// real multi-minute gap between cycles where the Break screen ran and
+// no frames were captured. That gap isn't a data glitch, but attributing
+// it wholesale to whatever state the engine reports on the first row
+// after the gap would skew this tool's numbers by minutes per boundary.
+// Cap it well above any real inter-frame interval (frames arrive up to
+// 5fps, ~200ms apart) but far below a multi-minute Break gap.
+const MAX_FRAME_GAP_MS = 2000
+
 function run(rows: TelemetryRow[], cfg: EngineConfig, media: Media[]): RunResult {
   const settled = rows.filter((r) => r.t - (rows[0]?.t ?? 0) >= 3000 && r.faceFound && r.yaw !== null && r.pitch !== null)
   const cone =
@@ -92,7 +102,7 @@ function run(rows: TelemetryRow[], cfg: EngineConfig, media: Media[]): RunResult
   let uncertainMs = 0
 
   for (const row of rows) {
-    const dt = lastT === null ? 0 : Math.max(0, row.t - lastT)
+    const dt = lastT === null ? 0 : Math.min(MAX_FRAME_GAP_MS, Math.max(0, row.t - lastT))
     lastT = row.t
 
     const out = engine.step(toFrame(row))

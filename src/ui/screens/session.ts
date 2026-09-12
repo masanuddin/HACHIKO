@@ -142,9 +142,11 @@ function drawMentorOverlay(
 /**
  * S6 Sesi. No focus counter, no distraction count, no score, no
  * percentage during the session (CLAUDE.md) - just the timer, Hachiko,
- * the state label, and the two controls. Selesai ends the session right
- * now, skipping straight to clarification/the card; the timer reaching
- * zero on its own goes through the break screen first.
+ * the state label, and the two controls. Selesai now pauses the timer
+ * and asks for confirmation before ending the entire multi-cycle plan;
+ * confirming skips Break and goes straight to clarification/the card.
+ * The timer reaching zero on its own still goes through Break first,
+ * and, if the student chooses to continue, another Work cycle after that.
  */
 function runWorkPhase(
   root: HTMLElement,
