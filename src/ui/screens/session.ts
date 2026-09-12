@@ -173,7 +173,7 @@ function runWorkPhase(
       },
       { variant: 'secondary' },
     )
-    const selesaiBtn = button(s.selesai, () => finishNow(true), { variant: 'secondary' })
+    const selesaiBtn = button(s.selesai, showSelesaiConfirm, { variant: 'secondary' })
     const nudgeSlot = el('div', { class: 'session__nudge' })
 
     // The session view never shows the live feed (PRD §9: a dot, not the
@@ -263,11 +263,42 @@ function runWorkPhase(
     let rawOutAccumMs = 0
     let offeredEarlyBreak = false
     let extensionOffered = false
-    let nudgeVisible: 'earlyBreak' | 'extension' | null = null
+    let nudgeVisible: 'earlyBreak' | 'extension' | 'selesaiConfirm' | null = null
+    let pausedBeforeSelesaiConfirm = false
 
     function hideNudge(): void {
       nudgeVisible = null
       nudgeSlot.replaceChildren()
+    }
+
+    /**
+     * "Selesai" now ends the entire multi-cycle plan (see runSession),
+     * not just the current cycle - a much bigger commitment than before,
+     * so an accidental tap gets a confirm instead of ending immediately.
+     * Pauses (reusing the same `paused` flag Jeda uses) so no frames are
+     * processed while the card is up; "Lanjut fokus" restores whatever
+     * paused state the student was actually in before this tap.
+     */
+    function showSelesaiConfirm(): void {
+      pausedBeforeSelesaiConfirm = paused
+      paused = true
+      nudgeVisible = 'selesaiConfirm'
+      const confirmBtn = button(s.selesaiConfirmYes, () => {
+        hideNudge()
+        finishNow(true)
+      })
+      const cancelBtn = button(
+        s.selesaiConfirmNo,
+        () => {
+          paused = pausedBeforeSelesaiConfirm
+          jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
+          hideNudge()
+        },
+        { variant: 'secondary' },
+      )
+      nudgeSlot.replaceChildren(
+        card(el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]), actions(cancelBtn, confirmBtn)),
+      )
     }
 
     function showEarlyBreakNudge(): void {

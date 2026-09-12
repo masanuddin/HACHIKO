@@ -91,6 +91,9 @@ export const strings = {
   session: {
     jeda: 'Jeda',
     selesai: 'Selesai',
+    selesaiConfirmTitle: 'Selesai untuk hari ini?',
+    selesaiConfirmYes: 'Ya, selesai',
+    selesaiConfirmNo: 'Lanjut fokus',
     stateLabels: {
       FOKUS: 'Fokus',
       TERALIH: 'Perhatian teralih',
