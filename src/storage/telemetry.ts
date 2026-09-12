@@ -1,7 +1,11 @@
 import type { Frame } from '../engine/types'
 
 const KEY = 'hachiko.telemetry.v1'
-const MAX_RECORDINGS = 2 // ~600KB each at 25min/5fps; keep storage well under quota
+// One recording now spans a whole multi-cycle sitting (several Work
+// cycles joined together), so its size scales with however many cycles
+// the student did - not a fixed ~25-minute cycle anymore. Keeping only
+// the single most recent one is what actually stays safely under quota.
+const MAX_RECORDINGS = 1
 
 export interface TelemetryRow {
   t: number

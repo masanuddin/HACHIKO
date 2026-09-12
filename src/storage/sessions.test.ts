@@ -5,6 +5,7 @@ import {
   deleteSession,
   emptyDurations,
   listSessions,
+  mergeSessionRecords,
   saveSession,
   type SessionRecord,
 } from './sessions'
@@ -129,5 +130,101 @@ describe('session storage', () => {
     // A later deleteAllSessions on an already-empty history stays empty.
     deleteAllSessions()
     expect(listSessions()).toEqual([])
+  })
+})
+
+describe('mergeSessionRecords', () => {
+  it('single record -> equivalent data with the new id', () => {
+    const only = record({
+      startedAt: 5_000,
+      declaredMedia: ['book'],
+      durationsMs: { ...emptyDurations(), FOKUS: 1000 },
+      uncertainMs: 200,
+    })
+    const merged = mergeSessionRecords('s-merged', [only])
+    expect(merged.id).toBe('s-merged')
+    expect(merged.startedAt).toBe(5_000)
+    expect(merged.declaredMedia).toEqual(['book'])
+    expect(merged.durationsMs.FOKUS).toBe(1000)
+    expect(merged.uncertainMs).toBe(200)
+    expect(merged.clarification).toBeNull()
+  })
+
+  it('two records -> durationsMs summed per key', () => {
+    const a = record({ durationsMs: { ...emptyDurations(), FOKUS: 1000, TERALIH: 200 } })
+    const b = record({ durationsMs: { ...emptyDurations(), FOKUS: 500, MENGANTUK: 100 } })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.durationsMs.FOKUS).toBe(1500)
+    expect(merged.durationsMs.TERALIH).toBe(200)
+    expect(merged.durationsMs.MENGANTUK).toBe(100)
+    expect(merged.durationsMs.TIDAK_HADIR).toBe(0)
+    expect(merged.durationsMs.UNCERTAIN).toBe(0)
+  })
+
+  it('uncertainMs sums across records', () => {
+    const a = record({ uncertainMs: 300 })
+    const b = record({ uncertainMs: 150 })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.uncertainMs).toBe(450)
+  })
+
+  it('recoveryTimesMs concatenates in order', () => {
+    const a = record({ recoveryTimesMs: [1000, 2000] })
+    const b = record({ recoveryTimesMs: [500] })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.recoveryTimesMs).toEqual([1000, 2000, 500])
+  })
+
+  it("second record's distraction spans are offset by the first record's total elapsed time", () => {
+    const a = record({
+      durationsMs: { ...emptyDurations(), FOKUS: 6000, TERALIH: 4000 }, // 10_000ms elapsed
+      distractionEvents: [{ start: 1000, end: 2000 }],
+    })
+    const b = record({
+      distractionEvents: [{ start: 500, end: 800 }],
+    })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.distractionEvents).toEqual([
+      { start: 1000, end: 2000 },
+      { start: 10_500, end: 10_800 },
+    ])
+  })
+
+  it("a third record's spans are offset by the CUMULATIVE elapsed time of both prior records, not just the immediately preceding one", () => {
+    const a = record({ durationsMs: { ...emptyDurations(), FOKUS: 10_000 } }) // 10_000ms elapsed
+    const b = record({ durationsMs: { ...emptyDurations(), FOKUS: 20_000 } }) // 20_000ms elapsed
+    const c = record({
+      distractionEvents: [{ start: 500, end: 700 }],
+      firstCollapseAtMs: 100,
+    })
+    const merged = mergeSessionRecords('s-merged', [a, b, c])
+    // cumulative offset going into record c is 10_000 + 20_000 = 30_000
+    expect(merged.distractionEvents).toEqual([{ start: 30_500, end: 30_700 }])
+    expect(merged.firstCollapseAtMs).toBe(30_100)
+  })
+
+  it('firstCollapseAtMs: null in both -> null', () => {
+    const merged = mergeSessionRecords('s-merged', [record(), record()])
+    expect(merged.firstCollapseAtMs).toBeNull()
+  })
+
+  it('firstCollapseAtMs: set in the first record -> used as-is', () => {
+    const a = record({ firstCollapseAtMs: 3000 })
+    const b = record({ firstCollapseAtMs: 500 })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.firstCollapseAtMs).toBe(3000)
+  })
+
+  it("firstCollapseAtMs: null in the first record, set in the second -> offset by the first record's elapsed time", () => {
+    const a = record({ durationsMs: { ...emptyDurations(), FOKUS: 7000 } }) // 7_000ms elapsed
+    const b = record({ firstCollapseAtMs: 1200 })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.firstCollapseAtMs).toBe(8200)
+  })
+
+  it('clarification is always null in the output, even if an input record had one', () => {
+    const a = record({ clarification: { answer: 'book' } })
+    const merged = mergeSessionRecords('s-merged', [a])
+    expect(merged.clarification).toBeNull()
   })
 })

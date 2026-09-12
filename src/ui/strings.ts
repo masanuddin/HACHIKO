@@ -91,6 +91,9 @@ export const strings = {
   session: {
     jeda: 'Jeda',
     selesai: 'Selesai',
+    selesaiConfirmTitle: 'Selesai untuk hari ini?',
+    selesaiConfirmYes: 'Ya, selesai',
+    selesaiConfirmNo: 'Lanjut fokus',
     stateLabels: {
       FOKUS: 'Fokus',
       TERALIH: 'Perhatian teralih',
@@ -99,8 +102,10 @@ export const strings = {
       MENGANTUK: 'Mulai mengantuk',
     },
     breakTitle: 'Waktunya istirahat',
-    breakBody: 'Regangkan badan sebentar. Sesi berikutnya dimulai otomatis.',
+    breakBody: 'Regangkan badan sebentar. Kalau siap, kamu yang tentuin lanjut atau selesai.',
     goToBreak: 'Istirahat sekarang',
+    breakContinueLabel: 'Fokus lagi',
+    breakStopLabel: 'Selesai untuk hari ini',
     earlyBreak: {
       title: 'Istirahat sekarang?',
       body: 'Kelihatannya lagi berat buat fokus. Boleh istirahat dulu kalau perlu, nggak apa-apa.',
@@ -137,10 +142,6 @@ export const strings = {
     downloadNote: 'Laporan PDF ini cuma berisi angka hasil sesimu. Tidak ada gambar dan tidak ada yang dikirim ke mana pun.',
     downloadError: 'Maaf, laporan belum bisa dibuat. Coba lagi ya.',
     pdfFooter: 'HACHIKO - semua data tetap di perangkatmu saja',
-    repeatLabel: 'Ulangi sesi',
-    repeatConfirmTitle: 'Siap mulai sesi lagi?',
-    repeatConfirmStart: 'Mulai',
-    repeatConfirmCancel: 'Batal',
     doneLabel: 'Selesai',
     historyTitle: 'Sesi sebelumnya',
     deleteSessionLabel: 'Hapus',

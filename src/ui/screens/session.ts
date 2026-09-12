@@ -2,7 +2,7 @@ import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
 import { cssVar } from '../theme'
 import { HachikoView } from '../hachiko'
-import { BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
+import { BREAK_ABANDON_MS, BREAK_MS, EXTENSION_MS, STIRRING_RATIO } from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { startPerceptionLoop } from '../../perception/camera'
@@ -12,7 +12,7 @@ import { FocusEngine } from '../../engine/focusEngine'
 import { DEFAULT_CONFIG } from '../../engine/config'
 import type { Cone, FocusState, Media } from '../../engine/types'
 import { TelemetryRecorder, persistRecording } from '../../storage/telemetry'
-import { emptyDurations, saveSession, listSessions, type DistractionSpan, type SessionRecord } from '../../storage/sessions'
+import { emptyDurations, mergeSessionRecords, saveSession, listSessions, type DistractionSpan, type SessionRecord } from '../../storage/sessions'
 import { deriveCompanionState, findNewMilestone, type Milestone } from '../../storage/companion'
 import { renderClarify } from './clarify'
 import { renderSessionCard } from './sessionCard'
@@ -24,9 +24,13 @@ function formatTimer(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
+function newSessionId(): string {
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function newSessionRecord(declaredMedia: Media[]): SessionRecord {
   return {
-    id: `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: newSessionId(),
     startedAt: Date.now(),
     declaredMedia,
     durationsMs: emptyDurations(),
@@ -138,9 +142,11 @@ function drawMentorOverlay(
 /**
  * S6 Sesi. No focus counter, no distraction count, no score, no
  * percentage during the session (CLAUDE.md) - just the timer, Hachiko,
- * the state label, and the two controls. Selesai ends the session right
- * now, skipping straight to clarification/the card; the timer reaching
- * zero on its own goes through the break screen first.
+ * the state label, and the two controls. Selesai now pauses the timer
+ * and asks for confirmation before ending the entire multi-cycle plan;
+ * confirming skips Break and goes straight to clarification/the card.
+ * The timer reaching zero on its own still goes through Break first,
+ * and, if the student chooses to continue, another Work cycle after that.
  */
 function runWorkPhase(
   root: HTMLElement,
@@ -173,7 +179,7 @@ function runWorkPhase(
       },
       { variant: 'secondary' },
     )
-    const selesaiBtn = button(s.selesai, () => finishNow(true), { variant: 'secondary' })
+    const selesaiBtn = button(s.selesai, showSelesaiConfirm, { variant: 'secondary' })
     const nudgeSlot = el('div', { class: 'session__nudge' })
 
     // The session view never shows the live feed (PRD §9: a dot, not the
@@ -263,11 +269,42 @@ function runWorkPhase(
     let rawOutAccumMs = 0
     let offeredEarlyBreak = false
     let extensionOffered = false
-    let nudgeVisible: 'earlyBreak' | 'extension' | null = null
+    let nudgeVisible: 'earlyBreak' | 'extension' | 'selesaiConfirm' | null = null
+    let pausedBeforeSelesaiConfirm = false
 
     function hideNudge(): void {
       nudgeVisible = null
       nudgeSlot.replaceChildren()
+    }
+
+    /**
+     * "Selesai" now ends the entire multi-cycle plan (see runSession),
+     * not just the current cycle - a much bigger commitment than before,
+     * so an accidental tap gets a confirm instead of ending immediately.
+     * Pauses (reusing the same `paused` flag Jeda uses) so no frames are
+     * processed while the card is up; "Lanjut fokus" restores whatever
+     * paused state the student was actually in before this tap.
+     */
+    function showSelesaiConfirm(): void {
+      pausedBeforeSelesaiConfirm = paused
+      paused = true
+      nudgeVisible = 'selesaiConfirm'
+      const confirmBtn = button(s.selesaiConfirmYes, () => {
+        hideNudge()
+        finishNow(true)
+      })
+      const cancelBtn = button(
+        s.selesaiConfirmNo,
+        () => {
+          paused = pausedBeforeSelesaiConfirm
+          jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
+          hideNudge()
+        },
+        { variant: 'secondary' },
+      )
+      nudgeSlot.replaceChildren(
+        card(el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]), actions(cancelBtn, confirmBtn)),
+      )
     }
 
     function showEarlyBreakNudge(): void {
@@ -377,41 +414,56 @@ function runWorkPhase(
       finished = true
       loop.stop()
       // The camera stream and the perception bundle deliberately stay
-      // alive here: "Ulangi sesi" reuses them for a follow-up session
-      // without re-prompting permission or re-calibrating. main.ts stops
-      // the camera exactly once, after the student finally chooses
-      // "Selesai".
+      // alive here: runSession's loop reuses them for the next cycle
+      // without re-prompting permission or re-calibrating, and stops
+      // the camera exactly once, after the whole multi-cycle plan ends.
+      // Telemetry is persisted once too, by runSession, after every
+      // cycle's JSONL is joined into one file - not per cycle here.
       const telemetryJsonl = telemetry.toJsonl()
-      persistRecording(record.id, telemetryJsonl)
       root.replaceChildren()
       resolve({ record, telemetryJsonl, endedManually })
     }
   })
 }
 
-function renderBreak(root: HTMLElement): Promise<void> {
+/**
+ * Two explicit choices, not a countdown-gated single button: the
+ * student decides fresh after each cycle whether to do another one.
+ * Both buttons are available immediately; the countdown keeps ticking
+ * for company but holds at 0:00 rather than auto-picking anything.
+ */
+function renderBreak(root: HTMLElement): Promise<{ continueSession: boolean }> {
   return new Promise((resolve) => {
     const s = strings.session
     const { root: screenEl, content } = screen()
 
     const countdown = el('p', { class: 'screen__title' }, [formatTimer(BREAK_MS)])
     let remaining = BREAK_MS
+    let settled = false
 
-    const finish = () => {
-      window.clearInterval(interval)
+    const choose = (continueSession: boolean) => {
+      if (settled) return
+      settled = true
+      window.clearInterval(countdownInterval)
+      window.clearTimeout(abandonTimeout)
       root.replaceChildren()
-      resolve()
+      resolve({ continueSession })
     }
 
-    const lanjutBtn = button(strings.common.continueLabel, finish)
-    content.append(title(s.breakTitle), body(s.breakBody), countdown, actions(lanjutBtn))
+    const continueBtn = button(s.breakContinueLabel, () => choose(true))
+    const stopBtn = button(s.breakStopLabel, () => choose(false), { variant: 'secondary' })
+    content.append(title(s.breakTitle), body(s.breakBody), countdown, actions(continueBtn, stopBtn))
     root.replaceChildren(screenEl)
 
-    const interval = window.setInterval(() => {
+    const countdownInterval = window.setInterval(() => {
       remaining = Math.max(0, remaining - 1000)
       countdown.textContent = formatTimer(remaining)
-      if (remaining <= 0) finish()
+      if (remaining <= 0) window.clearInterval(countdownInterval)
     }, 1000)
+
+    // Not shown to the student - a silent fallback if the screen is
+    // simply abandoned (see BREAK_ABANDON_MS in sessionConfig.ts).
+    const abandonTimeout = window.setTimeout(() => choose(false), BREAK_ABANDON_MS)
   })
 }
 
@@ -422,24 +474,50 @@ export async function runSession(
   cone: Cone,
   declaredMedia: Media[],
   workMs: number,
-): Promise<boolean> {
-  const { record } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
+): Promise<void> {
+  const records: SessionRecord[] = []
+  const telemetryParts: string[] = []
+  let keepGoing = true
 
-  // The 5-minute break now shows for BOTH endings - timer finishing or
-  // the student ending manually - before the report, so no skip guard here.
-  await renderBreak(root)
+  // Work -> Break -> Work -> Break -> ... for as long as the student
+  // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
+  // the whole plan immediately, skipping Break for that final cycle.
+  while (keepGoing) {
+    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
+    records.push(record)
+    telemetryParts.push(telemetryJsonl)
 
-  if (record.uncertainMs > 0) {
+    if (endedManually) {
+      keepGoing = false
+    } else {
+      const { continueSession } = await renderBreak(root)
+      keepGoing = continueSession
+    }
+  }
+
+  // The camera stream and perception bundle stayed alive across every
+  // cycle above; this is the one point where the whole plan is over.
+  bundle.camera.stop()
+
+  const mergedId = newSessionId()
+  const merged = mergeSessionRecords(mergedId, records)
+  // Empty parts (a cycle ended via Selesai before any frame was ever
+  // recorded) would otherwise leave a blank line in the joined file -
+  // harmless to this app, but a real problem for anything that parses
+  // the download line-by-line later.
+  const telemetryJsonl = telemetryParts.filter((part) => part.length > 0).join('\n')
+  persistRecording(mergedId, telemetryJsonl)
+
+  if (merged.uncertainMs > 0) {
     const answer = await renderClarify(root)
-    record.clarification = { answer }
+    merged.clarification = { answer }
   }
 
   const now = Date.now()
   const before = deriveCompanionState(listSessions(), now)
-  saveSession(record)
+  saveSession(merged)
   const after = deriveCompanionState(listSessions(), now)
   const milestone: Milestone | null = findNewMilestone(before, after)
 
-  // true → the student asked to repeat via "Ulangi sesi" on the card.
-  return (await renderSessionCard(root, record, milestone)) === 'repeat'
+  await renderSessionCard(root, merged, milestone)
 }
