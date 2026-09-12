@@ -14,6 +14,14 @@ export const BREAK_MS = 5 * 60_000
 export const WORK_DURATION_OPTIONS_MIN = [15, 25, 50]
 
 /**
+ * How many Pomodoro cycles one study session chains together. Default 4
+ * (a classic Pomodoro set). The choice is in-memory only, like work
+ * duration, and reused across "Ulangi sesi".
+ */
+export const CYCLE_COUNT_OPTIONS = [1, 2, 3, 4]
+export const DEFAULT_CYCLE_COUNT = 4
+
+/**
  * Adaptive pacing thresholds (from the ADHD-focused brainstorming pass).
  * The app only ever OFFERS an early break or an extension - it never
  * shortens or lengthens the timer on its own. See src/ui/pacing.ts for

@@ -456,6 +456,13 @@ input:focus-visible,
   color: var(--cream);
 }
 
+.session__cycle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+}
+
 /* A visual mirror of the countdown text above it, nothing more - fills
    as remainingMs ticks down, no percentage label, no other metric. */
 .session__progress {

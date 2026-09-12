@@ -42,17 +42,17 @@ async function main(): Promise<void> {
   const { bundle, video } = await renderFraming(root)
   const { cone } = await renderCalibration(root, video, bundle)
   const { declaredMedia } = await renderMedia(root, video)
-  const workMs = await renderReady(root, video)
+  const { workMs, cycleCount } = await renderReady(root, video)
 
-  // Repeat loop: "Ulangi sesi" on the Session Card starts a fresh Pomodoro
-  // reusing the same calibration (cone), camera stream, and perception
-  // bundle - never re-running onboarding, framing, calibration, media, or
-  // ready. The chosen work duration is reused too (in-memory only). The
-  // camera is stopped exactly once, after the student finally chooses
-  // "Selesai".
+  // Repeat loop: "Ulangi sesi" on the Session Card starts a fresh study
+  // session (the same cycle count) reusing the same calibration (cone),
+  // camera stream, and perception bundle - never re-running onboarding,
+  // framing, calibration, media, or ready. The chosen work duration and
+  // cycle count are reused too (in-memory only). The camera is stopped
+  // exactly once, after the student finally chooses "Selesai".
   let repeat = true
   while (repeat) {
-    repeat = await runSession(root, video, bundle, cone, declaredMedia, workMs)
+    repeat = await runSession(root, video, bundle, cone, declaredMedia, workMs, cycleCount)
   }
 
   bundle.camera.stop()

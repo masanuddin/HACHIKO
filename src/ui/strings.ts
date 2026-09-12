@@ -85,6 +85,8 @@ export const strings = {
     body: 'Hachiko bakal nemenin dari sini. Begitu kamu tekan Mulai, sesi langsung berjalan.',
     durationLabel: 'Pilih lama sesi',
     durationChip: (minutes: number) => `${minutes} menit`,
+    cycleLabel: 'Berapa putaran fokus?',
+    cycleChip: (n: number) => (n === 1 ? '1 putaran' : `${n} putaran`),
     continueLabel: 'Mulai',
   },
 
@@ -100,6 +102,7 @@ export const strings = {
     },
     breakTitle: 'Waktunya istirahat',
     breakBody: 'Regangkan badan sebentar. Sesi berikutnya dimulai otomatis.',
+    cycleIndicator: (current: number, total: number) => `Putaran ${current} dari ${total}`,
     goToBreak: 'Istirahat sekarang',
     earlyBreak: {
       title: 'Istirahat sekarang?',

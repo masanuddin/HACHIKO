@@ -39,8 +39,6 @@ function newSessionRecord(declaredMedia: Media[]): SessionRecord {
 }
 
 interface WorkPhaseResult {
-  record: SessionRecord
-  telemetryJsonl: string
   endedManually: boolean
 }
 
@@ -138,9 +136,14 @@ function drawMentorOverlay(
 /**
  * S6 Sesi. No focus counter, no distraction count, no score, no
  * percentage during the session (CLAUDE.md) - just the timer, Hachiko,
- * the state label, and the two controls. Selesai ends the session right
- * now, skipping straight to clarification/the card; the timer reaching
- * zero on its own goes through the break screen first.
+ * the state label, and the two controls. Selesai ends the whole study
+ * session right now (skipping any remaining cycles); the timer reaching
+ * zero on its own ends just this cycle.
+ *
+ * This runs ONE work cycle. The caller (runSession) owns the shared
+ * `record` + `telemetry` accumulators and `origin` (the first frame's
+ * timestamp for the entire sequence), so metrics sum across cycles into
+ * a single SessionRecord.
  */
 function runWorkPhase(
   root: HTMLElement,
@@ -149,6 +152,11 @@ function runWorkPhase(
   cone: Cone,
   declaredMedia: Media[],
   workMs: number,
+  cycleIndex: number,
+  cycleCount: number,
+  record: SessionRecord,
+  telemetry: TelemetryRecorder,
+  origin: { t: number | null },
 ): Promise<WorkPhaseResult> {
   return new Promise((resolve) => {
     const s = strings.session
@@ -220,6 +228,7 @@ function runWorkPhase(
     }
 
     const sessionWrap = el('div', { class: 'session' }, [
+      ...(cycleCount > 1 ? [el('p', { class: 'session__cycle' }, [s.cycleIndicator(cycleIndex, cycleCount)])] : []),
       timerEl,
       progressBar,
       hachiko.element,
@@ -242,8 +251,6 @@ function runWorkPhase(
 
     const engine = new FocusEngine(DEFAULT_CONFIG, cone, declaredMedia)
     const adapter = new FrameAdapter()
-    const telemetry = new TelemetryRecorder()
-    const record = newSessionRecord(declaredMedia)
 
     let remainingMs = workMs
     // Whichever duration currently governs the countdown - reassigned
@@ -252,11 +259,19 @@ function runWorkPhase(
     // reading as "past 100%".
     let totalMs = workMs
     let lastFrameT: number | null = null
-    let sessionStartT: number | null = null
     let previousState: FocusState | null = null
     let stateEnteredAt = 0
     let openTeralihSpan: DistractionSpan | null = null
     let finished = false
+    // The engine's own uncertain accumulator is per-cycle (the engine is
+    // recreated each cycle); this holds this cycle's total so runSession
+    // can sum it into the shared record once the cycle ends.
+    let phaseUncertainMs = 0
+    // Pacing must read per-cycle struggle, not the accumulated session
+    // totals in `record.durationsMs` (which now spans every cycle) -
+    // otherwise cycle 2+ would offer an early break based on cycle 1's
+    // history.
+    const cycleDurationsMs = emptyDurations()
 
     // Adaptive pacing (ADHD-focused): the app only ever offers, never
     // imposes. See src/ui/pacing.ts for the pure decision functions.
@@ -306,8 +321,8 @@ function runWorkPhase(
       const frame = adapter.toFrame(tick)
       if (!frame) return
 
-      if (sessionStartT === null) sessionStartT = frame.t
-      const relativeT = frame.t - sessionStartT
+      if (origin.t === null) origin.t = frame.t
+      const relativeT = frame.t - (origin.t ?? frame.t)
 
       telemetry.record(frame)
 
@@ -336,7 +351,8 @@ function runWorkPhase(
       }
 
       record.durationsMs[out.state] += dt
-      record.uncertainMs = out.uncertainMs
+      cycleDurationsMs[out.state] += dt
+      phaseUncertainMs = out.uncertainMs
 
       if (out.state !== 'TIDAK_HADIR') {
         remainingMs = Math.max(0, remainingMs - dt)
@@ -357,7 +373,7 @@ function runWorkPhase(
         if (
           remainingMs > 0 &&
           !offeredEarlyBreak &&
-          shouldOfferEarlyBreak(workMs, remainingMs, record.durationsMs)
+          shouldOfferEarlyBreak(workMs, remainingMs, cycleDurationsMs)
         ) {
           offeredEarlyBreak = true
           showEarlyBreakNudge()
@@ -380,11 +396,11 @@ function runWorkPhase(
       // alive here: "Ulangi sesi" reuses them for a follow-up session
       // without re-prompting permission or re-calibrating. main.ts stops
       // the camera exactly once, after the student finally chooses
-      // "Selesai".
-      const telemetryJsonl = telemetry.toJsonl()
-      persistRecording(record.id, telemetryJsonl)
+      // "Selesai". Telemetry is persisted once by runSession after the
+      // whole sequence, not per cycle.
+      record.uncertainMs += phaseUncertainMs
       root.replaceChildren()
-      resolve({ record, telemetryJsonl, endedManually })
+      resolve({ endedManually })
     }
   })
 }
@@ -422,12 +438,35 @@ export async function runSession(
   cone: Cone,
   declaredMedia: Media[],
   workMs: number,
+  cycleCount: number,
 ): Promise<boolean> {
-  const { record } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
+  const record = newSessionRecord(declaredMedia)
+  const telemetry = new TelemetryRecorder()
+  // The whole sequence shares one time origin, so firstCollapseAtMs and
+  // the event spans stay relative to the first frame of cycle 1.
+  const origin: { t: number | null } = { t: null }
 
-  // The 5-minute break now shows for BOTH endings - timer finishing or
-  // the student ending manually - before the report, so no skip guard here.
-  await renderBreak(root)
+  for (let i = 0; i < cycleCount; i++) {
+    const { endedManually } = await runWorkPhase(
+      root,
+      video,
+      bundle,
+      cone,
+      declaredMedia,
+      workMs,
+      i + 1,
+      cycleCount,
+      record,
+      telemetry,
+      origin,
+    )
+    // "Selesai" ends the whole sequence; the timer ending just ends this
+    // cycle. No break after the last cycle - the report is the ending.
+    if (endedManually) break
+    if (i < cycleCount - 1) await renderBreak(root)
+  }
+
+  persistRecording(record.id, telemetry.toJsonl())
 
   if (record.uncertainMs > 0) {
     const answer = await renderClarify(root)
