@@ -254,3 +254,86 @@ Two things to hand-check before submission:
 - **It put browser code in `src/engine/`** → the tests will fail under Node; that's the tripwire working
 - **It used `requestAnimationFrame`** → this only shows up as a bug when a tab is backgrounded, so check it by hand in P1
 - **It rewrote the engine types** → revert. The contract in CLAUDE.md is what makes P5's ablation possible
+
+---
+
+## ✅ RESOLVED (via replacement, not a fix) — multi-cycle runtime debug (handoff addendum)
+
+> The fixed-cycle-count architecture this section describes was abandoned,
+> not debugged to a fix - the Break screen now owns the "another round?"
+> decision instead of an upfront cycle count. See
+> `docs/superpowers/specs/2026-09-13-multi-cycle-pomodoro-port-design.md`.
+> Kept below as a historical record of the investigation.
+
+> This is NOT part of the original P0–P5 sequence. It's the current open
+> issue, to be debugged before any further product work. Status:
+> **BLOCKED / UNRESOLVED.** Do not mark it fixed without real browser
+> verification.
+
+### Observed vs expected
+
+**Observed** — cycle selector set to 2 or 4, actual browser runtime:
+
+```
+work → break → Session Card
+```
+
+**Expected:**
+
+```
+cycle 2:  work → break → work → report
+cycle 4:  work → break → work → break → work → break → work → report
+```
+
+A prior audit of the source **and the compiled output** appeared to contain
+the correct `for (let i = 0; i < cycleCount; i++) { ... }` loop with
+`renderBreak` only between cycles, yet the browser runtime still exits after
+the first break. The discrepancy between source and runtime is itself the
+open question.
+
+### Debug instructions (do this, in order)
+
+1. Do **not** rewrite `runSession` first.
+2. Do **not** change the `SessionRecord` schema.
+3. Do **not** change `FocusEngine`.
+4. Do **not** change perception / AI / object detection.
+5. Do **not** change the PDF writer.
+6. Do **not** change storage.
+7. First, trace the **actual browser execution path**.
+8. Verify **which implementation is actually executing** in the browser
+   (e.g. the served module graph, not the file on disk you assume).
+9. Identify **where control flow resolves back to the Session Card**.
+10. Inspect runtime behavior around `renderBreak` / `runWorkPhase` / `runSession`.
+11. Distinguish **cycle-loop completion** from the **outer repeat-session
+    resolution** (the two levels of control — do not conflate them).
+12. Verify **event / Promise resolution**, not just the compiled loop text.
+13. Add instrumentation if needed (console logs at the loop top, before/after
+    `await runWorkPhase`, before/after `await renderBreak`, and inside
+    `finishNow`).
+14. Remove temporary instrumentation after the root cause is found, unless you
+    deliberately retain it behind a flag.
+15. Only then make a **minimal** fix.
+
+Do **not** assume "stale cache / stale artifact" is the root cause.
+
+### Required debug questions (investigation targets — do not answer speculatively)
+
+- Who resolves `runSession()` after the break?
+- Is `renderBreak()` returning/throwing something that terminates the outer cycle loop?
+- Is `runWorkPhase()` actually returning after the break?
+- Is `runSession()` awaiting the next cycle?
+- Is the Session Card being rendered by an outer flow before the cycle loop completes?
+- Is an old Promise / closure / `resolve` handler still active?
+- Is the `repeat` boolean being confused with cycle completion?
+- Is there more than one `runSession()` implementation / path?
+- Is the browser serving the expected module graph?
+- Does the runtime log show cycle index progression (`i` = 0, 1, 2, …)?
+- Does the runtime receive the selected `cycleCount` value at `runSession`?
+
+### Relevant files
+
+- `src/main.ts` — repeat loop, `runSession` call site.
+- `src/ui/screens/session.ts` — `runSession` (cycle loop), `runWorkPhase`, `renderBreak`.
+- `src/ui/screens/ready.ts` — cycle selector → `cycleCount`.
+- `src/ui/sessionConfig.ts` — `CYCLE_COUNT_OPTIONS`, `DEFAULT_CYCLE_COUNT`.
+- `HACHIKO_SOURCE_OF_TRUTH.md` — §10 (blocker), §15 (next objective).

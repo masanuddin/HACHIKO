@@ -582,3 +582,50 @@ Laptop is much easier than a phone here — it's the presenter machine, already 
 **P1 check 4 is the one that matters:** background the tab for 60 seconds and confirm the detection loop survived. Everything in this spec assumes a student switches to their study tab and HACHIKO keeps watching. If that's false, the laptop premise is broken and you need to know in week 1, not week 5.
 
 In parallel, today: send the recruitment broadcast from the Validation Kit. Consent forms take days to come back and you need a cohort standing by on 13 September.
+
+---
+
+## 18. Current implementation status (handoff note)
+
+> This section reflects the current build and supersedes the single-cycle
+> "25/5" descriptions in §3/§7/§9 for the shipped product. An earlier
+> version of this section described an upfront fixed-cycle-count design
+> that hit an unresolved runtime bug - that design was replaced, not
+> fixed. Design doc:
+> `docs/superpowers/specs/2026-09-13-multi-cycle-pomodoro-port-design.md`.
+
+### Pomodoro
+
+- Configurable work duration: 15 / 25 / 50 min (default 25).
+- Configurable rounds-per-set: 1 / 2 / 3 / 4 putaran, default 4 - not a
+  total cycle cap. After each work cycle, the Break screen itself asks
+  "Fokus lagi?" / "Selesai untuk hari ini?"; the student can continue
+  indefinitely, one round at a time.
+- Break: 5 min normally. Every Nth break (N = rounds-per-set) is a
+  15-min long break instead, then the round count resets for the next set.
+- "Selesai" during a Work block pauses, confirms, then ends the whole
+  sitting immediately (skips Break for that final cycle).
+- One Session Report for the entire sitting.
+
+### Session semantics
+
+One sitting (however many rounds the student actually does) = one
+`SessionRecord`, built by merging each cycle's own record.
+
+### Repeat
+
+There is no separate "Ulangi sesi" button - starting another round after
+a Session Card is shown means going through Ready again for a fresh
+sitting; continuing *within* a sitting happens on the Break screen.
+
+### Report
+
+One report after the entire sitting.
+
+### Status
+
+Multi-cycle browser behavior: **SHIPPED AND VERIFIED** (typecheck clean,
+`npm test` passing, manually verified in-browser). The prior blocker
+was in a different, abandoned architecture (an upfront fixed-cycle
+`for` loop) - the current architecture never had that bug.
+

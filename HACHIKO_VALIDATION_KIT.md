@@ -264,3 +264,118 @@ Ranked by how much it can hurt you:
 - [ ] Laptop-access screening question in the recruitment form
 - [ ] Broadcast sent to 6 branch coordinators
 - [ ] A WhatsApp number you actually check daily for bug reports
+
+---
+
+## 11. Multi-cycle manual QA (superseded — see below)
+
+> ✅ The upfront fixed-cycle-count design this QA matrix targets was
+> replaced, not fixed - there is no cycle-count cap to test anymore; the
+> Break screen decides "another round?" each time instead. This section's
+> specific checks (cycle counts, break-count table) no longer apply to the
+> current architecture. See
+> `docs/superpowers/specs/2026-09-13-multi-cycle-pomodoro-port-design.md`
+> for the manual verification steps that do apply now. Kept below as a
+> historical record.
+
+> This is the current **BLOCKER**. Run these by hand in a real browser before
+> any further validation or product work. Status labels: **PASS / FAIL /
+> UNVERIFIED / BLOCKED**.
+
+### Status summary (current)
+
+| Check | Status |
+|---|---|
+| Multi-cycle browser runtime (2 or 4 cycles) | **BLOCKED / UNVERIFIED** |
+| `npx tsc --noEmit` | PASS |
+| `npm test` (63/63) | PASS |
+| `npm run build` | PASS |
+
+⚠️ The engineering checks pass, but they **do not** imply browser multi-cycle
+behavior passes. Runtime must be verified by hand.
+
+### QA matrix — configuration
+
+- 1 × 15
+- 1 × 25
+- 1 × 50
+- 2 × 15
+- 2 × 25
+- 2 × 50
+- 4 × 25
+
+**Priority smoke tests:** `25 × 2`, `25 × 4`.
+
+### Expected runtime
+
+| Cycles | Flow |
+|---|---|
+| 1 | `work → report` |
+| 2 | `work → break → work → report` |
+| 4 | `work → break → work → break → work → break → work → report` |
+
+### Break count
+
+| Cycles | Expected breaks |
+|---|---|
+| 1 | 0 |
+| 2 | 1 |
+| 3 | 2 |
+| 4 | 3 |
+
+(No break after the final cycle.)
+
+### Report / storage / telemetry counts
+
+- **Report:** exactly one Session Card per entire sequence.
+- **Storage:** exactly one `SessionRecord` per entire sequence.
+- **Telemetry:** exactly one telemetry recording per entire sequence.
+
+### Repeat
+
+```
+25 × 4 → report → "Ulangi sesi" → 25 × 4 again (same duration + cycle count)
+```
+
+### Manual completion ("Selesai")
+
+4-cycle session, finish during cycle 2 → sequence stops → clarify → report.
+Cycle 3 and 4 must **not** run.
+
+### Regression checks (must stay green)
+
+- 15/25/50 duration selector still works
+- 1 cycle still works
+- break duration is still 5 min
+- no break after the last cycle
+- PDF still works
+- Session History: still one entry per sequence
+- Delete Session unaffected
+- Delete All Sessions unaffected
+- Delete Profile unaffected
+- Mentor mode unaffected
+- no AI / perception behavior change
+
+---
+
+## 12. Current blocker handoff
+
+**Problem:**
+Multi-cycle browser runtime exits after the first break and returns to the
+Session Card (observed `work → break → Session Card` when 2 or 4 cycles are
+selected).
+
+**Known:**
+- Source and compiled output currently show the expected cycle `for`-loop.
+- `tsc`, `npm test` (63/63), and `npm run build` pass.
+
+**Unknown:**
+Why the runtime returns to the Session Card after the first break.
+
+**Next owner:**
+Trace the actual runtime Promise / control-flow path (see
+`BUILD_PROMPTS.md` "CURRENT BLOCKER" section and `HACHIKO_SOURCE_OF_TRUTH.md`
+§10/§15). Do not invent a root cause.
+
+**Out of scope for this blocker:** AI tuning, object-detector tuning, negative
+datasets, RAG, new analytics, product redesign, schema migration.
