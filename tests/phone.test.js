@@ -5,7 +5,10 @@
  *  1. A phone detection NEVER changes FOKUS / TERALIH / TIDAK_HADIR. A phone at
  *     a study desk is genuinely ambiguous (calculator, dictionary, recording,
  *     or distraction), so the AI records WHEN and leaves WHY to the app, which
- *     asks the student. Every event ships with context PENDING.
+ *     asks the student. Events ship with context PENDING, or — since P0 —
+ *     EXPECTED_TOOL / DISTRACTION_CANDIDATE when the host declares the
+ *     session's learning tools. Context is provenance only: it tags the event
+ *     stream, it NEVER decides a state.
  *  2. Events must be temporally stable — a flickering detector must not produce
  *     hundreds of one-frame "events".
  */
@@ -14,7 +17,7 @@ import assert from 'node:assert/strict';
 
 import {
   HachikoAI, PhoneEventTracker, CONFIG, withOverrides,
-  AIState, StateReason, PhoneEventStatus, PhoneContext,
+  AIState, StateReason, PhoneEventStatus, PhoneContext, LearningTool,
 } from '../src/ai/index.js';
 
 const FRAME_MS = 1000 / 30;
@@ -157,8 +160,16 @@ test('F9. phone context defaults to PENDING', () => {
   const [event] = tracker.getEvents();
   assert.equal(event.context, PhoneContext.PENDING,
     'only the student can say whether phone use was study-related');
-  // v0.3 must not offer any other value.
-  assert.deepEqual(Object.values(PhoneContext), ['PENDING']);
+  // v0.3 offers exactly three values: unresolved, expected-tool, candidate.
+  assert.deepEqual(Object.values(PhoneContext),
+    ['PENDING', 'EXPECTED_TOOL', 'DISTRACTION_CANDIDATE']);
+});
+
+test('F9b. LearningTool values mirror the product app Media values verbatim', () => {
+  // Reused from HACHIKO/src/engine/types.ts: Media. They must never drift
+  // apart, or a tool selected in the app cannot be passed into the AI core.
+  assert.deepEqual(Object.values(LearningTool).sort(),
+    ['book', 'laptop', 'mixed', 'other', 'paper', 'phone']);
 });
 
 // ── Detector cadence ────────────────────────────────────────────────────
@@ -254,4 +265,91 @@ test('F17. phone tracking can be disabled entirely', () => {
   const tracker = new PhoneEventTracker(cfg);
   drive(tracker, 0, 5000, () => [phoneDet()]);
   assert.equal(tracker.getEvents().length, 0);
+});
+
+// ── P0: contextual provenance from declared learning tools ───────────────
+test('F18. declared phone + phone detected -> EXPECTED_TOOL, state untouched', () => {
+  const { ai, t0 } = calibratedAI();
+  ai.setSessionContext({ learningTools: ['phone'] });
+  let t = t0;
+  const states = new Set();
+  let frame;
+  for (const end = t + 15000; t < end; t += FRAME_MS) {
+    frame = ai.processFrame(measurement(), t, {
+      objectDetections: [personDet(), phoneDet(0.9)],
+    });
+    states.add(frame.classification.state);
+  }
+  // EXPECTED_TOOL means "phone use is expected", NOT "the user is focused" —
+  // but it also must not leak into the behavioural state decision.
+  assert.equal(frame.phoneEvent.activeEventId, 1);
+  const [event] = ai.getPhoneEvents();
+  assert.equal(event.context, PhoneContext.EXPECTED_TOOL);
+  assert.deepEqual([...states], [AIState.FOKUS],
+    'context is provenance only; the phone boundary holds');
+  // Telemetry carries the declaration, strictly outside the prediction.
+  assert.equal(frame.sessionContext.declaredIncludesPhone, true);
+  assert.deepEqual(frame.sessionContext.learningTools, ['phone']);
+  assert.ok(!('sessionContext' in frame.classification));
+  assert.ok(!('declaredIncludesPhone' in frame.classification));
+});
+
+test('F19. declared book + phone detected -> DISTRACTION_CANDIDATE', () => {
+  const { ai, t0 } = calibratedAI();
+  ai.setSessionContext({ learningTools: ['book'] });
+  let t = t0;
+  let frame;
+  for (const end = t + 15000; t < end; t += FRAME_MS) {
+    frame = ai.processFrame(measurement(), t, {
+      objectDetections: [personDet(), phoneDet(0.9)],
+    });
+  }
+  const [event] = ai.getPhoneEvents();
+  assert.equal(event.context, PhoneContext.DISTRACTION_CANDIDATE);
+  assert.equal(frame.sessionContext.declaredIncludesPhone, false);
+  // Candidate tagging never leaks into the behavioural state either.
+  assert.equal(frame.classification.state, AIState.FOKUS);
+});
+
+test('F20. mixed counts as including a phone (app rule reused verbatim)', () => {
+  const { ai, t0 } = calibratedAI();
+  ai.setSessionContext({ learningTools: ['book', 'mixed'] });
+  let t = t0;
+  for (const end = t + 15000; t < end; t += FRAME_MS) {
+    ai.processFrame(measurement(), t, {
+      objectDetections: [personDet(), phoneDet(0.9)],
+    });
+  }
+  const [event] = ai.getPhoneEvents();
+  assert.equal(event.context, PhoneContext.EXPECTED_TOOL);
+});
+
+test('F21. no session context -> PENDING end-to-end through HachikoAI', () => {
+  const { ai, t0 } = calibratedAI();
+  let t = t0;
+  let frame;
+  for (const end = t + 15000; t < end; t += FRAME_MS) {
+    frame = ai.processFrame(measurement(), t, {
+      objectDetections: [personDet(), phoneDet(0.9)],
+    });
+  }
+  const [event] = ai.getPhoneEvents();
+  assert.equal(event.context, PhoneContext.PENDING,
+    'without a declaration the AI must not guess');
+  assert.equal(frame.sessionContext, null);
+});
+
+test('F22. clearing the context returns events to PENDING', () => {
+  const { ai, t0 } = calibratedAI();
+  ai.setSessionContext({ learningTools: ['phone'] });
+  ai.setSessionContext(null);
+  assert.equal(ai.getSessionContext(), null);
+  let t = t0;
+  for (const end = t + 15000; t < end; t += FRAME_MS) {
+    ai.processFrame(measurement(), t, {
+      objectDetections: [personDet(), phoneDet(0.9)],
+    });
+  }
+  const [event] = ai.getPhoneEvents();
+  assert.equal(event.context, PhoneContext.PENDING);
 });

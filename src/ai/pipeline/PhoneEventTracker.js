@@ -11,7 +11,11 @@
  * is genuinely ambiguous. It may be a calculator, a dictionary, a lecture
  * recording, or a distraction. The AI cannot tell, so it records WHEN a phone
  * was visible and leaves interpretation to the app (v0.4+), which asks the
- * student during a break. Every event therefore ships with context PENDING.
+ * student during a break. Events ship with context PENDING unless the host
+ * supplied a session context (declared learning tools), in which case events
+ * are tagged EXPECTED_TOOL (phone declared) or DISTRACTION_CANDIDATE (phone
+ * not declared). Context is provenance only — it never reaches the state
+ * engine, and EXPECTED_TOOL never means "focused".
  *
  * ── TEMPORAL STABILITY ───────────────────────────────────────────────────
  * A raw detector flickers, and naive per-frame logging would produce hundreds
@@ -51,12 +55,15 @@ export class PhoneEventTracker {
   /**
    * @param {Array|null} detections null = detector did not run this frame
    * @param {number} nowMs
+   * @param {import('../types.js').SessionContext|null} [sessionContext=null]
+   *        declared learning tools; tags event context (PENDING when absent)
    * @returns {{phonePresent:boolean, phoneConfidence:number|null,
    *            activeEventId:number|null, activeDurationMs:number}}
    */
-  update(detections, nowMs) {
+  update(detections, nowMs, sessionContext = null) {
     const cfg = this.config.phoneEvents;
     const phoneLabel = this.config.objectDetector.labels.PHONE;
+    const context = this._contextFor(sessionContext);
 
     // A throttled non-run is NOT evidence of absence. Treat it as "no news":
     // the exit grace keeps an active event alive across the gap.
@@ -75,7 +82,7 @@ export class PhoneEventTracker {
     }
 
     if (phone) {
-      this._onDetected(phone, nowMs);
+      this._onDetected(phone, nowMs, context);
     } else if (detectorRan) {
       this._onNotDetected(nowMs);
     } else {
@@ -93,13 +100,39 @@ export class PhoneEventTracker {
     };
   }
 
-  _onDetected(phone, nowMs) {
+  /**
+   * Map a session context to an event's provenance label.
+   *
+   * PENDING when the host supplied no learning tools: without a declaration
+   * there is nothing to check the phone against, so the AI refuses to guess.
+   * When tools ARE declared, the only thing that matters is whether they
+   * include a phone ('phone' or 'mixed', the same rule the product app uses):
+   * phone use is then EXPECTED_TOOL, otherwise it is a DISTRACTION_CANDIDATE.
+   * The final FocusState is never decided here.
+   *
+   * @param {import('../types.js').SessionContext|null} sessionContext
+   * @returns {string} one of PhoneContext
+   */
+  _contextFor(sessionContext) {
+    if (!sessionContext
+        || !Array.isArray(sessionContext.learningTools)
+        || sessionContext.learningTools.length === 0) {
+      return PhoneContext.PENDING;
+    }
+    return sessionContext.declaredIncludesPhone
+      ? PhoneContext.EXPECTED_TOOL
+      : PhoneContext.DISTRACTION_CANDIDATE;
+  }
+
+  _onDetected(phone, nowMs, context) {
     const cfg = this.config.phoneEvents;
     this._lastDetectedMs = nowMs;
     this._runConfidences.push(phone.confidence);
 
     if (this.activeEvent) {
-      // Already open — extend it and fold in the new confidence.
+      // Already open — extend it and fold in the new confidence. Context
+      // tracks the latest declaration so mid-event context changes stay
+      // visible in the stream.
       this.activeEvent.endMs = nowMs;
       this.activeEvent.durationMs = nowMs - this.activeEvent.startMs;
       this.activeEvent.confidenceMax = Math.max(this.activeEvent.confidenceMax, phone.confidence);
@@ -107,6 +140,7 @@ export class PhoneEventTracker {
       this.activeEvent._confCount += 1;
       this.activeEvent.confidenceMean =
         this.activeEvent._confSum / this.activeEvent._confCount;
+      this.activeEvent.context = context;
       return;
     }
 
@@ -117,7 +151,7 @@ export class PhoneEventTracker {
       return;
     }
     if ((nowMs - this._candidateSinceMs) >= cfg.PHONE_ENTER_MS) {
-      this._openEvent(nowMs);
+      this._openEvent(nowMs, context);
     }
   }
 
@@ -151,7 +185,7 @@ export class PhoneEventTracker {
     }
   }
 
-  _openEvent(nowMs) {
+  _openEvent(nowMs, context = PhoneContext.PENDING) {
     const confidences = this._runConfidences;
     const sum = confidences.reduce((a, b) => a + b, 0);
     const event = {
@@ -164,8 +198,9 @@ export class PhoneEventTracker {
       confidenceMean: confidences.length ? sum / confidences.length : 0,
       confidenceMax: confidences.length ? Math.max(...confidences) : 0,
       status: PhoneEventStatus.ACTIVE,
-      // Always PENDING: only the student can say whether it was for study.
-      context: PhoneContext.PENDING,
+      // PENDING without a declaration; otherwise tagged from the declared
+      // learning tools. Provenance only — never a state input.
+      context,
       _confSum: sum,
       _confCount: confidences.length,
     };

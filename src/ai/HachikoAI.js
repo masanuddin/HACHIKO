@@ -89,6 +89,14 @@ export class HachikoAI {
      * cannot influence a prediction. Enforced by test.
      */
     this._scenarioTruth = ScenarioTruth.NONE;
+    /**
+     * Host-supplied session context (declared learning tools). Interpreted
+     * ONLY as provenance for phone events — it never reaches calibration,
+     * smoothing, evidence, presence, or the state engine, and it must never
+     * decide a FocusState. Persists across reset() so the app owns the
+     * session boundary explicitly.
+     */
+    this._sessionContext = null;
     /** Incremented on reset() so consumers can detect a session boundary. */
     this.sessionId = 1;
   }
@@ -121,6 +129,37 @@ export class HachikoAI {
 
   getScenarioTruth() {
     return this._scenarioTruth;
+  }
+
+  /**
+   * Declare the session's learning tools, so phone detections can be tagged
+   * with contextual provenance (EXPECTED_TOOL vs DISTRACTION_CANDIDATE).
+   *
+   * PROVENANCE ONLY. Nothing here flows into calibration, smoothing,
+   * evidence, presence, or the state engine — the product's FocusEngine
+   * remains the sole authority on the final state. `EXPECTED_TOOL` means
+   * "phone use is expected in this session", never "the user is focused".
+   *
+   * Tool values are the app's `Media` values, reused verbatim
+   * ('phone' | 'book' | 'paper' | 'laptop' | 'mixed' | 'other'). As in the
+   * app, 'mixed' counts as including a phone.
+   *
+   * @param {import('./types.js').SessionContext|null} ctx
+   */
+  setSessionContext(ctx) {
+    const tools = Array.isArray(ctx?.learningTools)
+      ? [...ctx.learningTools]
+      : [];
+    this._sessionContext = ctx == null
+      ? null
+      : {
+          learningTools: tools,
+          declaredIncludesPhone: tools.includes('phone') || tools.includes('mixed'),
+        };
+  }
+
+  getSessionContext() {
+    return this._sessionContext;
   }
 
   /**
@@ -252,7 +291,7 @@ export class HachikoAI {
     // 5c. Phone events (v0.3) ---------------------------------------------
     // Deliberately NOT passed to the state engine. Phone context is a separate
     // stream the app resolves with the student later.
-    const phone = this.phoneTracker.update(objectDetections, nowMs);
+    const phone = this.phoneTracker.update(objectDetections, nowMs, this._sessionContext);
 
     // 6. State ------------------------------------------------------------
     // While still collecting the baseline we deliberately do not classify:
@@ -404,6 +443,17 @@ export class HachikoAI {
        * against truth without either contaminating the other.
        */
       manualScenarioTruth: this._scenarioTruth,
+      /**
+       * Session context as declared by the host (P0). Kept strictly outside
+       * `classification`, exactly like `manualScenarioTruth`: it tags phone
+       * events with provenance but can never influence a state decision.
+       */
+      sessionContext: this._sessionContext
+        ? {
+            learningTools: [...this._sessionContext.learningTools],
+            declaredIncludesPhone: this._sessionContext.declaredIncludesPhone,
+          }
+        : null,
     };
 
     // Emit only. Storage, serialisation and analysis belong to consumers

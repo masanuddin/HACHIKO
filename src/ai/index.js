@@ -76,6 +76,7 @@ export {
   PresenceStatus,
   PhoneEventStatus,
   PhoneContext,
+  LearningTool,
 } from './types.js';
 
 // ── Evidence model ───────────────────────────────────────────────────────

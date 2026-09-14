@@ -104,14 +104,44 @@ export const PhoneEventStatus = Object.freeze({
 });
 
 /**
- * Whether a phone event was study-related.
+ * Learning tools a user can declare at the start of a session.
  *
- * Always PENDING in v0.3. The app (v0.4+) asks the user during a break; the AI
- * never guesses, because a phone can legitimately be a study tool.
+ * Values are IDENTICAL to the product app's `Media` type
+ * (HACHIKO/src/engine/types.ts) — reused verbatim so a tool selected in the
+ * app can be passed straight into the AI core without mapping or renaming.
+ * Do NOT invent new values here without mirroring them in the app.
+ * @readonly
+ */
+export const LearningTool = Object.freeze({
+  LAPTOP: 'laptop',
+  PHONE: 'phone',
+  BOOK: 'book',
+  PAPER: 'paper',
+  MIXED: 'mixed',
+  OTHER: 'other',
+});
+
+/**
+ * Contextual provenance of a phone event.
+ *
+ * PENDING                — no learning-tool context was supplied; the AI does
+ *                          not guess (v0.3 behaviour preserved).
+ * EXPECTED_TOOL          — a phone was detected AND the declared learning
+ *                          tools include a phone, so phone use is expected.
+ *                          This is provenance only: it means "phone use is
+ *                          expected", NOT "the user is focused".
+ * DISTRACTION_CANDIDATE  — a phone was detected while the declared learning
+ *                          tools do NOT include a phone.
+ *
+ * NONE of these values decide a FocusState. The product's FocusEngine remains
+ * the only authority on the final state; this enum only tags the phone-event
+ * stream the FocusEngine (or the app) consumes.
  * @readonly
  */
 export const PhoneContext = Object.freeze({
   PENDING: 'PENDING',
+  EXPECTED_TOOL: 'EXPECTED_TOOL',
+  DISTRACTION_CANDIDATE: 'DISTRACTION_CANDIDATE',
 });
 
 /**
@@ -233,6 +263,13 @@ export const PoseInvalidReason = Object.freeze({
  */
 
 /**
+ * @typedef {Object} SessionContext  Host-supplied session configuration that
+ *   changes how phone detections are INTERPRETED. Provenance only — never an
+ *   input to state classification.
+ * @property {string[]} learningTools  values of LearningTool, e.g. ['phone'].
+ */
+
+/**
  * @typedef {Object} PhoneEvent
  * @property {number} eventId
  * @property {number} startMs
@@ -241,10 +278,11 @@ export const PoseInvalidReason = Object.freeze({
  * @property {number} confidenceMean
  * @property {number} confidenceMax
  * @property {string} status            one of PhoneEventStatus
- * @property {string} context           one of PhoneContext (always PENDING in v0.3)
+ * @property {string} context           one of PhoneContext
  */
 
 export default {
   AIState, StateReason, CalibrationStatus, PoseInvalidReason,
   ScenarioTruth, EvidenceTier, PresenceStatus, PhoneEventStatus, PhoneContext,
+  LearningTool,
 };
