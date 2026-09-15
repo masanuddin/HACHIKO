@@ -137,7 +137,7 @@ export const strings = {
 
   sessionCard: {
     title: 'Kartu Sesi',
-    focusMinutesLabel: 'Menit fokus',
+    focusMinutesLabel: 'Waktu fokus',
     sittingMinutesLabel: 'Waktu duduk',
     awayLabel: 'Waktu Away',
     firstCollapseLabel: 'Fokus pertama bertahan sampai',

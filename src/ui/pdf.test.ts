@@ -30,7 +30,7 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('/BaseFont /Helvetica')
     expect(pdf).toContain('HACHIKO')
     expect(pdf).toContain('Kartu Sesi')
-    expect(pdf).toContain('Menit fokus')
+    expect(pdf).toContain('Waktu fokus')
     expect(pdf).toContain('Waktu duduk')
     expect(pdf).toContain('Waktu Away')
     expect(pdf).toContain('Waktu tidak fokus')

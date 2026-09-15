@@ -290,7 +290,7 @@ Rules:
 ### Session Card — report Uncertain honestly
 
 ```
-Menit fokus       14 dari 25
+Waktu fokus       14 dari 25
 Waktu balik       rata-rata 1m 40d
 Fokus pertama runtuh   menit ke-9
 Belum jelas       3 menit
