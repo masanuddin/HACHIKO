@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatFocusLine } from './strings'
+import { formatDuration, formatFocusLine, strings } from './strings'
 
 describe('formatDuration', () => {
   it('renders a genuine zero as "0 detik", not "0 menit"', () => {
@@ -35,5 +35,48 @@ describe('formatFocusLine', () => {
 
   it('renders 60s and above in minutes', () => {
     expect(formatFocusLine(60_000, 60_000)).toBe('1 menit dari 1 menit')
+  })
+})
+
+describe('media chips', () => {
+  it('expose exactly the five product learning tools', () => {
+    expect(Object.keys(strings.media.chips).sort()).toEqual(['book', 'laptop', 'other', 'paper', 'phone'])
+  })
+
+  it('do not expose a mixed/campuran option', () => {
+    expect('mixed' in strings.media.chips).toBe(false)
+    expect(Object.values(strings.media.chips)).not.toContain('Campuran')
+  })
+})
+
+describe('session state labels', () => {
+  it('map every internal FocusState to the required product label', () => {
+    expect(strings.session.stateLabels).toEqual({
+      FOKUS: 'Fokus',
+      TERALIH: 'Teralih',
+      TIDAK_HADIR: 'Tidak di depan laptop',
+      UNCERTAIN: 'Teralih',
+      MENGANTUK: 'Teralih',
+    })
+  })
+
+  it('keep all five internal FocusState keys', () => {
+    expect(Object.keys(strings.session.stateLabels).sort()).toEqual([
+      'FOKUS',
+      'MENGANTUK',
+      'TERALIH',
+      'TIDAK_HADIR',
+      'UNCERTAIN',
+    ])
+  })
+
+  it('never render the live UNCERTAIN label as "Waktu tidak fokus"', () => {
+    expect(strings.session.stateLabels.UNCERTAIN).not.toBe('Waktu tidak fokus')
+  })
+})
+
+describe('analytical uncertain terminology', () => {
+  it('keeps the Session Card / PDF "Waktu tidak fokus" metric label', () => {
+    expect(strings.sessionCard.notFocusedLabel).toBe('Waktu tidak fokus')
   })
 })

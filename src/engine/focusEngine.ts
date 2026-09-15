@@ -66,7 +66,7 @@ export class FocusEngine {
     this.cfg = cfg
     this.cone = cone
     this.declaredMedia = declaredMedia
-    this.declaredIncludesPhone = declaredMedia.includes('phone') || declaredMedia.includes('mixed')
+    this.declaredIncludesPhone = declaredMedia.includes('phone')
   }
 
   reset(): void {

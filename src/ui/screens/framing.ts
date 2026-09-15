@@ -1,8 +1,7 @@
 import { strings } from '../strings'
 import { actions, body, button, cameraDot, el, screen, title } from '../components'
 import { startCamera, startPerceptionLoop, type PerceptionLoopHandle } from '../../perception/camera'
-import { createFaceLandmarker } from '../../perception/face'
-import { createObjectDetector } from '../../perception/objects'
+import { createAiRuntime } from '../../perception/aiRuntime'
 import { createFaceDetector } from '../../perception/faceBox'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { deriveCompanionState } from '../../storage/companion'
@@ -90,12 +89,8 @@ export function renderFraming(root: HTMLElement): Promise<FramingResult> {
         dot.style.visibility = 'visible'
         status.textContent = s.body
 
-        const [faceLandmarker, objectDetector, faceDetector] = await Promise.all([
-          createFaceLandmarker(),
-          createObjectDetector(),
-          createFaceDetector(),
-        ])
-        bundle = { camera, faceLandmarker, objectDetector, faceDetector }
+        const [aiRuntime, faceDetector] = await Promise.all([createAiRuntime(), createFaceDetector()])
+        bundle = { camera, ...aiRuntime, faceDetector }
 
         // Slower than the default 5fps: this screen only checks
         // faceFound to enable Continue, nothing time-sensitive, and
@@ -103,9 +98,16 @@ export function renderFraming(root: HTMLElement): Promise<FramingResult> {
         // periodic blocking was visible as stutter in the live preview.
         // Session.ts never shows the preview at all, so its own
         // detection rate is untouched.
-        loop = startPerceptionLoop(video, faceLandmarker, objectDetector, (tick) => {
-          if (tick.face) continueBtn.disabled = !tick.face.faceFound
-        }, 1000)
+        loop = startPerceptionLoop(
+          video,
+          aiRuntime.ai,
+          aiRuntime.faceEngine,
+          aiRuntime.objectEngine,
+          (tick) => {
+            continueBtn.disabled = !tick.frame.faceFound
+          },
+          1000,
+        )
       } catch (err) {
         status.textContent =
           err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')

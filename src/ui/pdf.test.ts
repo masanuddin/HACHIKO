@@ -33,7 +33,7 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('Menit fokus')
     expect(pdf).toContain('Waktu duduk')
     expect(pdf).toContain('Waktu Away')
-    expect(pdf).toContain('Belum jelas')
+    expect(pdf).toContain('Waktu tidak fokus')
   })
 
   it('shows sub-minute durations in seconds', () => {
@@ -45,6 +45,11 @@ describe('buildSessionReportPdf', () => {
   it('shows whole-minute durations in minutes', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000 } }))
     expect(pdf).toContain('1 menit')
+  })
+
+  it('reports "Waktu tidak fokus" as the present-but-not-focused total', () => {
+    const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000, TERALIH: 120_000 } }))
+    expect(pdf).toContain('2 menit')
   })
 
   it('has a self-consistent cross-reference table', () => {

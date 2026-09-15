@@ -18,7 +18,7 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs)),
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
-    metric(s.uncertainLabel, formatDuration(m.uncertainMs)),
+    metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
   ])
 }
 

@@ -1,0 +1,494 @@
+/**
+ * HACHIKO AI v0.2.1 — Orchestrator
+ * ================================
+ * Wires the pipeline together and exposes the public AI surface.
+ *
+ *   Measurement -> Calibration -> Smoothing -> Temporal -> Evidence -> State
+ *
+ * `processFrame` is the pure heart of the system: it takes a raw measurement
+ * plus a timestamp and returns a structured telemetry frame. It never touches
+ * the camera or the DOM, so the entire pipeline below MediaPipe is testable in
+ * Node by feeding synthetic measurements — which is exactly what tests/ does.
+ *
+ * ── v0.2.1 BOUNDARY ───────────────────────────────────────────────────────
+ * This class EMITS structured telemetry; it does not STORE it. Ring buffers,
+ * CSV/JSON serialisation, and offline analysis moved to tools/telemetry, which
+ * is a consumer of `onFrame()` like any other. The AI core therefore has no
+ * opinion about persistence, file formats, or the DOM, and the product app can
+ * route frames wherever it wants without dragging a logger along.
+ *
+ * The core also does NOT own the camera: it never calls getUserMedia and never
+ * starts or stops a stream. Callers supply a measurement per frame. The debug
+ * harness (tools/debug) owns a webcam only because it is a standalone tester.
+ */
+
+import { CONFIG } from './config.js';
+import { AIState, StateReason, CalibrationStatus, ScenarioTruth } from './types.js';
+import { CalibrationEngine } from './pipeline/CalibrationEngine.js';
+import { FeatureSmoother } from './pipeline/FeatureSmoother.js';
+import { TemporalTracker } from './pipeline/TemporalTracker.js';
+import { EvidenceEngine } from './pipeline/EvidenceEngine.js';
+import { StateEngine } from './pipeline/StateEngine.js';
+import { PresenceFusion } from './pipeline/PresenceFusion.js';
+import { PhoneEventTracker } from './pipeline/PhoneEventTracker.js';
+import { PresenceStatus } from './types.js';
+import { isFiniteNumber } from './core/math.js';
+
+/** Rolling mean of the last N frame intervals, for effective FPS. */
+class FpsMeter {
+  constructor(window = 30) {
+    this.window = window;
+    this.samples = [];
+    this._lastMs = null;
+  }
+  reset() { this.samples = []; this._lastMs = null; }
+  update(nowMs) {
+    if (isFiniteNumber(this._lastMs)) {
+      const dt = nowMs - this._lastMs;
+      // Measures the FULL cycle (inference + render + logging), unlike the
+      // Python harness which timed only detect_for_video and so overstated
+      // throughput.
+      if (dt > 0 && dt < 2000) {
+        this.samples.push(dt);
+        if (this.samples.length > this.window) this.samples.shift();
+      }
+    }
+    this._lastMs = nowMs;
+  }
+  get fps() {
+    if (this.samples.length === 0) return 0;
+    const mean = this.samples.reduce((a, b) => a + b, 0) / this.samples.length;
+    return mean > 0 ? 1000 / mean : 0;
+  }
+}
+
+export class HachikoAI {
+  /**
+   * @param {Object} [config=CONFIG]
+   */
+  constructor(config = CONFIG) {
+    this.config = config;
+    this.calibration = new CalibrationEngine(config);
+    this.smoother = new FeatureSmoother(config);
+    // One EvidenceEngine shared by the tracker (instantaneous thresholds) and
+    // the state engine (fusion), so the tier rules exist in exactly one place.
+    this.evidenceEngine = new EvidenceEngine(config);
+    this.temporal = new TemporalTracker(config, this.evidenceEngine);
+    this.stateEngine = new StateEngine(config, this.evidenceEngine);
+    // v0.3: presence and phone are separate concerns from Face AI. Neither
+    // touches the face pipeline; presence overrides only the ABSENCE verdict.
+    this.presenceFusion = new PresenceFusion(config);
+    this.phoneTracker = new PhoneEventTracker(config);
+    this.fpsMeter = new FpsMeter();
+    this._listeners = new Set();
+    this._lastState = null;
+    /**
+     * Manual scenario annotation for acceptance testing. GROUND TRUTH ONLY.
+     * Held here purely so the logger can copy it into telemetry; it is never
+     * passed to calibration, smoothing, evidence, or the state engine, so it
+     * cannot influence a prediction. Enforced by test.
+     */
+    this._scenarioTruth = ScenarioTruth.NONE;
+    /**
+     * Host-supplied session context (declared learning tools). Interpreted
+     * ONLY as provenance for phone events — it never reaches calibration,
+     * smoothing, evidence, presence, or the state engine, and it must never
+     * decide a FocusState. Persists across reset() so the app owns the
+     * session boundary explicitly.
+     */
+    this._sessionContext = null;
+    /** Incremented on reset() so consumers can detect a session boundary. */
+    this.sessionId = 1;
+  }
+
+  /**
+   * Provenance for a telemetry consumer's session header. The core exposes the
+   * config it is actually running with; it does not write files itself.
+   */
+  getSessionInfo() {
+    return {
+      sessionId: this.sessionId,
+      schemaVersion: 'hachiko-ai-v0.2',
+      config: {
+        state: { ...this.config.state },
+        temporal: { ...this.config.temporal },
+        calibration: { ...this.config.calibration },
+        validity: { ...this.config.validity },
+      },
+    };
+  }
+
+  /**
+   * Set the manual ground-truth label recorded alongside predictions.
+   * Does NOT affect classification in any way.
+   * @param {string} scenario one of ScenarioTruth
+   */
+  setScenarioTruth(scenario) {
+    this._scenarioTruth = scenario ?? ScenarioTruth.NONE;
+  }
+
+  getScenarioTruth() {
+    return this._scenarioTruth;
+  }
+
+  /**
+   * Declare the session's learning tools, so phone detections can be tagged
+   * with contextual provenance (EXPECTED_TOOL vs DISTRACTION_CANDIDATE).
+   *
+   * PROVENANCE ONLY. Nothing here flows into calibration, smoothing,
+   * evidence, presence, or the state engine — the product's FocusEngine
+   * remains the sole authority on the final state. `EXPECTED_TOOL` means
+   * "phone use is expected in this session", never "the user is focused".
+   *
+   * Tool values are the app's `Media` values, reused verbatim
+   * ('phone' | 'book' | 'paper' | 'laptop' | 'mixed' | 'other'). As in the
+   * app, 'mixed' counts as including a phone.
+   *
+   * @param {import('./types.js').SessionContext|null} ctx
+   */
+  setSessionContext(ctx) {
+    const tools = Array.isArray(ctx?.learningTools)
+      ? [...ctx.learningTools]
+      : [];
+    this._sessionContext = ctx == null
+      ? null
+      : {
+          learningTools: tools,
+          declaredIncludesPhone: tools.includes('phone') || tools.includes('mixed'),
+        };
+  }
+
+  getSessionContext() {
+    return this._sessionContext;
+  }
+
+  /**
+   * Subscribe to per-frame telemetry. Returns an unsubscribe function.
+   *
+   * This is the ONLY output channel of the AI core. Loggers, the debug harness,
+   * and (later) the product app all attach here; none of them are known to this
+   * class. A throwing listener is isolated so one bad consumer cannot break
+   * inference.
+   *
+   * @param {(frame: import('./types.js').TelemetryFrame) => void} fn
+   * @returns {() => boolean} unsubscribe
+   */
+  onFrame(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  }
+
+  /** Begin baseline collection. */
+  startCalibration(nowMs) {
+    this.calibration.start(nowMs);
+    this.smoother.reset();
+    this.temporal.reset();
+  }
+
+  /**
+   * Full reset of AI state: baseline, filters, timers, classification.
+   * Does not clear any consumer's stored telemetry — that is the consumer's
+   * business. `sessionId` increments so consumers can start a new session.
+   */
+  reset() {
+    this.calibration.reset();
+    this.smoother.reset();
+    this.temporal.reset();
+    this.stateEngine.reset();
+    this.presenceFusion.reset();
+    this.phoneTracker.reset();
+    this.fpsMeter.reset();
+    this._lastState = null;
+    this.sessionId += 1;
+  }
+
+  /**
+   * Process one raw measurement into a full telemetry frame.
+   *
+   * PURE with respect to I/O: no camera, no DOM. Deterministic given the same
+   * sequence of (measurement, nowMs).
+   *
+   * @param {Object} measurement from FaceLandmarkerEngine
+   * @param {number} nowMs monotonic
+   * @param {number|Object} [inferenceMsOrOpts=0] face inference ms, or an
+   *        options object for the v0.3 call form.
+   * @param {number} [inferenceMsOrOpts.faceInferenceMs]
+   * @param {number} [inferenceMsOrOpts.objectInferenceMs]
+   * @param {Array|null} [inferenceMsOrOpts.objectDetections] null when the
+   *        throttled detector did not run this frame — NOT "nothing detected".
+   * @returns {import('./types.js').TelemetryFrame}
+   */
+  processFrame(measurement, nowMs, inferenceMsOrOpts = 0) {
+    // Accept both the v0.2 form (a number) and the v0.3 form (an options
+    // object), so existing callers and tests keep working unchanged.
+    const opts = typeof inferenceMsOrOpts === 'number'
+      ? { faceInferenceMs: inferenceMsOrOpts }
+      : (inferenceMsOrOpts ?? {});
+    const inferenceMs = opts.faceInferenceMs ?? 0;
+    const objectInferenceMs = opts.objectInferenceMs ?? 0;
+    const objectDetections = opts.objectDetections ?? null;
+
+    this.fpsMeter.update(nowMs);
+
+    // 1. Calibration ------------------------------------------------------
+    if (this.calibration.isCollecting()) {
+      this.calibration.update(measurement, nowMs);
+    }
+    const calibrationValid = this.calibration.isValid();
+
+    // 2. Calibrated features ---------------------------------------------
+    const calibrated = this.calibration.applyTo(measurement);
+
+    // 3. Smoothing --------------------------------------------------------
+    const smoothed = this.smoother.update(calibrated, nowMs);
+
+    // 4. Validity ---------------------------------------------------------
+    // signalValid gates EVIDENCE, not presence. Without calibration we can
+    // still see the face (so TIDAK_HADIR works), but we refuse to judge
+    // distraction against thresholds that were never personalised.
+    const signalValid =
+      measurement.facePresent &&
+      measurement.poseValid &&
+      (!this.config.validity.requireCalibrationForEvidence || calibrationValid);
+
+    // 5. Temporal ---------------------------------------------------------
+    const temporal = this.temporal.update(
+      {
+        facePresent: measurement.facePresent,
+        signalValid,
+        // Smoothed signals drive threshold crossings.
+        yawSmoothed: smoothed.yawSmoothed,
+        pitchSmoothed: smoothed.pitchSmoothed,
+        rollSmoothed: smoothed.rollSmoothed,
+        earSmoothed: smoothed.earSmoothed,
+        // Unsmoothed values drive the eye-evidence geometry gate, so
+        // eligibility follows the head immediately instead of lagging behind
+        // the filter. All canonical (see config.headPose).
+        poseValid: measurement.poseValid,
+        yawDelta: calibrated.yawDelta,
+        pitchDelta: calibrated.pitchDelta,
+        earLeft: measurement.earLeft,
+        earRight: measurement.earRight,
+        earMean: measurement.earMean,
+      },
+      nowMs
+    );
+
+    // 5b. Presence fusion (v0.3) ------------------------------------------
+    // Presence is decided from face AND primary-person detection, with its own
+    // timer. This replaces face-only absence as the authority for TIDAK_HADIR.
+    const faceCenter = this._faceCenterOf(measurement);
+    const presence = this.presenceFusion.update(
+      {
+        faceAvailable: measurement.facePresent,
+        faceCenter,
+        personDetections: objectDetections,
+        frameWidth: measurement.frameWidth ?? this.config.camera.width,
+      },
+      nowMs
+    );
+
+    // 5c. Phone events (v0.3) ---------------------------------------------
+    // Deliberately NOT passed to the state engine. Phone context is a separate
+    // stream the app resolves with the student later.
+    const phone = this.phoneTracker.update(objectDetections, nowMs, this._sessionContext);
+
+    // 6. State ------------------------------------------------------------
+    // While still collecting the baseline we deliberately do not classify:
+    // reporting TERALIH during calibration would be judging a student against
+    // a baseline that does not exist yet.
+    let classification;
+    if (this.calibration.isCollecting()) {
+      classification = {
+        state: AIState.FOKUS,
+        primaryReason: StateReason.NONE,
+        reason: StateReason.NONE,
+        activeEvidence: EvidenceEngine.emptyEvidence(),
+        stateDurationMs: 0,
+        holding: true,
+        calibrating: true,
+      };
+    } else {
+      classification = this.stateEngine.update(
+        temporal, { signalValid, poseValid: measurement.poseValid, calibrationValid },
+        nowMs
+      );
+      classification.calibrating = false;
+    }
+
+    // 6b. Presence override (v0.3) ----------------------------------------
+    // PresenceFusion, not the face-only timer, is now the authority on absence.
+    // Two corrections, in order of importance:
+    //
+    //  1. The face pipeline may have reached TIDAK_HADIR because it lost the
+    //     face — but if the primary person is visible, the user is THERE. This
+    //     is the confirmed v0.2 failure, and this line is the fix.
+    //  2. Conversely, sustained loss of BOTH signals is genuine absence.
+    //
+    // Face AI itself is untouched: we override only the absence verdict.
+    if (this.config.presence.enabled && !classification.calibrating) {
+      if (presence.absent) {
+        if (classification.state !== AIState.TIDAK_HADIR) {
+          classification.state = AIState.TIDAK_HADIR;
+          classification.primaryReason = StateReason.ABSENCE;
+          classification.reason = StateReason.ABSENCE;
+        }
+      } else if (classification.state === AIState.TIDAK_HADIR) {
+        // The user is present after all. We must not invent a behavioural
+        // reading from a face we cannot see, so fall back to the conservative
+        // default and mark the state as not currently observable.
+        classification.state = AIState.FOKUS;
+        classification.primaryReason = StateReason.NONE;
+        classification.reason = StateReason.NONE;
+        classification.holding = true;
+      }
+    }
+
+    // Whether the BEHAVIOURAL reading is currently trustworthy. Separate from
+    // the state value itself, so downstream research/app logic can tell
+    // "user is focused" from "we cannot currently tell".
+    const stateSignalValid =
+      signalValid && presence.status === PresenceStatus.PRESENT;
+    classification.stateSignalValid = stateSignalValid;
+
+    // 7. Telemetry frame --------------------------------------------------
+    const frame = {
+      timestampMs: nowMs,
+      measurement: {
+        facePresent: measurement.facePresent,
+        poseValid: measurement.poseValid,
+        poseInvalidReason: measurement.poseInvalidReason,
+        yawRaw: measurement.yawRaw,
+        pitchRaw: measurement.pitchRaw,
+        rollRaw: measurement.rollRaw,
+        earLeft: measurement.earLeft,
+        earRight: measurement.earRight,
+        earMean: measurement.earMean,
+      },
+      calibrated: {
+        yawDelta: calibrated.yawDelta,
+        pitchDelta: calibrated.pitchDelta,
+        rollDelta: calibrated.rollDelta,
+        earRelative: calibrated.earRelative,
+      },
+      temporal: {
+        yawSmoothed: smoothed.yawSmoothed,
+        pitchSmoothed: smoothed.pitchSmoothed,
+        rollSmoothed: smoothed.rollSmoothed,
+        earSmoothed: smoothed.earSmoothed,
+        faceMissingMs: temporal.faceMissingMs,
+        facePresentMs: temporal.facePresentMs,
+      },
+      /**
+       * v0.2: evidence is its own telemetry section, between temporal and
+       * classification — the layer where "signal crossed a threshold and held"
+       * becomes "this counts as evidence of type X".
+       */
+      evidence: {
+        active: classification.activeEvidence,
+        instantaneous: temporal.instantaneous,
+        accumulated: temporal.accumulated,
+        /**
+         * Whether EAR was trustworthy enough this frame to contribute
+         * EYE_CLOSURE evidence. Raw EAR is ALWAYS present in `measurement`
+         * and `calibrated` regardless — this flag gates evidence, not
+         * measurement, so the pilot can still analyse EAR at every head angle.
+         */
+        eyeEligible: temporal.eyeEligible,
+        eyeIneligibleReason: temporal.eyeIneligibleReason,
+      },
+      classification,
+      /**
+       * v0.3 — object detector results. RAW MEASUREMENT, kept separate from the
+       * presence interpretation below. Boxes and scores only; no imagery.
+       */
+      objects: {
+        detectorRan: objectDetections !== null,
+        detections: objectDetections ?? [],
+        primaryPersonPresent: presence.primaryPersonPresent,
+        primaryPersonConfidence: presence.primaryPersonConfidence,
+        primaryPersonTracked: presence.primaryPersonTracked,
+        associationMethod: presence.associationMethod,
+        phonePresent: phone.phonePresent,
+        phoneConfidence: phone.phoneConfidence,
+      },
+      /** v0.3 — DERIVED presence interpretation. */
+      presence: {
+        status: presence.status,
+        bothMissingMs: presence.bothMissingMs,
+        primaryPersonTracked: presence.primaryPersonTracked,
+        faceAvailable: measurement.facePresent,
+      },
+      /** v0.3 — phone context stream. Never an input to `classification`. */
+      phoneEvent: {
+        activeEventId: phone.activeEventId,
+        activeDurationMs: phone.activeDurationMs,
+      },
+      performance: {
+        inferenceMs,
+        faceInferenceMs: inferenceMs,
+        objectInferenceMs,
+        fps: this.fpsMeter.fps,
+      },
+      validity: {
+        signalValid,
+        stateSignalValid,
+        poseValid: measurement.poseValid,
+        calibrationValid,
+        calibrationStatus: this.calibration.status,
+      },
+      /**
+       * GROUND TRUTH, kept strictly outside `classification`. Never read by any
+       * part of the engine. Present so offline analysis can compare prediction
+       * against truth without either contaminating the other.
+       */
+      manualScenarioTruth: this._scenarioTruth,
+      /**
+       * Session context as declared by the host (P0). Kept strictly outside
+       * `classification`, exactly like `manualScenarioTruth`: it tags phone
+       * events with provenance but can never influence a state decision.
+       */
+      sessionContext: this._sessionContext
+        ? {
+            learningTools: [...this._sessionContext.learningTools],
+            declaredIncludesPhone: this._sessionContext.declaredIncludesPhone,
+          }
+        : null,
+    };
+
+    // Emit only. Storage, serialisation and analysis belong to consumers
+    // (tools/telemetry), not to the AI core.
+    for (const fn of this._listeners) {
+      try { fn(frame); } catch (err) { console.warn('[HACHIKO] listener error:', err); }
+    }
+    this._lastState = classification.state;
+    return frame;
+  }
+
+  /**
+   * Face centre in PIXELS, for anchoring primary-person association.
+   *
+   * FaceLandmarkerEngine may supply it directly; otherwise we fall back to the
+   * frame centre, which is where a seated user's face sits in a webcam view.
+   * Returns null when there is no face, so association cannot be anchored to a
+   * fabricated point.
+   */
+  _faceCenterOf(measurement) {
+    if (!measurement.facePresent) return null;
+    if (measurement.faceCenter
+        && isFiniteNumber(measurement.faceCenter.x)
+        && isFiniteNumber(measurement.faceCenter.y)) {
+      return measurement.faceCenter;
+    }
+    const w = measurement.frameWidth ?? this.config.camera.width;
+    const h = measurement.frameHeight ?? this.config.camera.height;
+    return { x: w / 2, y: h / 2 };
+  }
+
+  getCalibrationSnapshot() { return this.calibration.snapshot(); }
+  /** All phone events this session, internal accumulators stripped. */
+  getPhoneEvents() { return this.phoneTracker.getEvents(); }
+}
+
+export { AIState, StateReason, CalibrationStatus, ScenarioTruth };
+export default HachikoAI;

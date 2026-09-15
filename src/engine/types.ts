@@ -8,7 +8,7 @@
  * Timestamps always arrive as arguments.
  */
 
-export type Media = 'laptop' | 'phone' | 'book' | 'paper' | 'mixed' | 'other'
+export type Media = 'laptop' | 'phone' | 'book' | 'paper' | 'other'
 
 export type FocusState = 'FOKUS' | 'TERALIH' | 'TIDAK_HADIR' | 'UNCERTAIN' | 'MENGANTUK'
 

@@ -222,7 +222,7 @@ The asymmetry is deliberate: **distraction is hard to trigger, recovery is easy.
 
 Before each focus block: *"Sesi ini kamu belajar pakai apa?"*
 
-`Layar/laptop` · `HP/tablet` · `Buku/LKS` · `Kertas/nulis` · `Campuran` · `Lainnya`
+`Layar/laptop` · `HP/tablet` · `Buku/LKS` · `Kertas/nulis` · `Lainnya`
 
 Multi-select. One tap. Valid for that block; updatable at the next break.
 
@@ -247,8 +247,8 @@ But a phone appearing when the student declared "book" is **not semantically amb
 | Laptop | ✅ | ❌ | **FOKUS** |
 | Laptop | ✅ | ✅ | **TERALIH** ← real-time cue |
 | Laptop | ❌ | — | **UNCERTAIN** |
-| HP / Campuran | ✅ | — | **FOKUS** |
-| HP / Campuran | ❌ | — | **UNCERTAIN** |
+| HP | ✅ | — | **FOKUS** |
+| HP | ❌ | — | **UNCERTAIN** |
 | *any* | no face 5s | — | **TIDAK HADIR** (timer pauses) |
 
 Read the pattern: **phone presence means nothing when they declared phone, and a lot when they didn't.** That's the whole contribution of the context layer, and it's exactly what the brief was reaching for.

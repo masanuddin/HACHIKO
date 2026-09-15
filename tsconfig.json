@@ -17,7 +17,8 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
-    "allowJs": false,
+    "allowJs": true,
+    "checkJs": false,
     "noEmit": true,
     "types": ["vite/client"]
   },

@@ -71,7 +71,7 @@ function buildContent(record: SessionRecord): string {
   const focusValue = formatFocusLine(m.focusMs, m.sittingMs)
   const sittingValue = formatDuration(m.sittingMs)
   const awayValue = formatDuration(m.awayMs)
-  const uncertainValue = formatDuration(m.uncertainMs)
+  const uncertainValue = formatDuration(m.notFocusedMs)
 
   const out: string[] = []
 
@@ -94,7 +94,7 @@ function buildContent(record: SessionRecord): string {
   out.push(drawText('F2', 15, colRight, 652, C.ink, sittingValue))
   out.push(drawText('F1', 11, colLeft, 622, C.muted, s.awayLabel))
   out.push(drawText('F2', 15, colLeft, 600, C.ink, awayValue))
-  out.push(drawText('F1', 11, colRight, 622, C.muted, s.uncertainLabel))
+  out.push(drawText('F1', 11, colRight, 622, C.muted, s.notFocusedLabel))
   out.push(drawText('F2', 15, colRight, 600, C.ink, uncertainValue))
 
   // Summary message, wrapped to the content width.

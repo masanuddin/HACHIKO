@@ -60,6 +60,8 @@ describe('computeMetrics', () => {
     expect(m.awayMs).toBe(20_000)
     expect(m.focusMs).toBe(60_000)
     expect(m.uncertainMs).toBe(5_000)
+    expect(m.notFocusedMs).toBe(30_000 + 10_000 + 5_000)
+    expect(m.notFocusedPercent).toBeCloseTo(45_000 / 105_000)
   })
 
   it('never treats TERALIH as away', () => {
@@ -79,6 +81,7 @@ describe('computeMetrics', () => {
     expect(m.focusMs).toBe(65_000)
     expect(m.uncertainMs).toBe(0)
     expect(m.sittingMs).toBe(65_000)
+    expect(m.notFocusedMs).toBe(0)
   })
 
   it('"Pegang HP" clarification zeroes uncertain but leaves sitting present', () => {
@@ -92,6 +95,15 @@ describe('computeMetrics', () => {
     expect(m.focusMs).toBe(60_000)
     expect(m.uncertainMs).toBe(0)
     expect(m.sittingMs).toBe(65_000)
+    expect(m.notFocusedMs).toBe(5_000)
+  })
+
+  it('accumulates "Waktu tidak fokus" across merged multi-cycle records', () => {
+    const cycle1 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 600_000 } })
+    const cycle2 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 300_000 } })
+    const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
+    const m = computeMetrics(merged)
+    expect(m.notFocusedMs).toBe(900_000)
   })
 })
 

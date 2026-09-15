@@ -7,7 +7,6 @@ const OPTIONS: { value: Media; labelKey: keyof typeof strings.media.chips }[] = 
   { value: 'phone', labelKey: 'phone' },
   { value: 'book', labelKey: 'book' },
   { value: 'paper', labelKey: 'paper' },
-  { value: 'mixed', labelKey: 'mixed' },
   { value: 'other', labelKey: 'other' },
 ]
 

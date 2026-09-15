@@ -64,8 +64,10 @@ export interface SessionMetrics {
   sittingMs: number
   awayMs: number
   uncertainMs: number
+  notFocusedMs: number
   firstCollapseAtMs: number | null
   uncertainPercent: number
+  notFocusedPercent: number
   exceedsUncertainThreshold: boolean
 }
 
@@ -109,13 +111,20 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
   const totalActiveMs = sittingMs
   const uncertainPercent = totalActiveMs > 0 ? uncertainMs / totalActiveMs : 0
 
+  // "Waktu tidak fokus" = every present moment that wasn't focus: TERALIH +
+  // MENGANTUK + whatever UNCERTAIN the clarification did not fold into focus.
+  const notFocusedMs = sittingMs - focusMs
+  const notFocusedPercent = totalActiveMs > 0 ? notFocusedMs / totalActiveMs : 0
+
   return {
     focusMs,
     sittingMs,
     awayMs,
     uncertainMs,
+    notFocusedMs,
     firstCollapseAtMs: record.firstCollapseAtMs,
     uncertainPercent,
+    notFocusedPercent,
     exceedsUncertainThreshold: uncertainPercent > UNCERTAIN_THRESHOLD,
   }
 }
