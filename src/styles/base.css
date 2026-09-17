@@ -648,6 +648,50 @@ input:focus-visible,
   display: none;
 }
 
+/* ---- Timeline preview (shown once, on "Mulai", before Calibration) ----
+   Purely informational - see buildTimelinePreview in sessionConfig.ts.
+   Work/break/long-break get distinct tints from the existing palette
+   only (amber = work, matching the app's one primary accent; sage =
+   break; amber-deep = long break, a deeper shade of the same accent
+   rather than a new hue). */
+.timeline-preview__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timeline-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.timeline-pill--work {
+  background: color-mix(in srgb, var(--amber) 16%, var(--cream));
+  color: var(--ink);
+}
+
+.timeline-pill--break {
+  background: color-mix(in srgb, var(--sage) 16%, var(--cream));
+  color: var(--ink);
+}
+
+.timeline-pill--long-break {
+  background: var(--amber-deep);
+  color: var(--cream);
+}
+
+.timeline-preview__arrow {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
 /* ---- Consent checkboxes ---- */
 .consent-item {
   display: flex;

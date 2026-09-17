@@ -69,6 +69,37 @@ export function maxBreakMs(workMs: number, ratio: number): number {
   return Math.floor(raw / 60_000) * 60_000
 }
 
+export interface TimelinePreviewItem {
+  kind: 'work' | 'break' | 'longBreak'
+  ms: number
+}
+
+/**
+ * A preview of what one full set looks like under the chosen durations
+ * and rounds-per-set - purely informational, shown once when the
+ * student taps "Mulai", before the real multi-cycle loop starts. Not a
+ * commitment: `runSession`'s "Fokus lagi?" loop (session.ts) still asks
+ * after every real break, exactly as it always has, and can keep going
+ * indefinitely past what's shown here. This mirrors that same loop's
+ * actual cadence exactly (`cycleInSet >= roundsPerSet` - see
+ * session.ts) rather than inventing a different rule for the preview:
+ * a long break completes each set, everything before it is a normal
+ * short break.
+ */
+export function buildTimelinePreview(
+  workMs: number,
+  breakMs: number,
+  longBreakMs: number,
+  rounds: number,
+): TimelinePreviewItem[] {
+  const items: TimelinePreviewItem[] = []
+  for (let round = 1; round <= rounds; round++) {
+    items.push({ kind: 'work', ms: workMs })
+    items.push({ kind: round === rounds ? 'longBreak' : 'break', ms: round === rounds ? longBreakMs : breakMs })
+  }
+  return items
+}
+
 /**
  * ?fastdebug in the URL swaps in a 30-second work/break pair on the
  * Ready screen, so the multi-cycle loop can be iterated on without

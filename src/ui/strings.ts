@@ -85,6 +85,9 @@ export const strings = {
     shortBreakLabel: 'Istirahat pendek',
     longBreakLabel: 'Istirahat panjang',
     continueLabel: 'Mulai',
+    timelineTitle: 'Pola sesimu',
+    timelineBreakLabel: 'Istirahat',
+    timelineLongBreakLabel: 'Istirahat panjang',
   },
 
   session: {

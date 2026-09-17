@@ -1,8 +1,9 @@
-import { strings } from '../strings'
+import { strings, formatDuration } from '../strings'
 import {
   actions,
   button,
   cameraDot,
+  card,
   chipGroup,
   disclosure,
   el,
@@ -33,6 +34,7 @@ import {
   DURATION_MIN_MS,
   DURATION_MAX_MS,
   maxBreakMs,
+  buildTimelinePreview,
   isFastDebugMode,
 } from '../sessionConfig'
 
@@ -73,6 +75,45 @@ function streakChip(sessionCount: number, streakDays: number): HTMLDivElement {
   }
   chip.append(el('span', {}, [text]))
   return chip
+}
+
+/**
+ * A one-time, purely informational preview of what one full set looks
+ * like under the chosen durations/rounds - shown when "Mulai" is
+ * tapped, before advancing to Calibration. Not a commitment: dismissing
+ * it just starts the session exactly as tapping "Mulai" always has;
+ * the multi-cycle "Fokus lagi?" loop (session.ts) still asks after
+ * every real break, indefinitely, unchanged.
+ */
+function timelinePreviewCard(
+  workMs: number,
+  breakMs: number,
+  longBreakMs: number,
+  rounds: number,
+  onContinue: () => void,
+): HTMLDivElement {
+  const s = strings
+  const items = buildTimelinePreview(workMs, breakMs, longBreakMs, rounds)
+  const row = el('div', { class: 'timeline-preview__row' })
+  items.forEach((item, i) => {
+    const label =
+      item.kind === 'work'
+        ? s.session.stateLabels.FOKUS
+        : item.kind === 'longBreak'
+          ? s.ready.timelineLongBreakLabel
+          : s.ready.timelineBreakLabel
+    const tone = item.kind === 'work' ? 'work' : item.kind === 'longBreak' ? 'long-break' : 'break'
+    row.append(el('span', { class: `timeline-pill timeline-pill--${tone}` }, [`${label} ${formatDuration(item.ms)}`]))
+    if (i < items.length - 1) {
+      row.append(el('span', { class: 'timeline-preview__arrow', 'aria-hidden': 'true' }, ['→']))
+    }
+  })
+
+  return card(
+    el('h2', { class: 'card__title' }, [s.ready.timelineTitle]),
+    row,
+    actions(button(s.common.continueLabel, onContinue)),
+  )
 }
 
 export interface ReadySetupResult {
@@ -208,21 +249,52 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
 
     // --- Submit: hard-gated on camera+face (button stays disabled until
     // then, matching the old Framing screen's gate exactly); media is a
-    // soft gate (inline error on click, matching the old Media screen). ---
+    // soft gate (inline error on click, matching the old Media screen).
+    // Tapping "Mulai" doesn't advance straight to Calibration - it swaps
+    // this row for a one-time timeline preview first (see
+    // timelinePreviewCard above); the grid above stays exactly as it is,
+    // so the camera tile's on-screen position (and the cameraRect the
+    // Calibration expand-transition reads) doesn't shift underneath it. ---
     const continueBtn = button(
       s.ready.continueLabel,
       () => {
         if (!bundle) return
+        // TS can't narrow a captured outer `let` across the nested
+        // `finish` closure below (it's conservative about reassignment
+        // between now and whenever finish() actually runs) - a local
+        // const carries the non-null type through instead.
+        const readyBundle = bundle
         const declaredMedia = getSelectedMedia() as Media[]
         if (declaredMedia.length === 0) {
           mediaError.textContent = s.media.requiredError
           mediaError.style.display = 'block'
           return
         }
-        loop?.stop()
-        const cameraRect = preview.getBoundingClientRect()
-        root.replaceChildren()
-        resolve({ bundle, video, declaredMedia, workMs, rounds: selectedRounds, breakMs, longBreakMs, cameraRect })
+        const finish = () => {
+          loop?.stop()
+          const cameraRect = preview.getBoundingClientRect()
+          root.replaceChildren()
+          resolve({
+            bundle: readyBundle,
+            video,
+            declaredMedia,
+            workMs,
+            rounds: selectedRounds,
+            breakMs,
+            longBreakMs,
+            cameraRect,
+          })
+        }
+        // .screen__actions--end's justify-content:flex-end suited a lone
+        // right-aligned button; the preview card should fill the row.
+        // (Named previewCard, not preview - `preview` is already the
+        // camera-preview element finish() reads getBoundingClientRect()
+        // from; shadowing it here would silently break the FLIP
+        // transition's rect capture.)
+        ctaRow.classList.remove('screen__actions--end')
+        const previewCard = timelinePreviewCard(workMs, breakMs, longBreakMs, selectedRounds, finish)
+        previewCard.style.flex = '1'
+        ctaRow.replaceChildren(previewCard)
       },
       { disabled: true },
     )

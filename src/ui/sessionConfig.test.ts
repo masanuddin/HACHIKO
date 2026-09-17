@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { clampDurationMs, maxBreakMs, DURATION_MIN_MS, DURATION_MAX_MS, BREAK_MAX_RATIO, LONG_BREAK_MAX_RATIO } from './sessionConfig'
+import {
+  clampDurationMs,
+  maxBreakMs,
+  buildTimelinePreview,
+  DURATION_MIN_MS,
+  DURATION_MAX_MS,
+  BREAK_MAX_RATIO,
+  LONG_BREAK_MAX_RATIO,
+} from './sessionConfig'
 
 describe('clampDurationMs', () => {
   it('passes through a value already inside the range', () => {
@@ -51,5 +59,34 @@ describe('maxBreakMs', () => {
     const workMs = 25 * 60_000
     expect(5 * 60_000).toBeLessThanOrEqual(maxBreakMs(workMs, BREAK_MAX_RATIO))
     expect(15 * 60_000).toBeLessThanOrEqual(maxBreakMs(workMs, LONG_BREAK_MAX_RATIO))
+  })
+})
+
+describe('buildTimelinePreview', () => {
+  const workMs = 25 * 60_000
+  const breakMs = 5 * 60_000
+  const longBreakMs = 15 * 60_000
+
+  it('a single round is just work followed by the long break - matches runSession, where roundsPerSet=1 makes cycleInSet>=roundsPerSet true after every round', () => {
+    expect(buildTimelinePreview(workMs, breakMs, longBreakMs, 1)).toEqual([
+      { kind: 'work', ms: workMs },
+      { kind: 'longBreak', ms: longBreakMs },
+    ])
+  })
+
+  it('the classic 4-round set is work/break x3 then work/longBreak', () => {
+    const items = buildTimelinePreview(workMs, breakMs, longBreakMs, 4)
+    expect(items).toHaveLength(8)
+    expect(items.filter((i) => i.kind === 'work')).toHaveLength(4)
+    expect(items.filter((i) => i.kind === 'break')).toHaveLength(3)
+    expect(items.filter((i) => i.kind === 'longBreak')).toHaveLength(1)
+    expect(items[items.length - 1]).toEqual({ kind: 'longBreak', ms: longBreakMs })
+  })
+
+  it('only the very last break is long - every other break in a longer set stays short', () => {
+    const items = buildTimelinePreview(workMs, breakMs, longBreakMs, 3)
+    const breaks = items.filter((i) => i.kind !== 'work')
+    expect(breaks.slice(0, -1).every((b) => b.kind === 'break')).toBe(true)
+    expect(breaks[breaks.length - 1]?.kind).toBe('longBreak')
   })
 })
