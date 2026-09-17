@@ -33,7 +33,7 @@ export function renderConsent(root: HTMLElement): Promise<{ guardianName: string
         tilt: 'b',
         tape: true,
       }),
-      paperCard([permission.element, camera.element, noReport.element], { tilt: 'd', torn: 'b' }),
+      paperCard([permission.element, camera.element, noReport.element], { tilt: 'e', torn: 'b' }),
       nameField.element,
       actions(button(s.continueLabel, submit)),
     )

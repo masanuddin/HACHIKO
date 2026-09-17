@@ -10,14 +10,18 @@
    tokens.css take over - the UI stays legible either way. */
 @font-face {
   font-family: 'Plus Jakarta Sans';
-  src: url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations');
+  src:
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations'),
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
   font-weight: 400 800;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Inter';
-  src: url('/fonts/Inter-Variable.woff2') format('woff2-variations');
+  src:
+    url('/fonts/Inter-Variable.woff2') format('woff2-variations'),
+    url('/fonts/Inter-Variable.woff2') format('woff2');
   font-weight: 400 700;
   font-display: swap;
 }
@@ -347,6 +351,18 @@ input:focus-visible,
   transform: translateX(-50%) rotate(-4deg);
   opacity: 0.85;
   pointer-events: none;
+}
+
+/* Give tape'd cards enough top clearance that the tape (and its shadow)
+   sits above the content instead of painting over it - the tape spans
+   roughly y=10px to y=35px, which overlaps a card's own padding-driven
+   content start (24px for .card, 20px for .bento-tile). */
+.paper-tape {
+  padding-top: calc(var(--space-6) + var(--space-3));
+}
+
+.bento-tile.paper-tape {
+  padding-top: calc(var(--space-5) + var(--space-3));
 }
 
 /* Small hand-drawn-style decorative mark - see doodleMark() in

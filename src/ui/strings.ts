@@ -19,7 +19,7 @@ export const strings = {
   welcome: {
     title: 'Halo, aku Hachiko!',
     body: 'Aku bakal nemenin kamu belajar. Kamera laptop kamu ngeliatin posisi dudukmu, terus aku tidur waktu kamu fokus dan bangun kalau kamu mulai teralih.',
-    browserNote: 'HACHIKO paling enak dipakai di Chrome atau Edge, di laptop.',
+    browserNote: 'Aku paling enak dipakai di Chrome atau Edge, di laptop.',
     nameLabel: 'Nama panggilanmu',
     namePlaceholder: 'Tulis nama panggilanmu',
     nameError: 'Tulis dulu nama panggilanmu ya.',
@@ -141,7 +141,7 @@ export const strings = {
     title: 'Kartu Sesi',
     focusMinutesLabel: 'Waktu fokus',
     sittingMinutesLabel: 'Waktu duduk',
-    awayLabel: 'Waktu Absen',
+    awayLabel: 'Waktu absen',
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
     uncertainLabel: 'Waktu belum jelas',

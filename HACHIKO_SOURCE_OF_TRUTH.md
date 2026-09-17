@@ -55,7 +55,7 @@ Welcome → Consent → Framing kamera → Calibration → Media → Ready (dura
 - "Ulangi sesi" repeats the same duration + cycle count.
 - "Selesai" ends the whole sequence (skips remaining cycles).
 - Cycle indicator label "Putaran i dari N" (shown only when cycle count > 1).
-- Session Card metrics: Menit fokus / Waktu duduk / Waktu Away / Belum jelas.
+- Session Card metrics: Waktu fokus / Waktu duduk / Waktu Absen / Waktu belum jelas.
 - Session history (previous sessions) with per-session delete + delete-all.
 - PDF report download (zero-dependency writer).
 - "Muat ulang" action on the end screen.
@@ -115,11 +115,11 @@ Welcome → Consent → Framing kamera → Calibration → Media → Ready (dura
 
 ## 6. Current Metrics Semantics
 
-- **Waktu Away** = `durationsMs.TIDAK_HADIR` (total time not in front of the
+- **Waktu Absen** = `durationsMs.TIDAK_HADIR` (total time not in front of the
   laptop).
 - **Waktu Duduk** = total time present = `FOKUS + TERALIH + MENGANTUK +
   UNCERTAIN`. Sitting and Away are the two sides of presence.
-- **Menit fokus** = `FOKUS` (+ uncertain folded in if clarification answer is
+- **Waktu fokus** = `FOKUS` (+ uncertain folded in if clarification answer is
   `book`). Displayed as "X dari Y" where Y is the active/present total.
 - **Focus line zero state:** `0 focus / 0 total` renders `"0 detik dari 0 detik"`.
   Non-zero sub-minute durations render in seconds (`formatDuration`).
@@ -255,4 +255,4 @@ the schema while investigating.
 | JSONL user-facing download button | **SUPERSEDED** — replaced by the PDF "Unduh laporan sesi" button; JSONL remains internal for research/replay. |
 | "Delete Profile keeps session history" | **SUPERSEDED** — latest behavior: deleting profile also deletes session history. |
 | "Delete All Sessions keeps current session" (via `exceptId`) | **SUPERSEDED** — `deleteAllSessions()` now clears the entire history with no exception. |
-| Recovery time ("waktu balik") as a Session Card metric | **SUPERSEDED** — recorded but no longer displayed; "Waktu Away" now means absence time. |
+| Recovery time ("waktu balik") as a Session Card metric | **SUPERSEDED** — recorded but no longer displayed; "Waktu Absen" now means absence time. |
