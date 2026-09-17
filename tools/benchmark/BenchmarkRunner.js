@@ -27,6 +27,41 @@ import {
 const PERSON = 'person';
 const PHONE = 'cell phone';
 
+/**
+ * Project one in-window observation to a stored sample.
+ *
+ * Deliberately lossless for the quantities a later threshold analysis needs —
+ * both class scores, the strongest competitor, and latency — while dropping
+ * bounding-box geometry, which is a visualisation aid rather than evidence.
+ *
+ * @param {Object} o    an observation offered inside the recording window
+ * @param {number|null} startMs  window start, for relative time
+ */
+function sampleOf(o, startMs) {
+  const comp = (o.topOther ?? [])[0] ?? null;
+  const t = typeof o.timestampMs === 'number' ? o.timestampMs : null;
+  return {
+    timestampMs: t,
+    elapsedMs: t !== null && startMs !== null ? t - startMs : null,
+    // Both classes every frame: the non-target score is what tells you whether
+    // a detector could serve both roles, and it is unrecoverable afterwards.
+    personDetected: o.personDetected ?? null,
+    personMaxScore: o.personMaxScore ?? null,
+    phoneDetected: o.phoneDetected ?? null,
+    phoneMaxScore: o.phoneMaxScore ?? null,
+    // Pose-only fields; null for object detectors. Real API values, never
+    // synthesised into a fake class confidence.
+    bodyDetected: o.bodyDetected ?? null,
+    landmarkCount: o.landmarkCount ?? null,
+    visibleLandmarks: o.visibleLandmarks ?? null,
+    presenceScore: o.presenceScore ?? null,
+    competingClass: comp ? (comp.categoryName || `index_${comp.index}`) : null,
+    competingScore: comp ? comp.score : null,
+    rawDetectionCount: o.rawCount ?? null,
+    inferenceMs: o.inferenceMs ?? null,
+  };
+}
+
 export class BenchmarkRunner {
   /**
    * @param {Object} deps { FilesetResolver, ObjectDetector, PoseLandmarker }
@@ -234,7 +269,9 @@ export class BenchmarkRunner {
    * @param {boolean} input.expected
    * @param {Object} input.observation  peak observation for the window
    */
-  recordTrial({ task, scenarioId, expected, observation, stage = 1, notes = '' }) {
+  recordTrial({ task, scenarioId, expected, observation, samples = null,
+                phase = null, startedAtIso = null, endedAtIso = null,
+                stage = 1, notes = '' }) {
     const detected = task === 'phone'
       ? observation.phoneDetected
       : observation.personDetected;
@@ -247,7 +284,23 @@ export class BenchmarkRunner {
     // and hand-numbering is exactly where operator error creeps into a dataset.
     const repetition = this.repetitionCount(observation.modelId, task, scenarioId) + 1;
 
-    const competing = (observation.topOther ?? [])[0] ?? null;
+    /**
+     * Strongest competitor across the ENTIRE bounded window.
+     *
+     * Previously this read only the peak-target frame, so a competitor that
+     * spiked at any other moment was invisible — exactly the false-positive
+     * behaviour H10 exists to expose. This is a deterministic reduction over
+     * samples already retained; no inference changes.
+     */
+    let competing = (observation.topOther ?? [])[0] ?? null;
+    if (Array.isArray(samples)) {
+      for (const smp of samples) {
+        const c = (smp.topOther ?? [])[0] ?? null;
+        if (c && (!competing || c.score > competing.score)) competing = c;
+      }
+    }
+    const start = Array.isArray(samples) && samples.length
+      ? samples[0].timestampMs : null;
 
     const trial = {
       trialId: `${observation.modelId}_${task}_${scenarioId}_r${repetition}`,
@@ -276,6 +329,59 @@ export class BenchmarkRunner {
       valid: true,
       notes,
       recordedAtIso: new Date().toISOString(),
+
+      // Real recording boundaries. Both columns previously fell back to the
+      // single save-time stamp, so a 3 s trial exported start == end.
+      recordingStartedAtIso: startedAtIso,
+      recordingEndedAtIso: endedAtIso,
+
+      /**
+       * METRIC PROVENANCE.
+       *
+       * During DEVELOPMENT no operating threshold is frozen: a detection here
+       * means "scored above the DIAGNOSTIC FLOOR", which is a deliberately low
+       * observation floor, not a decision boundary. Recording that basis on the
+       * trial stops a preliminary number from later being read as a validated
+       * model metric.
+       */
+      metricBasis: phase === 'VALIDATION'
+        ? 'FROZEN_OPERATING_THRESHOLD' : 'DIAGNOSTIC_FLOOR',
+      diagnosticFloor: BENCH_SCORE_THRESHOLD,
+      operatingThreshold: null,
+      operatingThresholdStatus: phase === 'VALIDATION' ? 'FROZEN' : 'NOT_FROZEN',
+      metricsStatus: phase === 'VALIDATION' ? 'PENDING_COVERAGE' : 'PRELIMINARY',
+      // Explicit about WHAT was decided, so the generic `detected` field
+      // cannot be mistaken for an operating-point decision.
+      detectedAtDiagnosticFloor: detected,
+      falsePositiveAtDiagnosticFloor: !expected && detected,
+      falseNegativeAtDiagnosticFloor: expected && !detected,
+
+      /**
+       * Experiment phase. DEVELOPMENT evidence is what operating thresholds may
+       * be derived FROM; VALIDATION evidence is what they are then tested ON.
+       * Pooling the two would let a threshold be validated on the data that
+       * produced it, so the distinction is recorded per trial rather than
+       * inferred later from a timestamp.
+       *
+       * Null means the trial predates phase tracking — it is deliberately NOT
+       * back-filled, because guessing which phase a historical trial belonged
+       * to is exactly the contamination this field exists to prevent.
+       */
+      phase: phase ?? null,
+
+      /**
+       * The bounded per-frame series this trial's summary was derived from.
+       *
+       * WHY THIS IS STORED: a trial that keeps only `detected: true` and a peak
+       * cannot support deriving an operating threshold later — the score
+       * distribution that a threshold must be chosen against has been thrown
+       * away, and the only remedy would be re-running every trial. Keeping the
+       * series makes threshold derivation a re-analysis instead of a re-shoot.
+       *
+       * Numbers only: scores, timings and class labels. No imagery ever.
+       */
+      samples: Array.isArray(samples) ? samples.map((x) => sampleOf(x, start)) : null,
+      sampleCount: Array.isArray(samples) ? samples.length : null,
     };
     this.trials.push(trial);
     return trial;

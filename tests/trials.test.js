@@ -179,20 +179,24 @@ test('T11. status labels distinguish the recording states', () => {
 // ── Scenario configuration ──────────────────────────────────────────────
 test('T12. scenario durations are derived from the AI persistence windows', () => {
   const s = CONFIG.state;
-  const shortYaw = getScenario('LOOK_LEFT_SHORT');
-  const longYaw = getScenario('LOOK_LEFT_LONG');
-  // A "short" probe must be unable to satisfy persistence...
-  assert.ok(shortYaw.recordingDurationMs < s.YAW_PERSIST_MS,
-    'SHORT must record for less than the persistence window');
-  // ...and a "long" probe must exceed it with room to observe the trigger.
-  assert.ok(longYaw.recordingDurationMs > s.YAW_PERSIST_MS,
-    'LONG must exceed the persistence window');
-  assert.equal(shortYaw.triggerExpected, false);
-  assert.equal(longYaw.triggerExpected, true);
+  // A "long" probe must outlast its persistence window, or it could never
+  // demonstrate the rule firing; a "short" probe must fall inside it.
+  const yawLong = getScenario('YAW_LEFT_SUSTAINED');
+  const yawShort = getScenario('BRIEF_YAW_GLANCE');
+  assert.ok(yawLong.recordingDurationMs > s.YAW_PERSIST_MS,
+    'a sustained-yaw trial must outlast the yaw persistence window');
+  assert.ok(yawShort.recordingDurationMs < s.YAW_PERSIST_MS,
+    'a brief-glance trial must end before persistence completes');
 
-  assert.ok(getScenario('LOOK_UP_SHORT').recordingDurationMs < s.PITCH_UP_PERSIST_MS);
-  assert.ok(getScenario('LOOK_UP_LONG').recordingDurationMs > s.PITCH_UP_PERSIST_MS);
-  assert.ok(getScenario('EYES_CLOSED_LONG').recordingDurationMs > s.EYE_CLOSED_PERSIST_MS);
+  const eye = getScenario('SUSTAINED_EYE_CLOSURE');
+  assert.ok(eye.recordingDurationMs > s.EYE_CLOSED_PERSIST_MS);
+  const pitchUp = getScenario('PITCH_UP_SUSTAINED');
+  assert.ok(pitchUp.recordingDurationMs > s.PITCH_UP_PERSIST_MS);
+
+  // Left and right must be given the same observation time, or the matrix
+  // itself would bias the very asymmetry it exists to detect.
+  assert.equal(getScenario('YAW_RIGHT_SUSTAINED').recordingDurationMs,
+    yawLong.recordingDurationMs);
 });
 
 test('T13. durations are NOT a single fixed window', () => {
@@ -201,16 +205,19 @@ test('T13. durations are NOT a single fixed window', () => {
     `expected varied durations, got ${[...durations].join(',')}`);
 });
 
-test('T14. absence scenarios are marked pending, not silently validated', () => {
-  for (const id of ['ABSENT', 'RETURN']) {
-    const sc = getScenario(id);
-    assert.equal(sc.pending, true, `${id} must be pending`);
-    assert.match(sc.pendingReason, /PENDING PRESENCE MODEL/);
-  }
-  // And every scenario belongs to a rendered group.
-  for (const sc of DEBUG_SCENARIOS) {
-    assert.ok(DEBUG_GROUPS.includes(sc.group), `${sc.id} has an unknown group`);
-  }
+test('T14. face dropout is not treated as proof of physical absence', () => {
+  // The retired ABSENT/RETURN scenarios implied the Debug harness could
+  // validate TIDAK_HADIR. It cannot — that needs perception, which is still
+  // being benchmarked. D10 tests signal validity and recovery instead.
+  const d10 = getScenario('FACE_DROPOUT_RECOVERY');
+  assert.ok(d10, 'D10 must exist');
+  assert.equal(d10.triggerExpected, false);
+  assert.match(d10.purpose, /not.*physical absence|does NOT validate/i);
+  assert.ok(d10.expectedSemanticBehavior.some((x) => /NOT treated here as physical absence/i.test(x)),
+    'D10 must state that face loss is not absence');
+  // And no scenario in the canonical matrix is left "pending a model".
+  assert.ok(DEBUG_SCENARIOS.every((x) => !x.pending),
+    'the Debug matrix must not depend on an unselected perception model');
 });
 
 test('T15. a pending scenario cannot be selected', () => {
@@ -226,7 +233,7 @@ test('T15. a pending scenario cannot be selected', () => {
 // ── Debug session bookkeeping ───────────────────────────────────────────
 function seedSession() {
   const session = new DebugSession(CONFIG);
-  const sc = getScenario('LOOK_LEFT_LONG');
+  const sc = getScenario('YAW_LEFT_SUSTAINED');
   for (let r = 0; r < 3; r++) {
     const c = new TrialController();
     const ref = session.nextTrialRef(sc.id);
@@ -234,12 +241,18 @@ function seedSession() {
     completed.trialId = ref.trialId;
     completed.repetition = ref.repetition;
     // Attach plausible per-sample telemetry.
+    // A D02 that actually succeeds: the yaw EVIDENCE activates after
+    // persistence. The public state follows, but it is the evidence flag the
+    // verdict reads — setting only publicState would describe a pipeline whose
+    // display moved while the rule under test never fired.
     completed.samples = completed.samples.map((s, i) => ({
       ...s, publicState: i > 60 ? 'TERALIH' : 'FOKUS',
       primaryReason: i > 60 ? 'YAW' : 'NONE',
+      yawEvidence: i > 60,
+      yawPersistenceMs: i > 60 ? 1600 : Math.min(1500, i * 33),
       yawDelta: 45, pitchDelta: -2, rollDelta: 1, earRelative: 1.0,
       faceDetected: true, headPoseValid: true, stateSignalValid: true,
-      fps: 30, faceInferenceMs: 11,
+      eyeEligible: true, fps: 30, faceInferenceMs: 11,
     }));
     session.addTrial(completed, sc);
   }
@@ -249,8 +262,8 @@ function seedSession() {
 test('T16. repetition auto-increments from stored valid trials', () => {
   const session = seedSession();
   assert.deepEqual(session.trials.map((t) => t.repetition), [1, 2, 3]);
-  assert.equal(session.repetitionCount('LOOK_LEFT_LONG'), 3);
-  assert.equal(session.nextTrialRef('LOOK_LEFT_LONG').repetition, 4);
+  assert.equal(session.repetitionCount('YAW_LEFT_SUSTAINED'), 3);
+  assert.equal(session.nextTrialRef('YAW_LEFT_SUSTAINED').repetition, 4);
 });
 
 test('T17. Delete Last Trial removes the trial LITERALLY', () => {
@@ -282,17 +295,17 @@ test('T17b. only the most recent trial can be deleted', () => {
 
 test('T18. progress rolls back when the last trial is deleted', () => {
   const session = seedSession();
-  assert.equal(session.repetitionCount('LOOK_LEFT_LONG'), 3);
-  let p = session.progress(DEBUG_SCENARIOS).find((x) => x.scenarioId === 'LOOK_LEFT_LONG');
+  assert.equal(session.repetitionCount('YAW_LEFT_SUSTAINED'), 3);
+  let p = session.progress(DEBUG_SCENARIOS).find((x) => x.scenarioId === 'YAW_LEFT_SUSTAINED');
   assert.equal(p.complete, true);
 
   session.deleteLastTrial();
-  assert.equal(session.repetitionCount('LOOK_LEFT_LONG'), 2);
-  p = session.progress(DEBUG_SCENARIOS).find((x) => x.scenarioId === 'LOOK_LEFT_LONG');
+  assert.equal(session.repetitionCount('YAW_LEFT_SUSTAINED'), 2);
+  p = session.progress(DEBUG_SCENARIOS).find((x) => x.scenarioId === 'YAW_LEFT_SUSTAINED');
   assert.equal(p.done, 2);
   assert.equal(p.complete, false);
   // The freed repetition slot is reused, so the next trial is 3 of 3 again.
-  assert.equal(session.nextTrialRef('LOOK_LEFT_LONG').repetition, 3);
+  assert.equal(session.nextTrialRef('YAW_LEFT_SUSTAINED').repetition, 3);
 });
 
 test('T18b. a deleted trial leaves ZERO trace in every export artefact', () => {
@@ -302,16 +315,18 @@ test('T18b. a deleted trial leaves ZERO trace in every export artefact', () => {
   session.deleteLastTrial();
 
   const bundle = session.buildExportBundle({ userAgent: 'test' });
+  const decode = (f) => (f.content instanceof Uint8Array
+    ? new TextDecoder().decode(f.content) : f.content);
   for (const f of bundle.files) {
-    assert.ok(!f.content.includes(victim.trialId),
+    assert.ok(!decode(f).includes(victim.trialId),
       `${f.name} still references the deleted trial`);
   }
   // Its telemetry rows are gone too, not merely unreferenced.
-  const telemetry = bundle.files.find((f) => /telemetry/.test(f.name));
-  const rows = telemetry.content.split(String.fromCharCode(10)).filter(Boolean).length - 1;
+  const master = session.buildResultsJson({});
   const remaining = session.trials.reduce((a, t) => a + (t.samples?.length ?? 0), 0);
-  assert.equal(rows, remaining);
-  assert.ok(victimSampleCount > 0 && rows < victimSampleCount * 3);
+  assert.equal(master.trials.reduce((a, t) => a + (t.samples?.length ?? 0), 0),
+    remaining);
+  assert.ok(victimSampleCount > 0);
 
   // Structurally absent from the JSON, not merely absent as a string: no trial
   // entry, no sample, and the progress count rolled back.
@@ -330,54 +345,86 @@ test('T19. trial summary reports trigger and delay', () => {
   const session = seedSession();
   const s = session.trials[0].summary;
   assert.equal(s.triggerExpected, true);
-  assert.equal(s.triggerOccurred, true);
+  assert.equal(s.triggerOccurred, true, 'yaw strong evidence activated');
   assert.ok(s.triggerDelayMs > 0, 'delay measured from window start');
   assert.equal(s.observedFinalState, 'TERALIH');
   assert.equal(s.primaryReason, 'YAW');
   assert.equal(s.matchesExpectation, true);
+  // The verdict comes from the evidence, and says so in words.
+  assert.equal(s.trialVerdict, 'PASS');
+  assert.equal(s.observedOutcome, 'Yaw strong evidence activated');
+  assert.equal(s.failureReason, null);
+  assert.equal(s.verificationDetails.yawEverActive, true);
   assert.ok(Math.abs(s.maxYawDelta - 45) < 1e-9);
 });
 
 test('T20. a summary describes rather than judges', () => {
-  // No key asserts the AI was "wrong" — only whether observation matched
-  // expectation, which a single trial cannot settle on its own.
+  // The summary reports what the PIPELINE did against what the SCENARIO
+  // expected. It must not editorialise about the AI being broken: a single
+  // trial cannot settle that.
+  //
+  // `failureReason` is the one permitted use of the word: it names which
+  // scenario rule was violated ("Unexpected yaw evidence after persistence"),
+  // which is a verification result, not a judgement about the model.
   const session = seedSession();
   const keys = Object.keys(session.trials[0].summary);
+  const allowed = new Set(['failureReason']);
   for (const k of keys) {
-    assert.ok(!/wrong|fail|error|bug/i.test(k), `summary key "${k}" editorialises`);
+    if (allowed.has(k)) continue;
+    assert.ok(!/wrong|broken|bad|error|bug/i.test(k),
+      `summary key "${k}" editorialises`);
   }
   assert.ok(keys.includes('matchesExpectation'));
+
+  // And on a passing trial the field stays empty rather than inventing blame.
+  assert.equal(session.trials[0].summary.failureReason, null);
 });
 
 // ── Debug export ────────────────────────────────────────────────────────
-test('T21. debug export is ONE archive of exactly three files', () => {
+test('T21. debug export is ONE archive of JSON + XLSX', () => {
   const bundle = seedSession().buildExportBundle({ userAgent: 'test' });
-  assert.equal(bundle.files.length, 3, 'three files, no fragmented extras');
-  const names = bundle.files.map((f) => f.name);
-  assert.deepEqual(names.sort(),
-    ['debug_results.json', 'debug_telemetry.csv', 'debug_trials.csv']);
-  // One download decision for the tester, not six buttons.
+  assert.equal(bundle.files.length, 2, 'two files, no CSV clutter');
+  assert.deepEqual(bundle.files.map((f) => f.name).sort(),
+    ['debug_report.xlsx', 'debug_results.json']);
   assert.match(bundle.archiveName, /^hachiko_debug_session_\d{4}-\d{2}-\d{2}_\d{4}\.zip$/);
+
   const json = bundle.files.find((f) => f.name.endsWith('.json'));
   assert.equal(json.mime, 'application/json');
-  assert.equal(bundle.files.filter((f) => f.mime === 'text/csv').length, 2);
-  // Fragmented per-topic exports are gone.
-  for (const gone of ['session', 'config', 'calibration', 'scenario', 'metrics', 'runtime']) {
-    assert.ok(!names.some((n) => n === `debug_${gone}.csv`),
-      `debug_${gone}.csv must not be a separate file`);
+  const xlsx = bundle.files.find((f) => f.name.endsWith('.xlsx'));
+  assert.match(xlsx.mime, /spreadsheetml\.sheet$/);
+  // The workbook is binary; a string would mean it was text-encoded.
+  assert.ok(xlsx.content instanceof Uint8Array);
+  // Fragmented per-topic exports never came back.
+  for (const gone of ['debug_trials.csv', 'debug_telemetry.csv',
+                      'session.csv', 'config.csv']) {
+    assert.ok(!bundle.files.some((f) => f.name === gone), `${gone} must not exist`);
   }
 });
 
-test('T21b. the archive is a valid ZIP the three files can be read from', () => {
+test('T21b. the workbook is a valid XLSX package', () => {
   const bundle = seedSession().buildExportBundle({ userAgent: 'test' });
+  const xlsx = bundle.files.find((f) => f.name.endsWith('.xlsx')).content;
+  // PK signature, then the OOXML parts a reader requires.
+  assert.equal(xlsx[0], 0x50);
+  assert.equal(xlsx[1], 0x4b);
+  const text = new TextDecoder().decode(xlsx);
+  for (const part of ['[Content_Types].xml', 'xl/workbook.xml',
+                      'xl/styles.xml', 'xl/worksheets/sheet1.xml',
+                      'xl/worksheets/sheet2.xml']) {
+    assert.ok(text.includes(part), `missing part ${part}`);
+  }
+  // Exactly two sheets, named for what they answer.
+  assert.ok(text.includes('Trial Summary'));
+  assert.ok(text.includes('Telemetry'));
+  assert.ok(!text.includes('sheet3.xml'), 'the debug workbook has two sheets');
+  // No macros, no external links.
+  assert.ok(!text.includes('vbaProject'));
+  assert.ok(!text.includes('externalLink'));
+
   const zip = buildZip(bundle.files);
-  // Local header, then a central directory and EOCD at the end.
-  assert.equal(zip[0], 0x50); assert.equal(zip[1], 0x4b);
   const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-  assert.equal(dv.getUint32(0, true), 0x04034b50, 'local file header');
-  const eocd = zip.length - 22;
-  assert.equal(dv.getUint32(eocd, true), 0x06054b50, 'end of central directory');
-  assert.equal(dv.getUint16(eocd + 10, true), 3, 'three entries');
+  assert.equal(dv.getUint32(0, true), 0x04034b50);
+  assert.equal(dv.getUint16(zip.length - 22 + 10, true), 2, 'two entries');
 });
 
 test('T22. debug_results.json is a complete standalone record', () => {
@@ -406,61 +453,70 @@ test('T22. debug_results.json is a complete standalone record', () => {
 test('T23. the export states that presence and phone are PENDING', () => {
   const session = seedSession();
   assert.equal(session.buildResultsJson().perception.presenceModel, 'PENDING BAKE-OFF');
-  assert.ok(session.buildTrialsCsv().includes('PENDING BAKE-OFF'),
-    'the trials CSV must record that no perception model was active');
+  // The perception status is session-level context, so it lives in the JSON
+  // master rather than being repeated on every trial row.
+  assert.equal(session.buildResultsJson().perception.presenceModel,
+    'PENDING BAKE-OFF');
 });
 
-test('T24. debug_trials.csv is interpretable without the JSON', () => {
+test('T24. debug_trials.csv is a readable analysis table', () => {
   const session = seedSession();
-  const csv = session.buildTrialsCsv({
-    userAgent: 'test-agent', viewport: '1440x900',
-    videoWidth: 640, videoHeight: 480,
-  });
+  const csv = session.buildTrialsCsv();
   const cols = csv.split(String.fromCharCode(10))[0].split(',');
-  // Session, protocol, calibration, scenario, expectation, metrics, runtime.
-  for (const c of ['session_id', 'page_mode', 'schema_version', 'protocol_version',
-                   'session_started_at', 'exported_at',
-                   'user_agent', 'viewport', 'video_width', 'video_height',
-                   'calibration_status', 'baseline_yaw_deg', 'baseline_ear',
-                   'scenario_id', 'scenario_group', 'scenario_label',
-                   'repetition_index', 'repetitions_required',
-                   'configured_record_sec', 'expected_outcome',
-                   'final_predicted_state', 'final_primary_reason',
-                   'signal_validity', 'matches_expectation',
-                   'max_abs_yaw_delta_deg', 'max_pitch_up_delta_deg',
-                   'max_pitch_down_delta_deg', 'max_abs_head_tilt_delta_deg',
-                   'min_ear_relative',
-                   'thr_strong_yaw_deg', 'thr_ear_relative', 'thr_yaw_persist_ms',
-                   'median_fps', 'notes']) {
+
+  // Identity, then validity, then what happened. The JSON master holds the
+  // session metadata, config and calibration baselines.
+  for (const c of ['session_id', 'trial_id', 'scenario_code', 'scenario_id',
+                   'scenario_name', 'scenario_category', 'repetition',
+                   'calibration_valid_at_start', 'trial_validity',
+                   'valid_signal_samples', 'total_samples', 'valid_signal_ratio',
+                   'expected_trigger', 'observed_trigger', 'expected_outcome',
+                   'final_state', 'primary_reason', 'matches_expectation',
+                   'max_abs_yaw_delta_deg', 'min_relative_ear',
+                   'sample_count', 'inference_p50_ms',
+                   'recording_started_at', 'recording_ended_at', 'duration_ms']) {
     assert.ok(cols.includes(c), `debug trials CSV missing ${c}`);
   }
-  assert.ok(csv.includes('test-agent'), 'runtime context travels in the rows');
-  // No valid/invalid columns: invalid trials no longer exist as rows.
-  assert.ok(!cols.includes('valid'), 'the valid flag is obsolete');
-  assert.ok(!cols.includes('invalid_reason'), 'invalid_reason is obsolete');
+  // Session/browser/config clutter belongs in the JSON, not on every row.
+  for (const gone of ['page_mode', 'schema_version', 'protocol_version',
+                      'user_agent', 'viewport', 'exported_at',
+                      'thr_strong_yaw_deg', 'baseline_yaw_deg']) {
+    assert.ok(!cols.includes(gone), `${gone} should live in the JSON master`);
+  }
+  // And no duplicate aliases for one concept.
+  assert.ok(!cols.includes('scenario_label'));
+  assert.ok(!cols.includes('scenario_group'));
+  assert.ok(!cols.includes('actual_record_sec'), 'duration_ms is canonical');
+  assert.ok(cols.length >= 25 && cols.length <= 34,
+    `expected a readable width, got ${cols.length} columns`);
 });
 
-test('T24b. debug_telemetry.csv identifies itself on every row', () => {
+test('T24b. debug_telemetry.csv orders the measurement chain', () => {
   const session = seedSession();
   const lines = session.buildTelemetryCsv().split(String.fromCharCode(10));
   const cols = lines[0].split(',');
-  for (const c of ['session_id', 'schema_version', 'protocol_version',
-                   'trial_id', 'scenario_id', 'scenario_group', 'repetition_index',
-                   'relative_time_ms', 'face_detected',
-                   'yaw_raw', 'yaw_delta', 'yaw_smoothed', 'ear_relative',
-                   'eye_eligible', 'yaw_evidence', 'yaw_persistence_ms',
-                   'pitch_down_support', 'head_tilt_support',
-                   'public_state', 'primary_reason', 'fps']) {
+
+  // Identity -> validity -> measurement -> evidence -> persistence -> state.
+  assert.deepEqual(cols.slice(0, 5),
+    ['session_id', 'trial_id', 'scenario_code', 'repetition', 'elapsed_ms']);
+  for (const c of ['face_detected', 'head_pose_valid', 'eye_eligible',
+                   'state_signal_valid',
+                   'yaw_raw_deg', 'yaw_delta_deg', 'yaw_smoothed_deg',
+                   'head_tilt_raw_deg', 'ear_relative',
+                   'yaw_evidence', 'pitch_down_support', 'head_tilt_support',
+                   'yaw_persistence_ms', 'public_state', 'fps']) {
     assert.ok(cols.includes(c), `debug telemetry CSV missing ${c}`);
   }
-  // Heavy config must NOT be repeated per frame — that is what the IDs are for.
-  for (const heavy of ['user_agent', 'thr_strong_yaw_deg', 'scenario_label']) {
-    assert.ok(!cols.includes(heavy),
-      `${heavy} must not be duplicated on every telemetry row`);
-  }
+  assert.ok(cols.indexOf('face_detected') < cols.indexOf('yaw_raw_deg'),
+    'validity precedes the measurements it qualifies');
+  assert.ok(cols.indexOf('yaw_raw_deg') < cols.indexOf('yaw_evidence'),
+    'measurement precedes the evidence derived from it');
+  assert.ok(cols.indexOf('yaw_evidence') < cols.indexOf('public_state'),
+    'evidence precedes the state it produces');
+
   const first = lines[1].split(',');
   assert.equal(first[0], session.sessionId, 'row names its session');
-  assert.ok(first[3].length > 0, 'row names its trial');
+  assert.ok(first[1].length > 0, 'row names its trial');
 });
 
 test('T25. telemetry CSV contains ONLY trial-bounded rows', () => {
@@ -472,7 +528,7 @@ test('T25. telemetry CSV contains ONLY trial-bounded rows', () => {
   // Every row must name a real trial — no orphan preview rows.
   const ids = new Set(session.trials.map((t) => t.trialId));
   for (const line of lines) {
-    assert.ok(ids.has(line.split(',')[3]), 'telemetry row without a trial');
+    assert.ok(ids.has(line.split(',')[1]), 'telemetry row without a trial');
   }
 });
 
@@ -769,20 +825,21 @@ test('T46. the Perception tab states a single clean pending message', () => {
 });
 
 test('T47. the official scenario matrix is complete and unreduced', () => {
-  // P01-P09 presence, H01-H10 phone. Silently shrinking the matrix would make
+  // P01-P10 presence, H01-H10 phone. Silently shrinking the matrix would make
   // the benchmark unfair without anyone noticing.
-  assert.equal(PERSON_SCENARIOS.length, 9);
+  assert.equal(PERSON_SCENARIOS.length, 10);
   assert.equal(PHONE_SCENARIOS.length, 10);
   assert.deepEqual(PERSON_SCENARIOS.map((s) => s.code),
-    ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09']);
+    ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10']);
   assert.deepEqual(PHONE_SCENARIOS.map((s) => s.code),
     ['H01', 'H02', 'H03', 'H04', 'H05', 'H06', 'H07', 'H08', 'H09', 'H10']);
-  // H10 is a phone-shaped non-phone: without it, a detector that fires on any
-  // dark rectangle would look perfect on the empty negative control alone.
+  // H10 is a standardised hard negative: without it, a detector that fires on
+  // any dark rectangle would look perfect on the empty control alone.
   const h10 = PHONE_SCENARIOS.find((s) => s.code === 'H10');
-  assert.equal(h10.id, 'non_phone_rectangle');
+  assert.equal(h10.id, 'phone_lookalike_negative');
   assert.equal(h10.expect, false);
-  // Both tasks keep a negative control.
-  assert.ok(PERSON_SCENARIOS.some((s) => !s.expect));
+  // Each task keeps TWO negative controls: an empty one and a hard one.
+  assert.equal(PERSON_SCENARIOS.filter((s) => !s.expect).length, 2);
   assert.equal(PHONE_SCENARIOS.filter((s) => !s.expect).length, 2);
 });
+

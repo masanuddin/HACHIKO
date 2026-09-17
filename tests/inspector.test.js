@@ -77,12 +77,12 @@ test('I2. samples after auto-stop do not leak into the trial', () => {
 
 // ── Locked methodology ──────────────────────────────────────────────────
 test('I3. every candidate uses the complete official scenario matrix', () => {
-  assert.equal(PERSON_SCENARIOS.length, 9);
+  assert.equal(PERSON_SCENARIOS.length, 10);
   assert.equal(PHONE_SCENARIOS.length, 10);
   // The set a candidate must cover is never a subset.
-  assert.equal(requiredScenarios('person').length, 9);
+  assert.equal(requiredScenarios('person').length, 10);
   assert.equal(requiredScenarios('phone').length, 10);
-  assert.equal(requiredScenarios('pose').length, 9, 'presence shares the person set');
+  assert.equal(requiredScenarios('pose').length, 10, 'presence shares the person set');
 
   const ids = CANDIDATES.map((c) => c.id);
   for (const want of ['edl0-f16', 'edl2-f16', 'ssd-mnv2-f32', 'pose-lite']) {

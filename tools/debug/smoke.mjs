@@ -82,7 +82,7 @@ ok(harness.trials.samples.length === 0, 'idle preview stores no experiment data'
 ok(harness.session.trials.length === 0, 'no trials exist before START TRIAL');
 
 // ── One bounded trial ──────────────────────────────────────────────────
-const sc = getScenario('LOOK_LEFT_LONG');
+const sc = getScenario('YAW_LEFT_SUSTAINED');
 const sel = harness.selectScenario(sc.id);
 ok(sel.ok, 'scenario selected');
 ok(!harness.trials.isRecording(), 'selecting a scenario does NOT start recording');
@@ -141,32 +141,41 @@ const bundle = harness.session.buildExportBundle({ userAgent: 'node-smoke' });
 // Look files up by NAME, never by index: positional access silently breaks the
 // moment the bundle order changes.
 const fileNamed = (n) => bundle.files.find((f) => f.name === n);
-ok(bundle.files.length === 3, 'export produces exactly three files');
+// The XLSX is binary; decoding is how we read it as text for these checks.
+const asText = (f) => (f.content instanceof Uint8Array
+  ? new TextDecoder().decode(f.content) : f.content);
+ok(bundle.files.length === 2, 'export produces exactly two files');
 ok(!!fileNamed('debug_results.json'), 'results.json present');
-ok(!!fileNamed('debug_trials.csv'), 'trials CSV present');
-ok(!!fileNamed('debug_telemetry.csv'), 'telemetry CSV present');
+ok(!!fileNamed('debug_report.xlsx'), 'the workbook is present');
+ok(!bundle.files.some((f) => /\.csv$/.test(f.name)), 'no CSV clutter remains');
 ok(/\.zip$/.test(bundle.archiveName), 'delivered as one archive');
 
 const doc = JSON.parse(fileNamed('debug_results.json').content);
 ok(doc.perception.presenceModel === 'PENDING BAKE-OFF', 'JSON declares perception PENDING');
 ok(Array.isArray(doc.scenarios) && doc.scenarios.length > 0, 'JSON carries the protocol');
 ok(!!doc.config.state, 'JSON carries the thresholds');
-// The perception columns exist on every trial row; this session deleted its
-// only trial, so assert the header carries them rather than a row value.
-ok(/perception_presence_model/.test(fileNamed('debug_trials.csv').content),
-   'trials CSV records which perception model was active');
+// Perception status is session-level context, so it lives in the JSON master
+// rather than being repeated on every trial row.
+ok(doc.perception.presenceModel === 'PENDING BAKE-OFF',
+   'the master record states which perception model was active');
 
 // The deleted trial must leave no trace in any artefact.
 for (const f of bundle.files) {
-  ok(!f.content.includes(rec.trialId), `${f.name} excludes the deleted trial`);
+  ok(!asText(f).includes(rec.trialId), `${f.name} excludes the deleted trial`);
 }
-const trialRows = fileNamed('debug_trials.csv').content
-  .split(String.fromCharCode(10)).filter(Boolean);
-ok(trialRows.length - 1 === 0, 'no valid trials remain after the delete');
 ok(doc.trials.length === 0, 'the JSON has no trial entries either');
+// The workbook is rebuilt from that same empty document, so its table holds
+// only the header row.
+const book = asText(fileNamed('debug_report.xlsx'));
+const sheet1 = (book.match(/<sheetData>([\s\S]*?)<\/sheetData>/g) ?? [])[0] ?? '';
+// 10 summary rows + a spacer + the table header, and nothing beneath it. The
+// session id legitimately appears in the panel, so count rows rather than
+// searching for the "debug_" prefix.
+ok((sheet1.match(/<row r="/g) ?? []).length === 12,
+   'the workbook table is empty apart from its header');
 
 for (const f of bundle.files) {
-  ok(!/data:image|blob:|ImageData|base64/.test(f.content), `${f.name} has no imagery`);
+  ok(!/data:image|blob:|ImageData|base64/.test(asText(f)), `${f.name} has no imagery`);
 }
 
 console.log(process.exitCode ? '\nSMOKE TEST FAILED' : '\nsmoke test passed');

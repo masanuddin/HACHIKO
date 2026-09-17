@@ -26,6 +26,8 @@ import {
   CANDIDATES, BENCH_RECORDING_MS, PERSON_SCENARIOS, PHONE_SCENARIOS,
 } from './candidates.js';
 import { taskMetrics } from './score.js';
+import { BENCH_SCORE_THRESHOLD } from './candidates.js';
+import { buildBenchmarkReport } from './benchmarkReport.js';
 
 export const EXPORT_SCHEMA_VERSION = 'hachiko-benchmark-export-3.0';
 
@@ -36,22 +38,42 @@ export const EXPORT_SCHEMA_VERSION = 'hachiko-benchmark-export-3.0';
  */
 export const BENCH_PROTOCOL_VERSION = 'hachiko-benchmark-protocol-1.0';
 
+/**
+ * benchmark_trials.csv — one row per model x task x scenario x repetition.
+ *
+ * Answers: what was tested, what was true, what the model output, how fast.
+ *
+ * The legacy aliases (`max_target_score`, `detection_result`, `false_positive`)
+ * are gone from the human table: during DEVELOPMENT a "detection" is a score
+ * above the diagnostic floor, not an operating-point decision, and a column
+ * named `detection_result` invites exactly that misreading. The explicit
+ * `*_at_diagnostic_floor` names stay. Legacy fields remain on the trial object
+ * and in the JSON for any code that still reads them.
+ */
 export const TRIAL_COLUMNS = [
-  // Provenance, so the file is reanalysable without opening the JSON.
-  'benchmark_session_id', 'schema_version', 'protocol_version',
-  'session_started_at', 'exported_at', 'user_agent', 'trial_id',
-  'candidate_model_id', 'candidate_model_name', 'model_family',
-  'task', 'scenario_id', 'scenario_group', 'repetition_index',
-  'repetitions_required',
+  // IDENTITY
+  'session_id', 'trial_id', 'phase', 'model', 'task',
+  'scenario_code', 'scenario_id', 'scenario_name', 'repetition',
+  // GROUND TRUTH
+  'ground_truth', 'scenario_type',
+  // OBSERVED
+  'peak_target_score', 'detected_at_diagnostic_floor',
+  'false_positive_at_diagnostic_floor', 'false_negative_at_diagnostic_floor',
+  'strongest_competitor', 'strongest_competitor_score',
+  // RUNTIME
+  'sample_count', 'inference_p50_ms', 'inference_p95_ms',
+  'video_width', 'video_height', 'delegate',
+  // METRIC PROVENANCE
+  'metric_basis', 'diagnostic_floor', 'operating_threshold',
+  'operating_threshold_status', 'metrics_status',
+  // TIMING
   'recording_started_at', 'recording_ended_at', 'duration_ms',
-  'configured_record_sec',
-  'scenario_type', 'expected_target_present',
-  'detection_result', 'max_target_score',
-  'competing_class', 'competing_score', 'raw_detection_count',
-  'false_positive', 'false_negative',
-  'median_inference_ms', 'p95_inference_ms', 'delegate', 'model_size_bytes',
-  'model_asset_file', 'video_width', 'video_height', 'notes',
+  'notes',
 ];
+
+
+
+
 
 export const SCENARIO_SUMMARY_COLUMNS = [
   'benchmark_session_id', 'candidate_model_id', 'task',
@@ -63,25 +85,40 @@ export const SCENARIO_SUMMARY_COLUMNS = [
   'median_inference_ms', 'p95_inference_ms',
 ];
 
+/**
+ * benchmark_summary.csv — one row per model x task.
+ *
+ * Answers: how much evidence exists, what it preliminarily shows, how separated
+ * the positive and negative scores are, and what the runtime costs.
+ *
+ * `sensitivity` is gone: it is the same quantity as `recall`, and exporting a
+ * metric twice under two names invites a reader to treat them as independent
+ * corroboration. Rank and recommendation are absent too — a DEVELOPMENT table
+ * computed at the diagnostic floor has no business carrying a winner column.
+ */
 export const MODEL_SUMMARY_COLUMNS = [
-  // Enough context to read this file directly as a model-comparison table.
-  'benchmark_session_id', 'schema_version', 'protocol_version',
-  'session_started_at', 'exported_at', 'user_agent',
-  'candidate_model_id', 'candidate_model_name', 'task',
-  'scenarios_required', 'scenarios_completed',
-  'trials_required', 'trials_completed', 'completion_status',
+  // IDENTITY
+  'phase', 'model', 'task',
+  // COVERAGE
+  'scenarios_completed', 'scenarios_required',
+  'trials_completed', 'trials_required', 'status',
+  // DATA BALANCE
   'positive_trials', 'negative_trials',
+  // PERFORMANCE — null wherever the contradicting evidence does not exist yet
   'tp', 'tn', 'fp', 'fn',
-  'recall', 'sensitivity', 'specificity', 'precision',
+  'recall', 'specificity', 'false_positive_rate', 'precision',
+  // SCORE BEHAVIOUR
   'min_positive_score', 'median_positive_score', 'max_positive_score',
-  'max_negative_score', 'margin', 'discriminability',
-  // Model-LOCAL threshold. Raw confidence is not comparable across families,
-  // so each model gets the operating point its own separation implies.
+  'max_negative_score', 'score_margin', 'discriminability',
   'suggested_operating_threshold',
-  'median_inference_ms', 'p95_inference_ms',
-  'model_size_bytes', 'delegate', 'model_asset_file',
-  'repetitions_required', 'rank', 'recommended_for_task',
+  // RUNTIME / FEASIBILITY
+  'inference_p50_ms', 'inference_p95_ms', 'model_size_mb', 'delegate',
+  // PROVENANCE
+  'metric_basis', 'diagnostic_floor', 'operating_threshold',
+  'operating_threshold_status', 'metrics_status',
 ];
+
+
 
 const FORBIDDEN = /^(image|frame|imageData|bitmap|canvas|video|dataUrl|blob|pixels|buffer|src)$/i;
 
@@ -166,6 +203,44 @@ function confusion(trials) {
  * `completenessFlag` is the honest gate: no ranking is claimed for a candidate
  * that has not been evaluated on every required scenario.
  */
+/**
+ * Gate a metric on the evidence class that could have contradicted it.
+ *
+ * Precision computed from positives alone is 1.0 by construction: the model has
+ * not yet had a single opportunity to produce a false positive, so reporting
+ * "100% precision" states a fact about the sampling, not about the model. The
+ * same applies to specificity and false-positive rate without negatives.
+ *
+ * Unavailable is expressed as null — never 0, 1, or "Not applicable", which
+ * would all assert something the data does not support.
+ */
+export function applyMetricReadiness(metrics, positiveCount, negativeCount) {
+  const hasPos = positiveCount > 0;
+  const hasNeg = negativeCount > 0;
+  const bothClasses = hasPos && hasNeg;
+  return {
+    ...metrics,
+    recall: hasPos ? metrics.recall : null,
+    sensitivity: hasPos ? metrics.sensitivity : null,
+    specificity: hasNeg ? metrics.specificity : null,
+    falsePositiveRate: hasNeg
+      ? (negativeCount ? metrics.fp / negativeCount : null) : null,
+    // Both classes, or the number describes the sample rather than the model.
+    precision: bothClasses ? metrics.precision : null,
+    accuracy: bothClasses ? (metrics.accuracy ?? null) : null,
+    // Separation needs two distributions to separate.
+    discriminability: bothClasses ? metrics.discriminability : null,
+    metricReadiness: {
+      positiveTrials: positiveCount,
+      negativeTrials: negativeCount,
+      recallReady: hasPos,
+      specificityReady: hasNeg,
+      precisionReady: bothClasses,
+      separationReady: bothClasses,
+    },
+  };
+}
+
 export function buildModelSummaries(trials, options = {}) {
   const required = options.requiredRepetitions ?? 3;
   const grouped = groupTrials(trials);
@@ -181,6 +256,17 @@ export function buildModelSummaries(trials, options = {}) {
       (s) => list.filter((t) => t.scenarioId === s.id).length >= required).length;
     const complete = completed === need.length;
 
+    const positiveTrials = list.filter(
+      (t) => (t.expectedTargetPresent ?? t.expected)).length;
+    const negativeTrials = list.length - positiveTrials;
+    // A metric is reported only when the evidence that could have contradicted
+    // it exists. See applyMetricReadiness.
+    const ready = applyMetricReadiness({
+      recall: m.recall, sensitivity: m.sensitivity,
+      specificity: m.specificity, precision: m.precision,
+      discriminability: m.discriminability, fp: c.fp,
+    }, positiveTrials, negativeTrials);
+
     rows.push({
       model, task,
       modelName: candidate?.label ?? model,
@@ -188,15 +274,17 @@ export function buildModelSummaries(trials, options = {}) {
       scenariosCompleted: completed,
       completenessFlag: complete ? 'COMPLETE' : 'INCOMPLETE',
       totalValidTrials: list.length,
-      positiveTrials: list.filter((t) => (t.expectedTargetPresent ?? t.expected)).length,
-      negativeTrials: list.filter((t) => !(t.expectedTargetPresent ?? t.expected)).length,
+      positiveTrials,
+      negativeTrials,
       ...c,
-      recall: m.recall,
-      sensitivity: m.sensitivity,
-      specificity: m.specificity,
-      precision: m.precision,
+      recall: ready.recall,
+      sensitivity: ready.sensitivity,
+      specificity: ready.specificity,
+      precision: ready.precision,
+      falsePositiveRate: ready.falsePositiveRate,
+      metricReadiness: ready.metricReadiness,
       separation: m.separation,
-      discriminability: m.discriminability,
+      discriminability: ready.discriminability,
       medianInferenceMs: m.medianInferenceMs,
       p95InferenceMs: m.p95InferenceMs,
       modelSizeBytes: candidate?.sizeBytes ?? null,
@@ -334,30 +422,37 @@ export function scenarioStrengths(trials, model, task, options = {}) {
 /** benchmark_trials.csv — one row per VALID trial. */
 export function buildTrialsCsv(trials, options = {}) {
   const sessionId = options.sessionId ?? '';
-  const required = options.requiredRepetitions ?? 3;
-  const startedAt = options.startedIso ?? null;
-  const exportedAt = new Date().toISOString();
-  const userAgent = options.userAgent ?? null;
   const rows = trials.map((t) => {
     const candidate = CANDIDATES.find((c) => c.id === t.modelId) ?? null;
     const expected = t.expectedTargetPresent ?? t.expected;
+    const meta = scenarioMeta(t.task, t.scenarioId);
+    const truth = t.task === 'phone'
+      ? (expected ? 'PHONE PRESENT' : 'PHONE ABSENT')
+      : (expected ? 'PRESENT' : 'ABSENT');
     return [
-      sessionId, EXPORT_SCHEMA_VERSION, BENCH_PROTOCOL_VERSION,
-      startedAt, exportedAt, userAgent, t.trialId,
-      t.modelId, candidate?.label ?? t.modelId, candidate?.task ?? '',
-      t.task, t.scenarioId,
-      expected ? 'positive' : 'negative_control', t.repetition, required,
-      t.recordingStartedAtIso ?? t.recordedAtIso, t.recordedAtIso,
-      round(t.durationMs ?? BENCH_RECORDING_MS, 0),
-      round((t.durationMs ?? BENCH_RECORDING_MS) / 1000, 2),
-      t.scenarioType ?? (expected ? 'positive' : 'negative_control'), expected,
-      t.detected, round(t.maxScore),
-      t.competingClass, round(t.competingScore), t.rawDetectionCount,
-      t.falsePositive, t.falseNegative ?? (expected && !t.detected),
+      sessionId, t.trialId, t.phase ?? '', t.modelId, t.task,
+      meta?.code ?? null, t.scenarioId, meta?.label ?? null, t.repetition,
+
+      truth, expected ? 'POSITIVE' : 'NEGATIVE',
+
+      round(t.maxScore),
+      t.detectedAtDiagnosticFloor ?? t.detected,
+      t.falsePositiveAtDiagnosticFloor ?? t.falsePositive,
+      t.falseNegativeAtDiagnosticFloor ?? t.falseNegative
+        ?? (expected && !t.detected),
+      t.competingClass, round(t.competingScore),
+
+      t.sampleCount ?? null,
       round(t.inferenceMs, 2), round(t.p95InferenceMs ?? t.inferenceMs, 2),
-      t.delegate, candidate?.sizeBytes ?? null,
-      candidate?.file ?? null,
-      t.videoWidth, t.videoHeight, t.notes ?? '',
+      t.videoWidth, t.videoHeight, t.delegate,
+
+      t.metricBasis ?? null, t.diagnosticFloor ?? null,
+      t.operatingThreshold ?? null, t.operatingThresholdStatus ?? null,
+      t.metricsStatus ?? null,
+
+      t.recordingStartedAtIso ?? null, t.recordingEndedAtIso ?? null,
+      round(t.durationMs ?? BENCH_RECORDING_MS, 0),
+      t.notes ?? '',
     ];
   });
   return toCsv(TRIAL_COLUMNS, rows);
@@ -377,29 +472,36 @@ export function buildScenarioSummaryCsv(trials, options = {}) {
 
 /** benchmark_model_summary.csv — candidate x task, with rank + recommendation. */
 export function buildModelSummaryCsv(trials, options = {}) {
-  const sessionId = options.sessionId ?? '';
-  const startedAt = options.startedIso ?? null;
-  const exportedAt = new Date().toISOString();
-  const userAgent = options.userAgent ?? null;
   const required = options.requiredRepetitions ?? 3;
+  const phases = [...new Set(trials.map((t) => t.phase).filter(Boolean))];
+  const phase = phases.length === 1 ? phases[0] : (phases.length ? 'MIXED' : null);
+  const metricBasis = phase === 'VALIDATION'
+    ? 'FROZEN_OPERATING_THRESHOLD' : 'DIAGNOSTIC_FLOOR';
+  const operatingStatus = phase === 'VALIDATION' ? 'FROZEN' : 'NOT_FROZEN';
+  const metricsStatus = phase === 'VALIDATION' ? 'PENDING_COVERAGE' : 'PRELIMINARY';
+
   const rows = buildModelSummaries(trials, options).map((r) => [
-    sessionId, EXPORT_SCHEMA_VERSION, BENCH_PROTOCOL_VERSION,
-    startedAt, exportedAt, userAgent,
-    r.model, r.modelName, r.task,
-    r.scenariosRequired, r.scenariosCompleted,
-    r.scenariosRequired * required, r.totalValidTrials, r.completenessFlag,
+    phase, r.model, r.task,
+
+    r.scenariosCompleted, r.scenariosRequired,
+    r.totalValidTrials, r.scenariosRequired * required, r.completenessFlag,
+
     r.positiveTrials, r.negativeTrials,
+
     r.tp, r.tn, r.fp, r.fn,
-    round(r.recall), round(r.sensitivity), round(r.specificity), round(r.precision),
+    round(r.recall), round(r.specificity),
+    round(r.falsePositiveRate), round(r.precision),
+
     round(r.separation?.minPositive), round(r.separation?.medianPositive),
     round(r.separation?.maxPositive), round(r.separation?.maxNegative),
     round(r.separation?.margin), round(r.discriminability),
     round(r.separation?.suggestedThreshold),
+
     round(r.medianInferenceMs, 2), round(r.p95InferenceMs, 2),
-    r.modelSizeBytes, r.delegate,
-    (CANDIDATES.find((c) => c.id === r.model) ?? {}).file ?? null,
-    required,
-    r.finalRank, r.finalRecommendation,
+    r.modelSizeBytes ? Number((r.modelSizeBytes / 1e6).toFixed(2)) : null,
+    r.delegate,
+
+    metricBasis, BENCH_SCORE_THRESHOLD, null, operatingStatus, metricsStatus,
   ]);
   return toCsv(MODEL_SUMMARY_COLUMNS, rows);
 }
@@ -486,6 +588,39 @@ export function benchmarkCompletion(trials, options = {}) {
  * Deleted trials leave zero trace: this is built from the live `trials` array,
  * which a deletion has already popped, so there is nothing to filter out.
  */
+/**
+ * Session-level environment, reconciled against what the trials recorded.
+ *
+ * If a field varied mid-session it is reported as MIXED with the observed
+ * values rather than silently claiming one stable environment.
+ */
+export function deriveEnvironment(trials, session = {}) {
+  const agree = (pick) => {
+    const vals = [...new Set(trials.map(pick).filter((v) => v !== null && v !== undefined))];
+    if (!vals.length) return { value: null, mixed: false, observed: [] };
+    if (vals.length === 1) return { value: vals[0], mixed: false, observed: vals };
+    return { value: 'MIXED', mixed: true, observed: vals };
+  };
+  const w = agree((t) => t.videoWidth);
+  const h = agree((t) => t.videoHeight);
+  const d = agree((t) => t.delegate);
+  return {
+    userAgent: session.userAgent ?? null,
+    viewport: session.viewport ?? null,
+    videoWidth: session.videoWidth ?? w.value,
+    videoHeight: session.videoHeight ?? h.value,
+    delegate: session.delegate ?? d.value,
+    environmentStable: !(w.mixed || h.mixed || d.mixed),
+    observed: { videoWidth: w.observed, videoHeight: h.observed, delegate: d.observed },
+    note: (w.mixed || h.mixed || d.mixed)
+      ? 'The environment changed during this session — trial-level values are '
+        + 'authoritative.'
+      : (w.value === null
+        ? 'No trials yet; nothing to derive from.'
+        : 'Derived from the recorded trials, which agree.'),
+  };
+}
+
 export function buildResultsJson(trials, options = {}) {
   const session = options.session ?? {};
   const doc = {
@@ -496,12 +631,17 @@ export function buildResultsJson(trials, options = {}) {
       exportedAt: new Date().toISOString(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
     },
-    environment: {
-      userAgent: session.userAgent ?? null,
-      viewport: session.viewport ?? null,
-      videoWidth: session.videoWidth ?? null,
-      videoHeight: session.videoHeight ?? null,
-    },
+    // Derived from the trials themselves when the session did not supply it,
+    // so the master JSON is usable standalone instead of forcing a reader to
+    // open the first trial just to learn the input resolution. Nothing is
+    // fabricated: a value only appears if the trials actually agree on it.
+    // Session phase, surfaced at top level so a reader knows what basis the
+    // whole document is on without opening a trial.
+    phase: (() => {
+      const p = [...new Set(trials.map((t) => t.phase).filter(Boolean))];
+      return p.length === 1 ? p[0] : (p.length ? 'MIXED' : null);
+    })(),
+    environment: deriveEnvironment(trials, session),
     session: {
       sessionId: session.sessionId ?? null,
       startedAt: session.startedIso ?? null,
@@ -561,23 +701,23 @@ export function buildExportBundle(input) {
     userAgent: session.userAgent ?? null,
   };
 
-  // A BOM keeps Excel from mangling UTF-8 on open; pandas and R ignore it.
-  const bom = '﻿';
+  // ONE document, serialised twice. The workbook reads the summaries the JSON
+  // already carries rather than recomputing them, so the two cannot diverge.
+  const doc = buildResultsJson(trials, { ...options, session });
+  const phase = [...new Set(trials.map((t) => t.phase).filter(Boolean))];
+  const phaseTag = phase.length === 1 ? `_${phase[0].toLowerCase()}` : '';
+
   return {
     stamp,
     recommendation: buildRecommendation(trials, options),
     completion: benchmarkCompletion(trials, options),
-    archiveName: `hachiko_benchmark_results_${stamp}.zip`,
-    // Exactly three files. Per-scenario detail is not dropped — it lives in the
-    // JSON under `scenarioSummaries`, so a fourth CSV would only fragment the
-    // same data across more files for the tester to reassemble.
+    archiveName: `hachiko_benchmark${phaseTag}_${stamp}.zip`,
     files: [
       { name: 'benchmark_results.json', mime: 'application/json',
-        content: JSON.stringify(buildResultsJson(trials, { ...options, session }), null, 2) },
-      { name: 'benchmark_trials.csv', mime: 'text/csv',
-        content: bom + buildTrialsCsv(trials, options) },
-      { name: 'benchmark_summary.csv', mime: 'text/csv',
-        content: bom + buildModelSummaryCsv(trials, options) },
+        content: JSON.stringify(doc, null, 2) },
+      { name: 'benchmark_report.xlsx',
+        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        content: buildBenchmarkReport(doc, d) },
     ],
   };
 }

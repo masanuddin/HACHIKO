@@ -124,21 +124,18 @@ test('U7. competing class is captured for diagnosis', () => {
 });
 
 // ── results.json completeness ───────────────────────────────────────────
-test('U8. benchmark export is ONE archive of exactly three files', () => {
+test('U8. benchmark export is ONE archive of JSON + XLSX', () => {
   const r = seeded();
   const bundle = buildExportBundle({
     trials: r.getTrials(),
     session: { sessionId: r.sessionId, requiredRepetitions: 3,
                startedIso: '2026-09-04T00:00:00.000Z', userAgent: 'test-agent' },
   });
-  const names = bundle.files.map((f) => f.name).sort();
-  assert.deepEqual(names,
-    ['benchmark_results.json', 'benchmark_summary.csv', 'benchmark_trials.csv']);
-  assert.match(bundle.archiveName,
-    /^hachiko_benchmark_results_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}\.zip$/);
-  // Per-scenario detail is not lost: it moves into the JSON rather than
-  // becoming a fourth CSV for the tester to reassemble.
-  assert.ok(!names.includes('benchmark_scenario_summary.csv'));
+  assert.deepEqual(bundle.files.map((f) => f.name).sort(),
+    ['benchmark_report.xlsx', 'benchmark_results.json']);
+  assert.match(bundle.archiveName, /^hachiko_benchmark.*\.zip$/);
+  assert.ok(!bundle.files.some((f) => f.name.endsWith('.csv')),
+    'CSV is gone from the normal export');
 
   const doc = JSON.parse(bundle.files.find((f) => /\.json$/.test(f.name)).content);
   for (const k of ['schemaVersion', 'exportMetadata', 'environment', 'session',
@@ -158,28 +155,29 @@ test('U8b. benchmark CSVs are interpretable without the JSON', () => {
                  startedIso: '2026-09-04T00:00:00.000Z', userAgent: 'test-agent' };
   const trials = buildTrialsCsv(r.getTrials(), opts);
   const tCols = trials.split(String.fromCharCode(10))[0].split(',');
-  for (const c of ['benchmark_session_id', 'schema_version', 'protocol_version',
-                   'session_started_at', 'exported_at', 'user_agent',
-                   'candidate_model_id', 'candidate_model_name', 'model_family',
-                   'task', 'scenario_id', 'scenario_type',
-                   'expected_target_present', 'detection_result',
-                   'max_target_score', 'median_inference_ms', 'delegate',
-                   'model_asset_file', 'video_width', 'video_height']) {
+  for (const c of [
+                   'session_id', 'trial_id', 'phase', 'model', 'task',
+                   'scenario_code', 'scenario_id', 'scenario_name', 'repetition',
+                   'ground_truth', 'scenario_type', 'peak_target_score',
+                   'detected_at_diagnostic_floor',
+                   'recording_started_at', 'recording_ended_at', 'duration_ms']) {
     assert.ok(tCols.includes(c), `benchmark trials CSV missing ${c}`);
   }
-  assert.ok(trials.includes('test-agent'), 'environment metadata travels in rows');
+  // Session metadata deliberately lives in the JSON now — the ZIP is the
+  // evidence unit, and a user-agent repeated on every row helps no analyst.
 
   const summary = buildModelSummaryCsv(r.getTrials(), opts);
   const sCols = summary.split(String.fromCharCode(10))[0].split(',');
-  for (const c of ['benchmark_session_id', 'schema_version', 'protocol_version',
-                   'session_started_at', 'user_agent',
-                   'candidate_model_id', 'candidate_model_name', 'task',
-                   'scenarios_required', 'scenarios_completed',
-                   'completion_status', 'recall', 'specificity', 'precision',
-                   'discriminability', 'median_inference_ms',
-                   'repetitions_required', 'rank', 'recommended_for_task',
-                   'suggested_operating_threshold', 'trials_required',
-                   'trials_completed']) {
+  for (const c of [
+                   'phase', 'model', 'task',
+                   'scenarios_completed', 'scenarios_required',
+                   'trials_completed', 'trials_required', 'status',
+                   'positive_trials', 'negative_trials',
+                   'tp', 'tn', 'fp', 'fn',
+                   'recall', 'specificity', 'false_positive_rate', 'precision',
+                   'discriminability', 'suggested_operating_threshold',
+                   'inference_p50_ms', 'inference_p95_ms', 'model_size_mb',
+                   'delegate', 'metric_basis', 'metrics_status']) {
     assert.ok(sCols.includes(c), `benchmark summary CSV missing ${c}`);
   }
 });
@@ -230,10 +228,15 @@ test('U12. staged elimination is gone from the official flow', () => {
       `official export must not emit staged verdict "${banned}"`);
   }
   assert.ok(!MODEL_SUMMARY_COLUMNS.includes('verdict'),
-    'model summary reports rank + completion status, not a staged verdict');
-  assert.ok(MODEL_SUMMARY_COLUMNS.includes('completion_status'));
-  assert.ok(MODEL_SUMMARY_COLUMNS.includes('rank'));
-  assert.ok(MODEL_SUMMARY_COLUMNS.includes('recommended_for_task'));
+    'model summary reports completion status, not a staged verdict');
+  assert.ok(MODEL_SUMMARY_COLUMNS.includes('status'));
+  // A DEVELOPMENT table computed at the diagnostic floor must not carry a
+  // winner column; selection belongs after the configuration is frozen.
+  assert.ok(!MODEL_SUMMARY_COLUMNS.includes('rank'));
+  assert.ok(!MODEL_SUMMARY_COLUMNS.includes('recommended_for_task'));
+  // A DEVELOPMENT summary computed at the diagnostic floor carries no winner
+  // column; selection happens after the configuration is frozen.
+  assert.ok(!MODEL_SUMMARY_COLUMNS.includes('recommended_for_task'));
 });
 
 test('U13. benchmark_trials.csv has the required columns, one row per trial', () => {
@@ -242,15 +245,15 @@ test('U13. benchmark_trials.csv has the required columns, one row per trial', ()
   const lines = csv.split('\n').filter(Boolean);
   const header = lines[0].split(',');
   assert.deepEqual(header, TRIAL_COLUMNS);
-  for (const c of ['benchmark_session_id', 'candidate_model_id',
-                   'candidate_model_name', 'task', 'scenario_id',
-                   'scenario_group', 'repetition_index',
-                   'recording_started_at', 'recording_ended_at', 'duration_ms',
-                   'scenario_type', 'expected_target_present',
-                   'detection_result', 'max_target_score', 'competing_class',
-                   'competing_score', 'false_positive', 'false_negative',
-                   'median_inference_ms', 'p95_inference_ms', 'delegate',
-                   'model_size_bytes', 'video_width', 'video_height']) {
+  for (const c of ['session_id', 'trial_id', 'phase', 'model', 'task',
+                   'scenario_code', 'scenario_id', 'scenario_name', 'repetition',
+                   'ground_truth', 'scenario_type', 'peak_target_score',
+                   'detected_at_diagnostic_floor',
+                   'false_positive_at_diagnostic_floor',
+                   'strongest_competitor', 'strongest_competitor_score',
+                   'inference_p50_ms', 'inference_p95_ms', 'delegate',
+                   'video_width', 'video_height',
+                   'recording_started_at', 'recording_ended_at', 'duration_ms']) {
     assert.ok(header.includes(c), `benchmark trials CSV missing ${c}`);
   }
   assert.equal(lines.length - 1, r.getTrials().length);

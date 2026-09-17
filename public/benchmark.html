@@ -119,6 +119,31 @@
   .subhead{font-size:8.5px;text-transform:uppercase;letter-spacing:.5px;
            color:var(--faint);font-weight:600;margin:9px 0 4px}
   .subhead:first-child{margin-top:0}
+
+  /* ── Scenario catalogue ──────────────────────────────────────────
+     A picker, not a document. Ground truth still leads each row, because it is
+     the one thing that must never be misread; the instruction appears in the
+     capture card the moment a scenario is selected. */
+  .srow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+        background:transparent;border:1px solid transparent;border-radius:6px;
+        padding:7px 9px;cursor:pointer;margin-bottom:2px}
+  .srow:hover:not(:disabled){background:var(--panel2);border-color:var(--border)}
+  .srow:disabled{opacity:.4;cursor:not-allowed}
+  .srow.sel{background:#16243a;border-color:var(--accent)}
+  .srow .code{font-family:var(--mono);font-size:10.5px;color:var(--accent);
+              font-weight:700;width:34px;flex:none}
+  .srow .nm2{font-size:12.5px;color:var(--text);flex:1;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .reps{font-family:var(--mono);font-size:10.5px;width:30px;
+              text-align:right;flex:none}
+  .srow .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .catbar{display:flex;align-items:center;gap:9px;margin:15px 0 6px}
+  .catbar:first-child{margin-top:0}
+  .catbar .cname{font-size:9px;text-transform:uppercase;letter-spacing:.8px;
+                 color:var(--dim);font-weight:700;white-space:nowrap}
+  .catbar .cline{flex:1;height:1px;background:var(--border)}
+  .catbar .ccount{font-family:var(--mono);font-size:9.5px;color:var(--faint);
+                  white-space:nowrap}
   .atabpane{display:none;overflow:auto;flex:1;min-height:0}
   .atabpane.on{display:block}
   /* The scenario header, the table and the notes below need separating, or the
@@ -279,6 +304,9 @@
     <span class="hsep"></span>
     <span class="hgrp"><i>Model</i><b id="hModel">none</b></span>
     <span class="hgrp"><i>Task</i><b id="hTask">PERSON</b></span>
+    <span class="hgrp"><i>Phase</i><select id="anPhase" class="sel"
+      title="DEVELOPMENT evidence is what thresholds are derived FROM; VALIDATION is what they are tested ON. Recorded per trial so the two are never pooled."><option value="DEVELOPMENT">DEV</option><option value="VALIDATION">VAL</option></select><b id="phaseLock" hidden
+      title="Locked: this session already contains saved trials.">LOCKED</b></span>
     <span class="hgrp" id="hScenWrap" hidden><i>Scenario</i><b id="hScenario">none</b></span>
     <span class="hgrp" id="hRepWrap" hidden><i>Rep</i><b id="hRep">1/3</b></span>
     <span class="hsep"></span>
@@ -323,6 +351,8 @@
       </div>
       <div class="kv">
         <span class="k">scenario</span><span id="trialScenario" class="v">none</span>
+        <span class="k">ground truth</span><span id="trialTruth" class="v"
+          title="Owned by the scenario registry. The operator cannot flip it.">No scenario selected</span>
         <span class="k">repetition</span><span id="trialRep" class="v">No scenario selected</span>
         <span class="k">records for</span><span id="trialDur" class="v">No scenario selected</span>
       </div>
@@ -629,52 +659,59 @@ function refreshOpenModal() {
 
 /** Change Scenario — catalogue for the CURRENT model and task. */
 function renderScenarioModal() {
-  $('scenModalTitle').textContent = 'Scenario catalogue';
-  $('scenModalTag').textContent = runner.activeId
-    ? `${runner.activeId} · ${$('hTask').textContent}` : 'select a model first';
+  $('scenModalTitle').textContent = 'Choose a scenario';
   const host = $('scenModalBody');
   host.innerHTML = '';
   if (!runner.activeId) {
-    host.innerHTML = '<div class="hint">Load a candidate model first.</div>';
+    $('scenModalTag').textContent = 'select a model first';
+    host.innerHTML = '<div class="hint">Load a candidate model first — the '
+      + 'catalogue shows progress for the active candidate and task.</div>';
     return;
   }
-  const progress = runner.progressFor(
-    runner.activeId, isPose() ? 'pose' : task, scenarioList());
+  const tk = isPose() ? 'pose' : task;
+  const progress = runner.progressFor(runner.activeId, tk, scenarioList());
+  $('scenModalTag').textContent = `${runner.activeId} · ${$('hTask').textContent}`
+    + ` · ${progress.scenariosComplete}/${progress.scenariosTotal} complete`;
   const busy = trials.isBusy();
 
-  const group = (title, items, neg) => {
+  // Grouping BY GROUND TRUTH is the structure that matters here: it is what
+  // the operator must not confuse, and it needs no per-row label to convey.
+  const section = (title, items) => {
     if (!items.length) return;
-    const lab = document.createElement('div');
-    lab.className = `subhead${neg ? ' neg' : ''}`;
-    lab.textContent = title;
-    host.appendChild(lab);
+    const doneCount = items.filter((sc) =>
+      progress.items.find((i) => i.scenarioId === sc.id)?.complete).length;
+    const bar = document.createElement('div');
+    bar.className = 'catbar';
+    bar.innerHTML = `<span class="cname">${title}</span>`
+      + '<span class="cline"></span>'
+      + `<span class="ccount">${doneCount}/${items.length}</span>`;
+    host.appendChild(bar);
+
     for (const sc of items) {
       const pr = progress.items.find((i) => i.scenarioId === sc.id);
       const done = pr?.done ?? 0;
       const req = pr?.required ?? REQ;
+      const colour = done === 0 ? 'var(--faint)'
+        : done >= req ? 'var(--ok)' : 'var(--warn)';
+
       const b = document.createElement('button');
-      b.className = 'sbtn' + (pr?.complete ? ' done' : '')
-        + (selected?.id === sc.id ? ' sel' : '');
-      b.innerHTML = `<span class="nm">${sc.code ? sc.code + ' · ' : ''}${sc.id}`
+      b.className = 'srow' + (selected?.id === sc.id ? ' sel' : '');
+      b.innerHTML = `<span class="dot" style="background:${colour}"></span>`
+        + `<span class="code">${sc.code}</span>`
+        + `<span class="nm2">${sc.label}`
         + `${sc.critical ? ' <span class="star">*</span>' : ''}</span>`
-        + `<span class="rep">${done}/${req}</span>`;
-      b.title = sc.label;
+        + `<span class="reps" style="color:${colour}">${done}/${req}</span>`;
+      b.title = sc.instruction ?? sc.label;
       b.disabled = busy;
       b.onclick = () => { selectScenario(sc); closeScenModal(); };
       host.appendChild(b);
-
-      const cap = document.createElement('div');
-      cap.className = 'hint';
-      cap.style.margin = '0 0 5px 7px';
-      cap.textContent = sc.label;
-      host.appendChild(cap);
     }
   };
-  group(task === 'phone' ? 'PHONE' : (isPose() ? 'PRESENCE' : 'PERSON'),
-        progress.items.map((i) => scenarioList().find((x) => x.id === i.scenarioId))
-          .filter((x) => x && x.expect), false);
-  group('NEGATIVE CONTROL',
-        scenarioList().filter((x) => !x.expect), true);
+
+  const list = scenarioList();
+  const isPhone = tk === 'phone';
+  section(isPhone ? 'PHONE PRESENT' : 'USER PRESENT', list.filter((x) => x.expect));
+  section(isPhone ? 'PHONE ABSENT' : 'USER ABSENT', list.filter((x) => !x.expect));
 }
 
 /** View Benchmark Progress — every candidate x task in the official matrix. */
@@ -750,6 +787,27 @@ document.querySelectorAll('[data-atab]').forEach((btn) => {
       b.classList.toggle('active', b === btn));
   };
 });
+/**
+ * Phase lock.
+ *
+ * DEVELOPMENT evidence may be used to DERIVE thresholds; VALIDATION evidence
+ * must evaluate an already-frozen configuration. Letting the operator flip the
+ * selector mid-session would silently mix the two inside one dataset, and the
+ * resulting "validation" would be partly self-validating. Once a session holds
+ * a saved trial the phase is therefore fixed; changing it needs a new session.
+ */
+function syncPhaseLock() {
+  const locked = runner.getValidTrials().length > 0;
+  const sel = $('anPhase');
+  sel.disabled = locked;
+  sel.title = locked
+    ? `Phase is locked to ${sel.value} for this session — it already contains `
+      + 'saved trials. Clear the session to start a different phase.'
+    : 'DEVELOPMENT evidence is what thresholds are derived FROM; VALIDATION is '
+      + 'what they are tested ON. Choose before the first trial.';
+  $('phaseLock').hidden = !locked;
+}
+
 $('anTask').onchange = () => { $('anScen').value = ''; render(); };
 $('anScen').onchange = () => render();
 
@@ -783,9 +841,14 @@ function selectScenario(s) {
   $('trialScenario').textContent = s.id;
   $('trialRep').textContent = `Repetition ${Math.min(rep, REQ)} of ${REQ}`;
   $('trialDur').textContent = `${(BENCH_RECORDING_MS / 1000).toFixed(1)} s`;
-  $('trialInstruction').textContent =
-    `${s.label}. After GO, hold for ${(BENCH_RECORDING_MS / 1000).toFixed(0)} s.`
-    + (s.expect ? '' : '  NEGATIVE CONTROL — the target must not be present.');
+  // Ground truth comes from the registry. There is deliberately no UI control
+  // that can flip PRESENT <-> ABSENT for an official scenario.
+  const truthLabel = (!isPose() && task === 'phone')
+    ? (s.expect ? 'PHONE PRESENT' : 'PHONE ABSENT')
+    : (s.expect ? 'PRESENT' : 'ABSENT');
+  $('trialTruth').textContent = truthLabel;
+  $('trialTruth').className = 'v ' + (s.expect ? 'ok' : 'warn');
+  $('trialInstruction').textContent = s.instruction ?? s.label;
   $('btnStartTrial').disabled = !running;
   render();
 }
@@ -813,6 +876,13 @@ function onTrialComplete(trial) {
     task: isPose() ? 'pose' : task,
     scenarioId: trial.scenario, expected: selected.expect,
     observation: obs, stage: 'full',
+    // The bounded series, kept so an operating threshold can be derived later
+    // from the score distribution rather than re-running every trial.
+    samples: trial.samples,
+    phase: $('anPhase').value,
+    // Real wall-clock boundaries of the bounded window.
+    startedAtIso: new Date(Date.now() - (trial.recordingDurationMs ?? 0)).toISOString(),
+    endedAtIso: new Date().toISOString(),
   });
   t.recordingStartedAt = trial.recordingStartedAt;
   t.recordingEndedAt = trial.recordingEndedAt;
@@ -868,6 +938,7 @@ function render() {
   }
 
   refreshOpenModal();
+  syncPhaseLock();
 
   // Completion detail lives in View Benchmark Progress; a permanent card here
   // repeated the same seven rows for no extra insight. The header keeps the

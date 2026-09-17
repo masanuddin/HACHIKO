@@ -135,6 +135,30 @@
         border:1px solid rgba(210,153,34,.4);border-radius:3px;padding:1px 4px;margin-left:6px}
   .grouplab{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);
             margin:8px 0 4px;font-weight:600}
+  /* ── Scenario catalogue ────────────────────────────────
+     A picker, not a document. The operator is choosing WHICH scenario to run;
+     the instruction and expectations already appear in the capture card once
+     one is selected, so repeating them here only made the list unreadable. */
+  .srow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+        background:transparent;border:1px solid transparent;border-radius:6px;
+        padding:7px 9px;cursor:pointer;margin-bottom:2px}
+  .srow:hover:not(:disabled){background:var(--panel2);border-color:var(--border)}
+  .srow:disabled{opacity:.4;cursor:not-allowed}
+  .srow.sel{background:#16243a;border-color:var(--accent)}
+  .srow .code{font-family:var(--mono);font-size:10.5px;color:var(--accent);
+              font-weight:700;width:34px;flex:none}
+  .srow .nm2{font-size:12.5px;color:var(--text);flex:1;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .reps{font-family:var(--mono);font-size:10.5px;width:30px;
+              text-align:right;flex:none}
+  .srow .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .catbar{display:flex;align-items:center;gap:9px;margin:15px 0 6px}
+  .catbar:first-child{margin-top:0}
+  .catbar .cname{font-size:9px;text-transform:uppercase;letter-spacing:.8px;
+                 color:var(--dim);font-weight:700;white-space:nowrap}
+  .catbar .cline{flex:1;height:1px;background:var(--border)}
+  .catbar .ccount{font-family:var(--mono);font-size:9.5px;color:var(--faint);
+                  white-space:nowrap}
   .sbtn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
         font-family:var(--mono);font-size:10.5px;padding:5px 7px;margin-bottom:3px}
   .sbtn .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
@@ -199,9 +223,7 @@
                     display:flex;flex-direction:column}
   #scenModal .mh{display:flex;align-items:center;gap:10px;padding:11px 14px;
                  border-bottom:1px solid var(--border)}
-  #scenModal .mb{padding:12px 14px;overflow:auto;
-                 display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));
-                 gap:12px;align-content:start}
+  #scenModal .mb{padding:12px 14px;overflow:auto;display:block}
   table.vals td.rulecell{font-family:var(--mono);font-size:9.5px;color:var(--dim);
                          text-align:right;white-space:nowrap}
   .pendtag{font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--warn);
@@ -625,6 +647,8 @@ const cls = (on, onCls = 'ok') => (on ? onCls : 'dimval');
 // this entire panel while the centre kept updating and nothing surfaced.
 harness.onViewModel = (vm) => {
   frameCount += 1;
+  // Calibration can lapse mid-session; keep the affordance honest.
+  syncStartGate();
 
   const cell = (elId, text, cls) => set(elId, text, cls);
 
@@ -736,6 +760,34 @@ harness.onViewModel = (vm) => {
   }
 };
 
+/**
+ * Single source of truth for the Start Trial affordance.
+ *
+ * The harness remains the authoritative guard (it refuses a direct call), but
+ * a button that looks clickable and then silently rejects is a UI that lies.
+ * Both layers exist on purpose: this one explains, that one enforces.
+ */
+function syncStartGate() {
+  const calibrated = harness.canStartTrial();
+  const blocked = !harness.running || !selected
+    || harness.trials.isBusy() || !calibrated;
+  id('btnStartTrial').disabled = blocked;
+
+  // Say WHICH precondition is missing, in the order the operator must fix them.
+  const hint = !harness.running ? 'Start the camera first.'
+    : !calibrated ? 'Calibration required before Verification Trial.'
+    : !selected ? 'Choose a scenario first.'
+    : 'Starting the camera does not record. Only START TRIAL does, '
+      + 'after a countdown.';
+  id('btnStartTrial').title = calibrated ? '' : 'Calibration required before '
+    + 'Verification Trial.';
+  const el = id('trialHint');
+  if (el) {
+    el.innerHTML = calibrated ? hint
+      : `<b style="color:var(--warn)">${hint}</b>`;
+  }
+}
+
 // ── Trial events ────────────────────────────────────────────────────
 harness.onTrialEvent = (e) => {
   if (e.type === 'state') {
@@ -746,7 +798,7 @@ harness.onTrialEvent = (e) => {
       : st === TrialState.SAVING ? 'SAVING' : 'NOT RECORDING';
     big.className = 'runbig' + (st === TrialState.RECORDING ? ' rec'
       : st === TrialState.COUNTDOWN ? ' cd' : '');
-    id('btnStartTrial').disabled = harness.trials.isBusy() || !selected || !harness.running;
+    syncStartGate();
     id('btnAbort').disabled = !harness.trials.isBusy();
     refreshOpenModal();
   }
@@ -809,11 +861,12 @@ function selectScenario(scenarioId) {
   selected = res.scenario;
   renderTrialPanel();
   id('trialInstruction').innerHTML = `<b>${selected.instruction}</b>`;
-  id('trialExpected').textContent =
-    `Records ${(selected.recordingDurationMs / 1000).toFixed(1)} s after a `
-    + `${(selected.countdownMs / 1000).toFixed(0)} s countdown. `
+  // Category and expected behaviour come from the registry, so the operator
+  // never has to remember what a scenario is supposed to prove.
+  id('trialExpected').innerHTML =
+    `<b>${selected.code} · ${selected.category.replace(/_/g, ' ')}</b><br>`
     + `Expected: ${selected.expectedSemanticOutcome}`;
-  id('btnStartTrial').disabled = !harness.running;
+  syncStartGate();
   els.status.textContent = harness.running
     ? 'Scenario selected. Press Start Trial to begin the countdown.'
     : 'Scenario selected. Start the camera first.';
@@ -825,32 +878,46 @@ let modalMode = 'catalogue';
 
 /** Choose Scenario — the full catalogue, grouped, each row selectable. */
 function renderScenarioModal() {
-  id('scenModalTitle').textContent = 'Scenario catalogue';
-  id('scenModalTag').textContent = 'select a scenario';
+  id('scenModalTitle').textContent = 'Choose a verification scenario';
+  const progress = harness.getProgress(DEBUG_SCENARIOS);
+  const totalDone = progress.filter((p) => p.complete).length;
+  id('scenModalTag').textContent =
+    `${totalDone}/${DEBUG_SCENARIOS.length} complete`;
   const host = id('scenModalBody');
   host.innerHTML = '';
-  const progress = harness.getProgress(DEBUG_SCENARIOS);
   const busy = harness.trials.isBusy();
 
+  // Name + progress only. Everything else about a scenario is shown in the
+  // capture card the moment it is selected, so duplicating it here just made
+  // eleven entries impossible to scan.
   for (const g of DEBUG_GROUPS) {
-    const head = document.createElement('div');
-    head.className = 'subhead';
-    head.textContent = g;
-    host.appendChild(head);
+    const inGroup = DEBUG_SCENARIOS.filter((x) => x.category === g);
+    const groupDone = inGroup.filter((sc) =>
+      progress.find((p) => p.scenarioId === sc.id)?.complete).length;
 
-    for (const sc of DEBUG_SCENARIOS.filter((x) => x.group === g)) {
+    const bar = document.createElement('div');
+    bar.className = 'catbar';
+    bar.innerHTML = `<span class="cname">${g.replace(/_/g, ' ')}</span>`
+      + '<span class="cline"></span>'
+      + `<span class="ccount">${groupDone}/${inGroup.length}</span>`;
+    host.appendChild(bar);
+
+    for (const sc of inGroup) {
       const p = progress.find((x) => x.scenarioId === sc.id);
+      const done = p?.done ?? 0;
+      const req = p?.required ?? 3;
+      const colour = done === 0 ? 'var(--faint)'
+        : done >= req ? 'var(--ok)' : 'var(--warn)';
+
       const b = document.createElement('button');
-      b.className = 'sbtn' + (p.complete ? ' done' : '')
-        + (selected && selected.id === sc.id ? ' sel' : '')
-        + (sc.pending ? ' pending' : '');
-      b.innerHTML = `<span class="nm">${sc.id}</span>`
-        + `<span class="rep">${(sc.recordingDurationMs / 1000).toFixed(1)}s</span>`
-        + `<span class="rep">${sc.pending ? 'PEND' : p.done + '/' + p.required}</span>`;
-      b.title = sc.pending ? sc.pendingReason : sc.instruction;
-      b.disabled = sc.pending || busy;
-      // Selecting closes the catalogue: the tester is done choosing and the
-      // panel behind now shows the instruction they need to act on.
+      b.className = 'srow' + (selected && selected.id === sc.id ? ' sel' : '');
+      b.innerHTML = `<span class="dot" style="background:${colour}"></span>`
+        + `<span class="code">${sc.code}</span>`
+        + `<span class="nm2">${sc.name}</span>`
+        + `<span class="reps" style="color:${colour}">${done}/${req}</span>`;
+      // The full instruction stays reachable on hover without taking space.
+      b.title = `${sc.instruction}\n\n${sc.purpose}`;
+      b.disabled = busy;
       b.onclick = () => { selectScenario(sc.id); closeScenModal(); };
       host.appendChild(b);
     }
@@ -870,16 +937,16 @@ function renderProgressModal() {
   for (const g of DEBUG_GROUPS) {
     const items = progress.filter((p) => {
       const sc = DEBUG_SCENARIOS.find((x) => x.id === p.scenarioId);
-      return sc && sc.group === g;
+      return sc && sc.category === g;
     });
     const done = items.reduce((a, i) => a + i.done, 0);
-    const req = items.reduce((a, i) => a + (i.pending ? 0 : i.required), 0);
+    const req = items.reduce((a, i) => a + i.required, 0);
     gDone += done; gReq += req;
     const pct = req ? Math.min(100, (done / req) * 100) : 0;
 
     const head = document.createElement('div');
     head.className = 'subhead';
-    head.innerHTML = `${g} <span class="sp" style="float:right">`
+    head.innerHTML = `${g.replace(/_/g, ' ')} <span class="sp" style="float:right">`
       + `${done}/${req} · ${req - done} remaining</span>`;
     host.appendChild(head);
 
@@ -892,15 +959,14 @@ function renderProgressModal() {
 
     for (const sc of DEBUG_SCENARIOS.filter((x) => x.group === g)) {
       const p = progress.find((x) => x.scenarioId === sc.id);
-      const label = sc.pending ? 'PENDING' : `${p.done}/${p.required}`;
-      const colour = sc.pending ? 'var(--faint)'
-        : (p.complete ? 'var(--ok)' : 'var(--dim)');
+      const label = `${p.done}/${p.required}`;
+      const colour = p.done === 0 ? 'var(--faint)'
+        : (p.complete ? 'var(--ok)' : 'var(--warn)');
       const row = document.createElement('div');
       row.className = 'progrow';
       row.innerHTML = `<span class="k" style="width:auto">${sc.id}</span>`
         + `<span class="hint" style="margin:0">`
-        + `${sc.pending ? 'awaiting model' : (p.complete ? 'complete'
-            : (p.required - p.done) + ' remaining')}</span>`
+        + `${p.complete ? 'complete' : (p.required - p.done) + ' remaining'}</span>`
         + `<span class="n" style="color:${colour}">${label}</span>`;
       host.appendChild(row);
     }
@@ -945,15 +1011,24 @@ const enable = (on) => {
     id(b).disabled = !on;
   }
   id('btnStart').disabled = on;
-  id('btnStartTrial').disabled = !on || !selected;
+  syncStartGate();
   set('hCam', on ? 'ON' : 'OFF', 'val ' + (on ? 'ok' : 'bad'));
 };
 id('btnStart').onclick = async () => {
   try { await harness.start(); enable(true); refreshOpenModal(); }
   catch (err) { els.status.textContent = `failed: ${err.message}`; console.error(err); }
 };
-id('btnCalibrate').onclick = () => harness.calibrate();
-id('btnReset').onclick = () => harness.reset();
+id('btnCalibrate').onclick = () => {
+  harness.calibrate();
+  // Status flips to VALID only once the baseline window closes, so re-check
+  // then rather than leaving a stale disabled button.
+  setTimeout(syncStartGate, CONFIG.calibration.CALIBRATION_DURATION_MS + 400);
+};
+id('btnReset').onclick = () => {
+  harness.reset();
+  // Reset clears the baseline: the gate must close again immediately.
+  syncStartGate();
+};
 id('btnStop').onclick = () => { harness.stop(); enable(false); };
 id('btnStartTrial').onclick = () => {
   const r = harness.startTrial();

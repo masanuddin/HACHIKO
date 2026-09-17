@@ -39,7 +39,7 @@ function dosDateTime(d) {
 /**
  * Build a ZIP archive from in-memory text files.
  *
- * @param {Array<{name: string, content: string}>} files
+ * @param {Array<{name: string, content: string|Uint8Array}>} files
  * @param {Date} [now] archive timestamp, injectable so tests are deterministic
  * @returns {Uint8Array} the complete archive
  */
@@ -52,9 +52,10 @@ export function buildZip(files, now = new Date()) {
 
   for (const f of files) {
     const nameBytes = enc.encode(f.name);
-    // UTF-8 content, always. Excel reads CSV as UTF-8 given the BOM the
-    // exporters already prepend; we must not re-encode here.
-    const data = enc.encode(f.content);
+    // A string is UTF-8 encoded; bytes pass through untouched. An .xlsx is
+    // itself a ZIP, so re-encoding it as text would corrupt it.
+    const data = f.content instanceof Uint8Array
+      ? f.content : enc.encode(f.content);
     const crc = crc32(data);
 
     const local = new Uint8Array(30 + nameBytes.length + data.length);

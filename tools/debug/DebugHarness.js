@@ -55,6 +55,8 @@ export class DebugHarness {
     this.onTrialEvent = () => {};
     /** Page-supplied renderer for panels this class does not own. */
     this.onViewModel = null;
+    /** Calibration in force when the current trial started. */
+    this._pendingCalibration = null;
     this.lastTrialRecord = null;
     this.stream = null;
     this.running = false;
@@ -215,12 +217,45 @@ export class DebugHarness {
   }
 
   /** Begin countdown -> recording -> auto-stop for the selected scenario. */
+  /**
+   * Begin an official Verification Trial.
+   *
+   * Two provenance guarantees are established HERE rather than at export:
+   *
+   * 1. Calibration is required. Every D01-D11 scenario is measured relative to
+   *    a personal baseline, so a trial recorded without one cannot be judged —
+   *    and recording it anyway produces a row that looks official but is not.
+   *
+   * 2. The calibration in force RIGHT NOW is snapshotted onto the trial. The
+   *    exporter previously read the session's latest calibration, so a later
+   *    recalibration silently rewrote the baseline of every earlier trial.
+   */
   startTrial() {
     const scenario = this.trials.scenario;
     if (!scenario) return { ok: false, reason: 'no scenario selected' };
+
+    const cal = this.ai.getCalibrationSnapshot();
+    if (cal?.status !== 'VALID') {
+      return { ok: false,
+        reason: 'Calibration required before Verification Trial.' };
+    }
+
     const ref = this.session.nextTrialRef(scenario.id);
+    // Deep-copied: the engine may recalibrate later, and this record must not
+    // move with it.
+    this._pendingCalibration = {
+      status: cal.status,
+      valid: cal.status === 'VALID',
+      capturedAtIso: new Date().toISOString(),
+      baseline: cal.baseline ? { ...cal.baseline } : null,
+    };
     const ok = this.trials.startTrial(performance.now(), ref);
     return { ok, ...ref };
+  }
+
+  /** Whether an official Verification Trial may start right now. */
+  canStartTrial() {
+    return this.ai.getCalibrationSnapshot()?.status === 'VALID';
   }
 
   abortTrial(reason = 'aborted by operator') {
@@ -251,7 +286,7 @@ export class DebugHarness {
 
   _onTrialComplete(trial) {
     const scenario = getScenario(trial.scenario);
-    const record = this.session.addTrial(trial, scenario);
+    const record = this.session.addTrial(trial, scenario, this._pendingCalibration);
     this.lastTrialRecord = record;
     this.onTrialEvent({ type: 'complete', trial: record });
   }

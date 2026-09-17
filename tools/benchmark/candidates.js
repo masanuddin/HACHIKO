@@ -125,32 +125,130 @@ export const BENCH_MAX_RESULTS = 25;
  * `code` is the stable identifier used in reports (P01…, H01…); `id` stays the
  * lowercase key already present in recorded data.
  */
+/** Valid repetitions each benchmark scenario needs. */
+export const BENCH_REQUIRED_REPETITIONS = 3;
+
+/**
+ * PRESENCE matrix, P01–P10. ONE canonical list, shared by every candidate.
+ *
+ * Object detectors read it as "is a PERSON visible"; Pose Lite reads it as
+ * "is a body physically PRESENT" using real pose output. Both answer the same
+ * physical question about the same conditions, so they must never diverge into
+ * separate lists — a comparison across different scenarios is not a comparison.
+ *
+ * `expect` is the GROUND TRUTH, owned here. The operator never types it.
+ */
 export const PERSON_SCENARIOS = [
-  { code: 'P01', id: 'frontal_seated', label: 'Frontal seated, upper body visible', expect: true },
-  { code: 'P02', id: 'closer', label: 'Closer to the camera', expect: true },
-  { code: 'P03', id: 'farther', label: 'Farther from the camera', expect: true },
-  { code: 'P04', id: 'upper_body_only', label: 'Upper body only (tight crop)', expect: true },
-  { code: 'P05', id: 'extreme_yaw', label: 'Extreme yaw — face lost, body visible', expect: true, critical: true },
-  { code: 'P06', id: 'back_facing', label: 'Back-facing', expect: true, critical: true },
-  { code: 'P07', id: 'face_covered', label: 'Face covered by a hand', expect: true, critical: true },
-  { code: 'P08', id: 'reading_writing', label: 'Reading / writing posture (head down)', expect: true, critical: true },
-  { code: 'P09', id: 'empty_frame', label: 'Empty frame — negative control', expect: false, critical: true },
+  { code: 'P01', id: 'frontal_seated', label: 'Frontal seated',
+    instruction: 'Sit normally facing the camera in the standard study position.',
+    purpose: 'Normal baseline presence.', expect: true },
+  { code: 'P02', id: 'closer', label: 'Closer to the camera',
+    instruction: 'Remain seated but move noticeably closer to the camera than '
+      + 'the normal study position.',
+    purpose: 'Near-distance robustness.', expect: true },
+  { code: 'P03', id: 'farther', label: 'Farther from the camera',
+    instruction: 'Remain visible but move farther from the camera, staying '
+      + 'within a realistic study setup.',
+    purpose: 'Far-distance robustness.', expect: true },
+  { code: 'P04', id: 'upper_body_only', label: 'Upper body only',
+    instruction: 'Use a realistic framing where primarily the upper body is '
+      + 'visible.',
+    purpose: 'Common laptop-webcam framing.', expect: true },
+  { code: 'P05', id: 'extreme_yaw', label: 'Extreme yaw',
+    instruction: 'Remain seated but turn your head strongly away, so the face '
+      + 'becomes difficult to observe.',
+    purpose: 'Presence despite poor face visibility.', expect: true, critical: true },
+  { code: 'P06', id: 'back_facing', label: 'Back-facing',
+    instruction: 'Remain physically in the study area while facing away from '
+      + 'the camera.',
+    purpose: 'Critical HACHIKO case: an unavailable face does not mean the '
+      + 'user is absent.', expect: true, critical: true },
+  { code: 'P07', id: 'face_covered', label: 'Face covered',
+    instruction: 'Remain physically present while your face is substantially '
+      + 'obscured. Do not leave the frame.',
+    purpose: 'Physical presence under face occlusion.', expect: true, critical: true },
+  { code: 'P08', id: 'reading_writing', label: 'Reading / writing',
+    instruction: 'Read and write naturally while remaining in the study '
+      + 'position.',
+    purpose: 'Realistic studying posture.', expect: true, critical: true },
+  { code: 'P09', id: 'empty_frame', label: 'Empty frame',
+    instruction: 'No person is visible in the camera frame. Use a simple, '
+      + 'low-clutter empty view if possible. Do NOT cover the camera lens.',
+    purpose: 'Basic negative control.', expect: false, critical: true },
+  { code: 'P10', id: 'empty_study_area', label: 'Empty study area',
+    instruction: 'Leave the normal study position while the usual environment '
+      + 'stays visible — desk, chair, books, bag. No person should be visible.',
+    purpose: 'Harder negative control: do normal study-area objects cause a '
+      + 'false human/presence detection?', expect: false, critical: true },
 ];
 
+/**
+ * PHONE matrix, H01–H10. Object detectors only — Pose Lite has no phone class
+ * and must never be offered these.
+ */
 export const PHONE_SCENARIOS = [
-  { code: 'H01', id: 'screen_portrait', label: 'Screen-facing, portrait', expect: true },
-  { code: 'H02', id: 'screen_landscape', label: 'Screen-facing, landscape', expect: true },
-  { code: 'H03', id: 'back_portrait', label: 'Back-facing, portrait', expect: true },
-  { code: 'H04', id: 'back_landscape', label: 'Back-facing, landscape', expect: true },
-  { code: 'H05', id: 'near_camera', label: 'Near the camera (large in frame)', expect: true },
-  { code: 'H06', id: 'study_distance', label: 'Normal study distance', expect: true, critical: true },
-  { code: 'H07', id: 'on_desk', label: 'Resting on the desk', expect: true, critical: true },
-  { code: 'H08', id: 'partly_occluded', label: 'Partially occluded by a hand', expect: true, critical: true },
-  { code: 'H09', id: 'no_phone', label: 'No phone — negative control', expect: false, critical: true },
-  // A phone-shaped object that is NOT a phone. Without it a detector that fires
-  // on any dark rectangle would look perfect on H09 alone.
-  { code: 'H10', id: 'non_phone_rectangle', label: 'Phone-shaped object that is not a phone — negative control', expect: false, critical: true },
+  { code: 'H01', id: 'screen_portrait', label: 'Screen-facing, portrait',
+    instruction: 'Hold the phone in portrait with the screen facing the camera.',
+    purpose: 'Screen-side detection, portrait.', expect: true },
+  { code: 'H02', id: 'screen_landscape', label: 'Screen-facing, landscape',
+    instruction: 'Hold the phone in landscape with the screen facing the camera.',
+    purpose: 'Screen-side detection, landscape.', expect: true },
+  { code: 'H03', id: 'back_portrait', label: 'Back-facing, portrait',
+    instruction: 'Hold the phone in portrait with the back of the device facing '
+      + 'the camera.',
+    purpose: 'Back-side detection, portrait.', expect: true },
+  { code: 'H04', id: 'back_landscape', label: 'Back-facing, landscape',
+    instruction: 'Hold the phone in landscape with the back of the device '
+      + 'facing the camera.',
+    purpose: 'Back-side detection, landscape.', expect: true },
+  { code: 'H05', id: 'near_camera', label: 'Near the camera',
+    instruction: 'Hold the phone clearly visible, relatively close to the camera.',
+    purpose: 'Large-in-frame detection.', expect: true },
+  { code: 'H06', id: 'study_distance', label: 'Normal study distance',
+    instruction: 'Hold or use the phone at a realistic, normal study distance.',
+    purpose: 'The critical realistic scenario.', expect: true, critical: true },
+  { code: 'H07', id: 'on_desk', label: 'Resting on the desk',
+    instruction: 'Let the phone lie on the study desk, within the camera view.',
+    purpose: 'Presence only — do NOT infer distraction from this. The '
+      + 'benchmark truth here is simply PHONE PRESENT.',
+    expect: true, critical: true },
+  { code: 'H08', id: 'partly_occluded', label: 'Partially occluded',
+    instruction: 'Keep the phone genuinely present but partially covered by '
+      + 'your hand or another realistic occlusion.',
+    purpose: 'Detection under partial occlusion.', expect: true, critical: true },
+  { code: 'H09', id: 'no_phone', label: 'No phone',
+    instruction: 'A normal study scene with no phone present.',
+    purpose: 'Basic phone negative control.', expect: false, critical: true },
+  {
+    // Named for what it tests, not for one object shape. Historical trials
+    // recorded under `non_phone_rectangle` ran a vaguer protocol and are
+    // deliberately NOT relabelled — see HISTORICAL_SCENARIO_IDS.
+    code: 'H10', id: 'phone_lookalike_negative', label: 'Phone lookalike (hard negative)',
+    instruction: 'PHONE ABSENT — all presented objects are non-phone hard '
+      + 'negatives. Present the standard sequence: (1) remote control or small '
+      + 'calculator-like rectangle, (2) tissue/card/flat rectangular packet, '
+      + '(3) small rectangular book or package. Keep the same objects and order '
+      + 'across every repetition, candidate and session. Never use a real phone.',
+    purpose: 'Hard negative control derived from observed false positives.',
+    expect: false, critical: true },
 ];
+
+/**
+ * Scenario ids that existed under an earlier, different protocol.
+ *
+ * They are recorded here so analysis can EXCLUDE or segregate them knowingly.
+ * They are never silently mapped onto a current id: a historical
+ * `non_phone_rectangle` trial did not run the standardised H10 object
+ * sequence, so treating the two as the same measurement would fabricate
+ * comparability that was never collected.
+ */
+export const HISTORICAL_SCENARIO_IDS = Object.freeze({
+  non_phone_rectangle: {
+    supersededBy: 'phone_lookalike_negative',
+    reason: 'Ran before the standardised hard-negative object protocol; not '
+          + 'comparable to H10 and must not be pooled with it.',
+  },
+});
 
 /**
  * Decision weights, as specified for this bake-off.
