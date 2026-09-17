@@ -4,6 +4,9 @@
  * (keeps attributes safe without an escaping layer to maintain).
  */
 
+import { clampDurationMs } from './sessionConfig'
+import { formatDuration } from './strings'
+
 type Attrs = Record<string, string | undefined>
 
 export function el<K extends keyof HTMLElementTagNameMap>(
@@ -190,4 +193,146 @@ export function checkboxItem(labelText: string): { element: HTMLDivElement; chec
   const labelEl = el('label', { for: id }, [labelText])
   const wrap = el('div', { class: 'consent-item' }, [checkbox, labelEl])
   return { element: wrap, checkbox }
+}
+
+/**
+ * `[-] [input] [+]` plus a row of preset buttons, for any duration in
+ * milliseconds. Used for work/short-break/long-break duration on the
+ * Ready screen - NOT for rounds-per-set, which stays the simple
+ * preset-chip picker (`chipGroup`) it already was; a free-typed number
+ * of rounds has no sensible general meaning past a handful of presets
+ * (see the 2026-09-17 design spec's "Algorithm notes").
+ */
+export function stepper(opts: {
+  label: string
+  initialMs: number
+  minMs: number
+  maxMs: number
+  presetsMs: number[]
+  onChange: (ms: number) => void
+}): { element: HTMLDivElement; setMax: (newMaxMs: number) => void } {
+  let valueMs = opts.initialMs
+  let maxMs = opts.maxMs
+
+  const input = el('input', {
+    type: 'text',
+    inputmode: 'numeric',
+    class: 'stepper__input',
+  }) as HTMLInputElement
+
+  // Trusted values (presets, the initial value) are set exactly as
+  // given, bypassing the min/max clamp entirely - a preset like
+  // FAST_DEBUG_WORK_MS (30s) is deliberately below DURATION_MIN_MS
+  // (1 minute), and clamping it here would silently round it up to a
+  // full minute, defeating its whole purpose. Only interactive nudging
+  // (+/-, typed input, and a work-duration change re-clamping the break
+  // steppers via setMax) goes through applyClamped.
+  function setRaw(ms: number): void {
+    valueMs = ms
+    input.value = formatDuration(valueMs)
+    opts.onChange(valueMs)
+  }
+
+  function applyClamped(ms: number): void {
+    setRaw(clampDurationMs(ms, opts.minMs, maxMs))
+  }
+
+  const minusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Kurangi' }, ['-'])
+  const plusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Tambah' }, ['+'])
+
+  minusBtn.addEventListener('click', () => applyClamped(valueMs - 60_000))
+  plusBtn.addEventListener('click', () => applyClamped(valueMs + 60_000))
+
+  // Long-press auto-repeat: the click handlers above already cover a
+  // single tap; holding the button repeats every ACCELERATE_MS once
+  // ACCELERATE_AFTER_MS has passed. Plain timers, no new dependency.
+  const ACCELERATE_MS = 120
+  const ACCELERATE_AFTER_MS = 600
+
+  function holdRepeat(btn: HTMLButtonElement, direction: 1 | -1): void {
+    let timeout: number | null = null
+    let interval: number | null = null
+
+    function stop(): void {
+      if (timeout !== null) window.clearTimeout(timeout)
+      if (interval !== null) window.clearInterval(interval)
+      timeout = null
+      interval = null
+    }
+
+    btn.addEventListener('pointerdown', () => {
+      timeout = window.setTimeout(() => {
+        interval = window.setInterval(() => applyClamped(valueMs + direction * 60_000), ACCELERATE_MS)
+      }, ACCELERATE_AFTER_MS)
+    })
+    btn.addEventListener('pointerup', stop)
+    btn.addEventListener('pointerleave', stop)
+  }
+
+  holdRepeat(minusBtn, -1)
+  holdRepeat(plusBtn, 1)
+
+  input.addEventListener('blur', () => {
+    const parsed = Number.parseInt(input.value, 10)
+    if (Number.isNaN(parsed)) {
+      input.value = formatDuration(valueMs)
+      return
+    }
+    applyClamped(parsed * 60_000)
+  })
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur()
+  })
+
+  const presetButtons = opts.presetsMs.map((presetMs) => {
+    const btn = el('button', { class: 'preset-chip', type: 'button' }, [formatDuration(presetMs)])
+    btn.addEventListener('click', () => setRaw(presetMs))
+    return btn
+  })
+
+  const element = el('div', { class: 'stepper' }, [
+    el('span', { class: 'metric__label' }, [opts.label]),
+    el('div', { class: 'stepper__row' }, [minusBtn, input, plusBtn]),
+    el('div', { class: 'stepper__presets' }, presetButtons),
+  ])
+
+  setRaw(valueMs)
+
+  return {
+    element,
+    setMax: (newMaxMs: number) => {
+      maxMs = newMaxMs
+      // Deliberate rough edge: if valueMs currently sits below
+      // DURATION_MIN_MS via a preset (only possible for the fastdebug
+      // 30s presets), this re-clamp silently normalizes it back up to
+      // the minimum. Accepted trade-off for a hidden dev-only shortcut
+      // rather than adding a "this came from a preset" tracking flag.
+      applyClamped(valueMs)
+    },
+  }
+}
+
+/**
+ * A collapsed-by-default section - used for "Pengaturan istirahat" on
+ * the Ready screen so the common case (just pick a duration and go)
+ * doesn't get more crowded than the app already is.
+ */
+export function disclosure(summaryText: string, content: HTMLElement[]): { element: HTMLDivElement } {
+  const chevron = el('span', { class: 'disclosure__chevron', 'aria-hidden': 'true' }, ['▸'])
+  const summaryBtn = el(
+    'button',
+    { class: 'disclosure__summary', type: 'button', 'aria-expanded': 'false' },
+    [chevron, summaryText],
+  )
+  const panel = el('div', { class: 'disclosure__panel' }, content)
+  panel.hidden = true
+
+  summaryBtn.addEventListener('click', () => {
+    const opening = panel.hidden
+    panel.hidden = !opening
+    summaryBtn.setAttribute('aria-expanded', String(opening))
+    summaryBtn.classList.toggle('disclosure__summary--open', opening)
+  })
+
+  return { element: el('div', { class: 'disclosure' }, [summaryBtn, panel]) }
 }
