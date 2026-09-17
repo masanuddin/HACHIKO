@@ -4,9 +4,7 @@ import { strings } from './ui/strings'
 import { actions, body, button, card, el, screen, title } from './ui/components'
 import { renderWelcome } from './ui/screens/welcome'
 import { renderConsent } from './ui/screens/consent'
-import { renderFraming } from './ui/screens/framing'
 import { renderCalibration } from './ui/screens/calibration'
-import { renderMedia } from './ui/screens/media'
 import { renderReady } from './ui/screens/ready'
 import { runSession } from './ui/screens/session'
 
@@ -19,6 +17,13 @@ import { runSession } from './ui/screens/session'
  * Onboarding (S1/S2) runs once - "no accounts" means no login, not
  * re-entering your name and consent every time the page opens - and is
  * skipped on return visits once a profile exists in localStorage.
+ *
+ * renderReady (2026-09-17 merge) absorbs what used to be three
+ * sequential screens (Framing, Media, Ready) into one - it's the one
+ * that requests camera permission and returns the PerceptionBundle
+ * every screen after it shares by reference. Its `cameraRect` return
+ * value lets Calibration visually expand the camera preview into place
+ * instead of a plain screen cut - see src/ui/transition.ts.
  */
 async function main(): Promise<void> {
   const root = document.getElementById('app')
@@ -39,15 +44,13 @@ async function main(): Promise<void> {
     saveProfile(profile)
   }
 
-  const { bundle, video } = await renderFraming(root)
-  const { cone } = await renderCalibration(root, video, bundle)
-  const { declaredMedia } = await renderMedia(root, video)
-  const { workMs, rounds } = await renderReady(root, video)
+  const { bundle, video, declaredMedia, workMs, rounds, breakMs, longBreakMs, cameraRect } = await renderReady(root)
+  const { cone } = await renderCalibration(root, video, bundle, cameraRect)
 
   // runSession now owns the whole multi-cycle loop (Work -> Break ->
   // Work -> Break -> ...) internally, asking "Fokus lagi?" on its own
   // Break screen, and stops the camera itself once the student is done.
-  await runSession(root, video, bundle, cone, declaredMedia, workMs, rounds)
+  await runSession(root, video, bundle, cone, declaredMedia, workMs, rounds, breakMs, longBreakMs)
 
   renderEndScreen(root)
 }
