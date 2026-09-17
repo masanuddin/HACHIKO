@@ -47,6 +47,10 @@ describe('media chips', () => {
     expect('mixed' in strings.media.chips).toBe(false)
     expect(Object.values(strings.media.chips)).not.toContain('Campuran')
   })
+
+  it('asks the study-topic question with the required copy', () => {
+    expect(strings.media.topicLabel).toBe('Di sesi ini, kamu mau belajar apa?')
+  })
 })
 
 describe('session state labels', () => {

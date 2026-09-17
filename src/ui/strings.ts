@@ -77,6 +77,8 @@ export const strings = {
     },
     requiredError: 'Pilih dulu setidaknya satu media belajar.',
     continueLabel: 'Mulai sesi',
+    topicLabel: 'Di sesi ini, kamu mau belajar apa?',
+    topicPlaceholder: 'contoh: Matematika - Integral',
   },
 
   ready: {

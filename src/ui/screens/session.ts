@@ -38,11 +38,12 @@ function newSessionId(): string {
   return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function newSessionRecord(declaredMedia: Media[]): SessionRecord {
+function newSessionRecord(declaredMedia: Media[], studyTopic?: string): SessionRecord {
   return {
     id: newSessionId(),
     startedAt: Date.now(),
     declaredMedia,
+    ...(studyTopic ? { studyTopic } : {}),
     durationsMs: emptyDurations(),
     distractionEvents: [],
     recoveryTimesMs: [],
@@ -351,6 +352,7 @@ function runWorkPhase(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  studyTopic: string | undefined,
   workMs: number,
 ): Promise<WorkPhaseResult> {
   return new Promise((resolve) => {
@@ -476,7 +478,7 @@ function runWorkPhase(
     // its own declaredMedia argument and remains the sole authority.
     bundle.ai.setSessionContext({ learningTools: declaredMedia })
     const telemetry = new TelemetryRecorder()
-    const record = newSessionRecord(declaredMedia)
+    const record = newSessionRecord(declaredMedia, studyTopic)
 
     let remainingMs = workMs
     // Whichever duration currently governs the countdown - reassigned
@@ -793,6 +795,7 @@ export async function runSession(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  studyTopic: string | undefined,
   workMs: number,
   roundsPerSet: number,
 ): Promise<void> {
@@ -807,7 +810,7 @@ export async function runSession(
   // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
   // the whole plan immediately, skipping Break for that final cycle.
   while (keepGoing) {
-    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
+    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, studyTopic, workMs)
     records.push(record)
     telemetryParts.push(telemetryJsonl)
 

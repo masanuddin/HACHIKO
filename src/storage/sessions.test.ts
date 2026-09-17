@@ -143,6 +143,18 @@ describe('session storage', () => {
     deleteAllSessions()
     expect(listSessions()).toEqual([])
   })
+
+  it('persists a non-empty studyTopic and reads it back', () => {
+    saveSession(record({ id: 'a', studyTopic: 'IPA - Sistem Pernapasan' }))
+    const saved = listSessions()[0]
+    expect(saved?.studyTopic).toBe('IPA - Sistem Pernapasan')
+  })
+
+  it('reads a legacy record without studyTopic as undefined', () => {
+    localStorage.setItem('hachiko.sessions.v1', JSON.stringify([{ id: 'old', startedAt: 0, declaredMedia: ['book'] }]))
+    const old = listSessions()[0]
+    expect(old?.studyTopic).toBeUndefined()
+  })
 })
 
 describe('mergeSessionRecords', () => {
@@ -238,5 +250,17 @@ describe('mergeSessionRecords', () => {
     const a = record({ clarification: { answer: 'book' } })
     const merged = mergeSessionRecords('s-merged', [a])
     expect(merged.clarification).toBeNull()
+  })
+
+  it('propagates studyTopic from the first record', () => {
+    const a = record({ studyTopic: 'Matematika - Integral' })
+    const b = record({ studyTopic: 'should be ignored' })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.studyTopic).toBe('Matematika - Integral')
+  })
+
+  it('leaves studyTopic undefined when records lack it (old sessions stay readable)', () => {
+    const merged = mergeSessionRecords('s-merged', [record(), record()])
+    expect(merged.studyTopic).toBeUndefined()
   })
 })

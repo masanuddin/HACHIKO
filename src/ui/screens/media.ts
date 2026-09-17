@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, chipGroup, el, screen, title } from '../components'
+import { actions, body, button, chipGroup, el, field, screen, textInput, title } from '../components'
 import type { Media } from '../../engine/types'
 
 const OPTIONS: { value: Media; labelKey: keyof typeof strings.media.chips }[] = [
@@ -10,7 +10,7 @@ const OPTIONS: { value: Media; labelKey: keyof typeof strings.media.chips }[] = 
   { value: 'other', labelKey: 'other' },
 ]
 
-export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise<{ declaredMedia: Media[] }> {
+export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise<{ declaredMedia: Media[]; studyTopic?: string }> {
   return new Promise((resolve) => {
     const s = strings.media
     const { root: screenEl, content } = screen()
@@ -23,6 +23,10 @@ export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise
       { multi: true },
     )
 
+    // Optional, free-form study topic. Metadata only - never feeds CV.
+    const topicInput = textInput(s.topicPlaceholder)
+    const topicField = field(s.topicLabel, topicInput)
+
     const submit = () => {
       const declaredMedia = getSelected() as Media[]
       if (declaredMedia.length === 0) {
@@ -30,8 +34,9 @@ export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise
         errorEl.style.display = 'block'
         return
       }
+      const studyTopic = topicInput.value.trim()
       root.replaceChildren()
-      resolve({ declaredMedia })
+      resolve({ declaredMedia, ...(studyTopic ? { studyTopic } : {}) })
     }
 
     // This screen doesn't show the live feed, but `video` MUST stay
@@ -42,7 +47,7 @@ export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise
     // perception loop before it ever reached the session screen.
     const hiddenVideo = el('div', { class: 'visually-hidden' }, [video])
 
-    content.append(title(s.title), body(s.body), chips, errorEl, actions(button(s.continueLabel, submit)), hiddenVideo)
+    content.append(title(s.title), body(s.body), chips, topicField.element, errorEl, actions(button(s.continueLabel, submit)), hiddenVideo)
     root.replaceChildren(screenEl)
   })
 }

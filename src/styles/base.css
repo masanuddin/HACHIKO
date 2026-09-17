@@ -764,6 +764,13 @@ input:focus-visible,
   color: var(--ink-muted);
 }
 
+.session-topic {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
 .history-card__actions {
   display: flex;
   align-items: center;

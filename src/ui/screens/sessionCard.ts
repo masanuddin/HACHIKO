@@ -31,6 +31,12 @@ function sessionTimeLabel(startedAt: number): string {
   })
 }
 
+/** The user-authored study topic, or nothing at all when absent (so old
+ *  sessions without the field never render an empty/undefined row). */
+function topicLine(record: SessionRecord): (Node | string)[] {
+  return record.studyTopic ? [el('p', { class: 'session-topic' }, [record.studyTopic])] : []
+}
+
 /**
  * One read-only history card with an inline-confirmed delete control.
  * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
@@ -56,6 +62,7 @@ function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTM
 
   return card(
     el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
+    ...topicLine(record),
     metricGrid(computeMetrics(record)),
     controls,
   )
@@ -139,7 +146,7 @@ export function renderSessionCard(
     const metrics = computeMetrics(record)
     const metricsGrid = metricGrid(metrics)
 
-    const cardChildren: (Node | string)[] = [metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)])]
+    const cardChildren: (Node | string)[] = [...topicLine(record), metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)])]
     if (metrics.exceedsUncertainThreshold) {
       cardChildren.push(el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote]))
     }

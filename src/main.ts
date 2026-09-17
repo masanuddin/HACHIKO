@@ -41,13 +41,13 @@ async function main(): Promise<void> {
 
   const { bundle, video } = await renderFraming(root)
   const { cone } = await renderCalibration(root, video, bundle)
-  const { declaredMedia } = await renderMedia(root, video)
+  const { declaredMedia, studyTopic } = await renderMedia(root, video)
   const { workMs, rounds } = await renderReady(root, video)
 
   // runSession now owns the whole multi-cycle loop (Work -> Break ->
   // Work -> Break -> ...) internally, asking "Fokus lagi?" on its own
   // Break screen, and stops the camera itself once the student is done.
-  await runSession(root, video, bundle, cone, declaredMedia, workMs, rounds)
+  await runSession(root, video, bundle, cone, declaredMedia, studyTopic, workMs, rounds)
 
   renderEndScreen(root)
 }

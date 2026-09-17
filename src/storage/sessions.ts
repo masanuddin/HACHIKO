@@ -14,6 +14,9 @@ export interface SessionRecord {
   id: string
   startedAt: number
   declaredMedia: Media[]
+  /** User-authored study topic (e.g. "Matematika - Integral"). Metadata only,
+   *  never an input to CV/FocusEngine. Optional so pre-feature records stay valid. */
+  studyTopic?: string
   durationsMs: Record<FocusState, number>
   distractionEvents: DistractionSpan[]
   recoveryTimesMs: number[]
@@ -175,6 +178,7 @@ export function mergeSessionRecords(id: string, records: SessionRecord[]): Sessi
     id,
     startedAt: first.startedAt,
     declaredMedia: first.declaredMedia,
+    ...(first.studyTopic ? { studyTopic: first.studyTopic } : {}),
     durationsMs,
     distractionEvents,
     recoveryTimesMs,

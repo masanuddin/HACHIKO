@@ -52,6 +52,22 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('2 menit')
   })
 
+  it('includes the study topic when present', () => {
+    const pdf = pdfText(record({ studyTopic: 'Matematika - Integral' }))
+    expect(pdf).toContain('Matematika - Integral')
+  })
+
+  it('omits the study topic for old records without one (still valid)', () => {
+    const pdf = pdfText(record())
+    expect(pdf.startsWith('%PDF-1.4')).toBe(true)
+    expect(pdf).toContain('%%EOF')
+  })
+
+  it('omits a non-Latin-1 topic rather than emitting an undrawable glyph', () => {
+    const pdf = pdfText(record({ studyTopic: 'Matematika \u{1F600}' }))
+    expect(pdf).not.toContain('Matematika')
+  })
+
   it('has a self-consistent cross-reference table', () => {
     const pdf = pdfText(record())
     const header = 'xref\n0 7\n'
