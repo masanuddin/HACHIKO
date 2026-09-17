@@ -242,7 +242,7 @@ export function stepper(opts: {
   })
 
   const element = el('div', { class: 'stepper' }, [
-    el('span', { class: 'tile-label' }, [opts.label]),
+    el('span', { class: 'metric__label' }, [opts.label]),
     el('div', { class: 'stepper__row' }, [minusBtn, input, plusBtn]),
     el('div', { class: 'stepper__presets' }, presetButtons),
   ])
@@ -880,7 +880,7 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
       },
     )
     const roundsTile = el('div', { class: 'bento-tile bento-tile--sage-tint ready-grid__rounds' }, [
-      el('span', { class: 'tile-label' }, [s.ready.roundsLabel]),
+      el('span', { class: 'metric__label' }, [s.ready.roundsLabel]),
       roundsChips,
       breakSettings.element,
     ])
@@ -893,7 +893,7 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
       { multi: true },
     )
     const mediaTile = el('div', { class: 'bento-tile ready-grid__media' }, [
-      el('span', { class: 'tile-label' }, [s.media.title]),
+      el('span', { class: 'metric__label' }, [s.media.title]),
       mediaChips,
       mediaError,
     ])
