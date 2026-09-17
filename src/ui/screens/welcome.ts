@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, el, field, screen, textInput, title } from '../components'
+import { actions, body, button, el, field, screen, textInput, titleWithDoodle } from '../components'
 import { mascotPeek } from '../hachiko'
 
 export function renderWelcome(root: HTMLElement): Promise<{ name: string }> {
@@ -27,7 +27,7 @@ export function renderWelcome(root: HTMLElement): Promise<{ name: string }> {
 
     content.append(
       mascotPeek(),
-      title(s.title),
+      titleWithDoodle(s.title),
       body(s.body),
       el('p', { class: 'screen__body' }, [s.browserNote]),
       nameField.element,

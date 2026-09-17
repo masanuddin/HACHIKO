@@ -81,8 +81,12 @@ svg {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* .screen--night below fully replaces this `background` shorthand
+     (higher specificity), so --paper-grain never reaches the Session
+     view - it stays exactly as before. */
   background:
     radial-gradient(ellipse 900px 500px at 50% -10%, var(--glow-amber-soft), transparent 60%),
+    var(--paper-grain),
     var(--cream);
   padding: var(--space-8) var(--space-4);
 }
@@ -284,6 +288,138 @@ input:focus-visible,
   font-size: var(--text-lg);
   font-weight: 700;
   color: var(--ink);
+}
+
+/* ---- Scrapbook / bento treatment (daylight screens only) ----
+   Purely additive modifier classes - .card and .screen's base rules
+   above are untouched, so session.ts's night-screen cards (confirm
+   dialogs, nudges) render exactly as before. Rotation is a fixed set
+   of tokens, never Math.random(), same rule as the confetti pattern
+   further down this file. */
+.card--paper,
+.bento-tile {
+  position: relative;
+  clip-path: var(--torn-edge-a);
+}
+
+.card--paper::before {
+  /* Replaces .card's straight amber top bar - a torn top edge reads
+     oddly with a clean straight accent line sitting on top of it. */
+  display: none;
+}
+
+.torn-b {
+  clip-path: var(--torn-edge-b);
+}
+
+.tilt-a { transform: rotate(var(--tilt-a)); }
+.tilt-b { transform: rotate(var(--tilt-b)); }
+.tilt-c { transform: rotate(var(--tilt-c)); }
+.tilt-d { transform: rotate(var(--tilt-d)); }
+.tilt-e { transform: rotate(var(--tilt-e)); }
+
+/* A washi-tape strip pinning a card/tile in place. Positioned inside
+   the box (not above it) so .card's `overflow: hidden` and the torn
+   clip-path above never crop it. */
+.paper-tape::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 52px;
+  height: 20px;
+  background: var(--tape-color);
+  border: 1px solid var(--tape-border);
+  transform: translateX(-50%) rotate(-4deg);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Placeholder slot for hand-supplied art (doodle marks, mascot,
+   bento-tile imagery) - dashed box + small label, aria-hidden. Not
+   final art; swap the element for a real <img>/<svg> when the asset
+   exists. */
+.doodle-slot {
+  border: 1.5px dashed color-mix(in srgb, var(--ink-muted) 55%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ink-muted) 5%, transparent);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-1) var(--space-2);
+  flex-shrink: 0;
+}
+
+.doodle-slot--circle {
+  border-radius: 50%;
+}
+
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* ---- Session Card bento grid (current-session recap only; history
+   cards below it stay in the plain .metrics list, just with the paper
+   card treatment - see sessionCard.ts) ---- */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(84px, auto);
+  gap: var(--space-4);
+}
+
+.bento-tile {
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--cream);
+  border: 1px solid var(--cream-border);
+}
+
+.bento-tile--sand { background: var(--sand); border-color: transparent; }
+.bento-tile--amber-tint { background: var(--paper-amber); border-color: transparent; }
+.bento-tile--sage-tint { background: var(--paper-sage); border-color: transparent; }
+
+.bento-tile--mascot {
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+  align-items: center;
+  justify-content: center;
+}
+
+.bento-tile--focus { grid-column: 3 / 5; grid-row: 1; }
+.bento-tile--duduk { grid-column: 3; grid-row: 2; }
+.bento-tile--away { grid-column: 4; grid-row: 2; }
+.bento-tile--uncertain { grid-column: 1 / 3; grid-row: 3; }
+.bento-tile--observation { grid-column: 3 / 5; grid-row: 3; }
+
+@media (max-width: 640px) {
+  .bento {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bento-tile--mascot,
+  .bento-tile--focus,
+  .bento-tile--uncertain,
+  .bento-tile--observation {
+    grid-column: 1 / 3;
+    grid-row: auto;
+  }
+  .bento-tile--duduk,
+  .bento-tile--away {
+    grid-column: span 1;
+    grid-row: auto;
+  }
 }
 
 /* ---- Consent checkboxes ---- */
@@ -603,6 +739,9 @@ input:focus-visible,
 }
 
 .hachiko-pose {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   transition: transform var(--duration-slow) var(--ease-spring),
     opacity var(--duration-base) var(--ease-standard);
 }
@@ -707,14 +846,17 @@ input:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.metric__value--big {
+  font-size: var(--text-2xl);
+}
+
+/* Only ever rendered inside the observation bento tile now (see
+   sessionCard.ts) - the tile itself provides the paper/background, so
+   this is text-only, not a second nested box. */
 .observation {
   font-size: var(--text-base);
   font-style: normal;
   color: var(--ink);
-  padding: var(--space-4);
-  background: var(--cream);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--cream-border);
 }
 
 .threshold-note {

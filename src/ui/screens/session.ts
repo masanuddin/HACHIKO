@@ -1,10 +1,11 @@
 import { strings } from '../strings'
 import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
 import { cssVar } from '../theme'
-import { HachikoView } from '../hachiko'
+import { HachikoView, mascotPeek } from '../hachiko'
 import {
   BREAK_ABANDON_MS,
   BREAK_MS,
+  EARLY_STOP_RATIO,
   EXTENSION_MS,
   FAST_DEBUG_BREAK_MS,
   FAST_DEBUG_LONG_BREAK_MS,
@@ -312,9 +313,16 @@ function runWorkPhase(
         },
         { variant: 'secondary' },
       )
-      nudgeSlot.replaceChildren(
-        card(el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]), actions(cancelBtn, confirmBtn)),
-      )
+      // Stopping well short of the committed time gets a neutral mascot
+      // reaction (not a sad one - see hachiko.ts's note on why "crying"
+      // is never used) instead of the plain text-only confirm.
+      const elapsedMs = totalMs - remainingMs
+      const stoppingEarly = elapsedMs < totalMs * EARLY_STOP_RATIO
+      const cardChildren: (Node | string)[] = []
+      if (stoppingEarly) cardChildren.push(mascotPeek('drowsy'))
+      cardChildren.push(el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]), actions(cancelBtn, confirmBtn))
+
+      nudgeSlot.replaceChildren(card(...cardChildren))
     }
 
     function showEarlyBreakNudge(): void {

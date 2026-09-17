@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, chipGroup, el, screen, title } from '../components'
+import { actions, body, button, chipGroup, el, screen, titleWithDoodle } from '../components'
 import type { Media } from '../../engine/types'
 
 const OPTIONS: { value: Media; labelKey: keyof typeof strings.media.chips }[] = [
@@ -43,7 +43,7 @@ export function renderMedia(root: HTMLElement, video: HTMLVideoElement): Promise
     // perception loop before it ever reached the session screen.
     const hiddenVideo = el('div', { class: 'visually-hidden' }, [video])
 
-    content.append(title(s.title), body(s.body), chips, errorEl, actions(button(s.continueLabel, submit)), hiddenVideo)
+    content.append(titleWithDoodle(s.title), body(s.body), chips, errorEl, actions(button(s.continueLabel, submit)), hiddenVideo)
     root.replaceChildren(screenEl)
   })
 }

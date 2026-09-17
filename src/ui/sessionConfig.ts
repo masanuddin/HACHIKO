@@ -61,6 +61,13 @@ export const FAST_DEBUG_LONG_BREAK_MS = 60_000
 // so a rough first minute can't trigger it.
 export const EARLY_BREAK_MIN_ELAPSED_RATIO = 1 / 3
 
+// Below this share of the block elapsed, "Selesai" is treated as
+// stopping well short of the committed time - the confirm card shows a
+// neutral (not sad) mascot reaction instead of the plain text-only
+// version. Same ratio as EARLY_BREAK_MIN_ELAPSED_RATIO, kept as its own
+// named constant since the two checks mean different things.
+export const EARLY_STOP_RATIO = 1 / 3
+
 // Share of elapsed time spent in TERALIH/UNCERTAIN/MENGANTUK that counts
 // as "this block isn't working right now."
 export const EARLY_BREAK_STRUGGLE_RATIO = 0.5

@@ -75,6 +75,53 @@ export function card(...children: (Node | string)[]): HTMLDivElement {
   return el('div', { class: 'card' }, children)
 }
 
+/**
+ * The scrapbook variant of `card()` - torn top edge, optional tilt and
+ * tape - kept as a separate function (not a `card()` option) so every
+ * existing `card(...)` call in session.ts (the night, focus-block
+ * screen) renders exactly as before. Only used by the daylight screens.
+ */
+export function paperCard(
+  children: (Node | string)[],
+  opts: { tilt?: 'a' | 'b' | 'c' | 'd' | 'e'; torn?: 'b'; tape?: boolean } = {},
+): HTMLDivElement {
+  const classes = ['card', 'card--paper']
+  if (opts.tilt) classes.push(`tilt-${opts.tilt}`)
+  if (opts.torn === 'b') classes.push('torn-b')
+  if (opts.tape) classes.push('paper-tape')
+  return el('div', { class: classes.join(' ') }, children)
+}
+
+/**
+ * A dashed placeholder slot for hand-supplied art (doodle marks,
+ * mascot, bento-tile imagery) - the user is providing their own assets,
+ * so this stands in for them rather than any hand-rolled SVG. Purely
+ * decorative; always aria-hidden.
+ */
+export function doodleSlot(
+  label: string,
+  opts: { shape?: 'box' | 'circle'; size?: string } = {},
+): HTMLDivElement {
+  const slot = el(
+    'div',
+    { class: `doodle-slot${opts.shape === 'circle' ? ' doodle-slot--circle' : ''}`, 'aria-hidden': 'true' },
+    [label],
+  )
+  if (opts.size) {
+    slot.style.width = opts.size
+    slot.style.height = opts.size
+  }
+  return slot
+}
+
+/** A screen title paired with a small inline doodle-mark placeholder -
+ * the one consistent scrapbook touch every daylight screen shares, even
+ * ones (calibration, framing) whose main content can't be tilted
+ * without breaking the live camera preview's geometry. */
+export function titleWithDoodle(text: string): HTMLDivElement {
+  return el('div', { class: 'title-row' }, [title(text), doodleSlot('doodle')])
+}
+
 /** Multi- or single-select chip group. Returns the element and a getter. */
 export function chipGroup(
   options: { value: string; label: string }[],

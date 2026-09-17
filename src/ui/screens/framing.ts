@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, cameraDot, el, screen, title } from '../components'
+import { actions, body, button, cameraDot, el, screen, titleWithDoodle } from '../components'
 import { startCamera, startPerceptionLoop, type PerceptionLoopHandle } from '../../perception/camera'
 import { createFaceLandmarker } from '../../perception/face'
 import { createObjectDetector } from '../../perception/objects'
@@ -70,7 +70,7 @@ export function renderFraming(root: HTMLElement): Promise<FramingResult> {
       { disabled: true },
     )
 
-    content.append(title(s.title), status, preview, actions(continueBtn), dot)
+    content.append(titleWithDoodle(s.title), status, preview, actions(continueBtn), dot)
 
     // A quiet, positive-only "Hachiko remembers you" note - never
     // mentions a broken streak, only ever a session count and (once

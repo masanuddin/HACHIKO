@@ -1,5 +1,5 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
-import { actions, body, button, card, el, screen, title } from '../components'
+import { actions, body, button, doodleSlot, el, paperCard, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
@@ -9,9 +9,11 @@ function metric(label: string, value: string): HTMLDivElement {
   return el('div', { class: 'metric' }, [el('span', { class: 'metric__label' }, [label]), el('span', { class: 'metric__value' }, [value])])
 }
 
-/** The Session Card numbers (PRD §8), shared by the current card and
- * the read-only history cards below it. `dari` total is the session's
- * actual active time (focus + sitting + uncertain) - no new timing here. */
+/** The Session Card numbers (PRD §8), used by the read-only history
+ * cards below the current session (the current session gets the bento
+ * layout instead - see `bentoMetrics` below, which reads the same
+ * `SessionMetrics` shape). `dari` total is the session's actual active
+ * time (focus + sitting + uncertain) - no new timing here. */
 function metricGrid(m: SessionMetrics): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'metrics' }, [
@@ -19,6 +21,48 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.uncertainLabel, formatDuration(m.uncertainMs)),
+  ])
+}
+
+function bentoTile(
+  modifier: string,
+  tint: 'sand' | 'amber-tint' | 'sage-tint' | null,
+  children: (Node | string)[],
+  opts: { torn?: 'b'; tape?: boolean } = {},
+): HTMLDivElement {
+  const classes = ['bento-tile', `bento-tile--${modifier}`]
+  if (tint) classes.push(`bento-tile--${tint}`)
+  if (opts.torn === 'b') classes.push('torn-b')
+  if (opts.tape) classes.push('paper-tape')
+  return el('div', { class: classes.join(' ') }, children)
+}
+
+function tileMetric(label: string, value: string, big = false): HTMLElement[] {
+  return [
+    el('span', { class: 'metric__label' }, [label]),
+    el('span', { class: big ? 'metric__value metric__value--big' : 'metric__value' }, [value]),
+  ]
+}
+
+/**
+ * The current session's numbers as a scrapbook bento grid (mascot tile,
+ * a bigger Fokus tile since it's the headline number, the remaining
+ * three metrics, and a wide observation tile) instead of the flat 2x2
+ * grid `metricGrid` still renders for history. Same six pieces of
+ * content as before - no metric added or dropped, just recomposed.
+ */
+function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
+  const s = strings.sessionCard
+  return el('div', { class: 'bento' }, [
+    bentoTile('mascot', 'sand', [mascotPeek()], { tape: true }),
+    bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true), { tape: true }),
+    bentoTile('duduk', null, tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
+    bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs)), { torn: 'b' }),
+    bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs)), { torn: 'b' }),
+    bentoTile('observation', 'sand', [
+      el('p', { class: 'observation' }, [observationText]),
+      doodleSlot('doodle', { size: '36px' }),
+    ]),
   ])
 }
 
@@ -31,12 +75,18 @@ function sessionTimeLabel(startedAt: number): string {
   })
 }
 
+// Deterministic, alternating tilt/torn-edge per history card - same
+// "fixed set of values, no Math.random()" rule as the confetti pattern.
+const HISTORY_TILTS = ['c', 'b', 'e', 'a', 'd'] as const
+
 /**
  * One read-only history card with an inline-confirmed delete control.
  * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
  * current session (excluded from history) can never be deleted here.
+ * Lighter paper treatment than the current-session bento tiles (tilt +
+ * torn edge, no tape) since this can be a long scrolling list.
  */
-function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(record: SessionRecord, index: number, onDelete: (id: string) => void): HTMLDivElement {
   const s = strings.sessionCard
   const controls = el('div', { class: 'history-card__actions' })
 
@@ -54,10 +104,15 @@ function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTM
 
   showDelete()
 
-  return card(
-    el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
-    metricGrid(computeMetrics(record)),
-    controls,
+  const tilt = HISTORY_TILTS[index % HISTORY_TILTS.length] ?? 'a'
+
+  return paperCard(
+    [
+      el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
+      metricGrid(computeMetrics(record)),
+      controls,
+    ],
+    index % 2 === 1 ? { tilt, torn: 'b' } : { tilt },
   )
 }
 
@@ -73,7 +128,7 @@ function historySection(currentId: string, onDelete: (id: string) => void, onDel
   if (previous.length === 0) return null
 
   const s = strings.sessionCard
-  const cards = previous.map((r) => historyCard(r, onDelete))
+  const cards = previous.map((r, i) => historyCard(r, i, onDelete))
 
   const allControls = el('div', { class: 'session-history__delete-all' })
 
@@ -137,12 +192,10 @@ export function renderSessionCard(
     const s = strings.sessionCard
     const { root: screenEl, content } = screen()
     const metrics = computeMetrics(record)
-    const metricsGrid = metricGrid(metrics)
-
-    const cardChildren: (Node | string)[] = [metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)])]
-    if (metrics.exceedsUncertainThreshold) {
-      cardChildren.push(el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote]))
-    }
+    const bento = bentoMetrics(metrics, sessionObservation(metrics.firstCollapseAtMs))
+    const thresholdNote = metrics.exceedsUncertainThreshold
+      ? el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote])
+      : null
 
     let settled = false
 
@@ -191,9 +244,10 @@ export function renderSessionCard(
     renderHistory()
 
     content.append(
-      title(s.title),
+      titleWithDoodle(s.title),
       ...celebration,
-      card(...cardChildren),
+      bento,
+      ...(thresholdNote ? [thresholdNote] : []),
       historyWrap,
       body(s.downloadNote),
       reportActions,

@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, el, screen, title } from '../components'
+import { actions, body, button, el, screen, titleWithDoodle } from '../components'
 import { cssVar } from '../theme'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
@@ -80,7 +80,7 @@ export function renderCalibration(
       { disabled: true },
     )
 
-    content.append(title(s.title), status, ring.element, countdown, preview, actions(continueBtn))
+    content.append(titleWithDoodle(s.title), status, ring.element, countdown, preview, actions(continueBtn))
     root.replaceChildren(screenEl)
 
     const ctx = canvas.getContext('2d')

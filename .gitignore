@@ -17,3 +17,8 @@ public/fonts/*.ttf
 *.jsonl
 !fixtures/*.jsonl
 .superpowers/
+
+# Raw mascot art exports (108MB, uncropped sticker sheets) - the actual
+# cropped/optimized art the app uses lives in public/mascot/ and IS
+# committed; this is just the source material, kept locally only.
+/assets/

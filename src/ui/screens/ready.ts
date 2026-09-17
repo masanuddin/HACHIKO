@@ -1,5 +1,5 @@
 import { strings, formatDuration } from '../strings'
-import { actions, body, button, chipGroup, el, screen, title } from '../components'
+import { actions, body, button, chipGroup, doodleSlot, el, screen, title } from '../components'
 import { mascotPeek } from '../hachiko'
 import {
   WORK_MS,
@@ -78,7 +78,7 @@ export function renderReady(root: HTMLElement, video: HTMLVideoElement): Promise
 
     content.append(
       mascotPeek('waiting'),
-      titleEl,
+      el('div', { class: 'title-row' }, [titleEl, doodleSlot('doodle')]),
       body(s.body),
       body(s.durationLabel),
       chips,

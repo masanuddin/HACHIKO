@@ -87,4 +87,34 @@
      edges, never a new hue, always mixed from the fixed palette. */
   --glow-amber: color-mix(in srgb, var(--amber) 26%, transparent);
   --glow-amber-soft: color-mix(in srgb, var(--amber) 10%, transparent);
+
+  /* ---- Scrapbook / bento texture (daylight screens only) ----
+     Fixed, deterministic values - same "no Math.random(), no JS loop"
+     rule as the confetti pattern below. Never applied to the Session
+     (night) screen: base.css's .screen--night rule fully replaces
+     `background`, so --paper-grain never shows there, and none of the
+     .card--paper/.bento-tile rules are used by session.ts. */
+  --tilt-a: -1.2deg;
+  --tilt-b: 1deg;
+  --tilt-c: -0.8deg;
+  --tilt-d: 1.3deg;
+  --tilt-e: -0.4deg;
+
+  /* Paper tints - other tiles in a bento grid, mixed only from the
+     locked palette above, never a new hue. */
+  --paper-sage: color-mix(in srgb, var(--sage) 10%, var(--cream));
+  --paper-amber: color-mix(in srgb, var(--amber) 8%, var(--cream));
+
+  --tape-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  --tape-border: color-mix(in srgb, var(--amber-deep) 40%, transparent);
+
+  /* Two slightly different jagged top edges so torn-paper cards don't
+     all read as one repeated stamp. */
+  --torn-edge-a: polygon(0% 3%, 4% 0%, 9% 2%, 15% 0%, 22% 2%, 30% 0%, 38% 2%, 46% 0%, 55% 2%, 63% 0%, 71% 2%, 80% 0%, 88% 2%, 94% 0%, 100% 3%, 100% 100%, 0% 100%);
+  --torn-edge-b: polygon(0% 2%, 6% 0%, 12% 3%, 19% 0%, 27% 2%, 35% 0%, 43% 3%, 51% 0%, 60% 2%, 68% 0%, 76% 3%, 84% 0%, 92% 2%, 100% 0%, 100% 100%, 0% 100%);
+
+  /* Generated paper-grain noise (inline SVG feTurbulence), not an image
+     asset - low-alpha ink speckle mixed at draw time, never stored or
+     fetched. Applied only in base.css's .screen rule (not .screen--night). */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.169 0 0 0 0 0.149 0 0 0 0 0.133 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
