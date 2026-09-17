@@ -101,6 +101,11 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
   return new Promise((resolve) => {
     const s = strings
     const { root: screenEl, content } = screen()
+    // .screen__content's default max-width (720px, tokens.css) is sized
+    // for every other screen's single-column text - this screen's
+    // 2-column bento grid (camera + steppers) needs more room, or it
+    // sits as a narrow strip in the middle of a wide viewport.
+    content.classList.add('screen__content--wide')
 
     const status = el('p', { class: 'note' }, [s.framing.permissionPending])
     const preview = el('div', { class: 'camera-preview' })

@@ -431,6 +431,17 @@ input:focus-visible,
    during design (any relayout in the stepper tiles, even a text-width
    change from clicking +/-, nudged the camera box's computed size on
    every click). Fixed height sidesteps it entirely. */
+
+/* Found during manual verification: .screen__content's default
+   max-width (720px, tokens.css) is right for every other screen's
+   single-column text, but left this screen's 2-column bento grid
+   stranded as a narrow strip in the middle of a wide viewport. Applied
+   via ready.ts adding this class - scoped to this one screen, not a
+   change to the shared .screen__content default. */
+.screen__content--wide {
+  max-width: 1100px;
+}
+
 .ready-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
