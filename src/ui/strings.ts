@@ -17,14 +17,14 @@ export const strings = {
   },
 
   welcome: {
-    title: 'Selamat datang di HACHIKO',
-    body: 'HACHIKO menemani kamu belajar. Kamera laptopmu memperhatikan posisi dudukmu, dan seekor anjing digital tidur saat kamu fokus, lalu bangun saat perhatianmu teralih.',
-    browserNote: 'HACHIKO berjalan paling baik di Chrome atau Edge di laptop.',
+    title: 'Halo, aku Hachiko!',
+    body: 'Aku bakal nemenin kamu belajar. Kamera laptop kamu ngeliatin posisi dudukmu, terus aku tidur waktu kamu fokus dan bangun kalau kamu mulai teralih.',
+    browserNote: 'HACHIKO paling enak dipakai di Chrome atau Edge, di laptop.',
     nameLabel: 'Nama panggilanmu',
     namePlaceholder: 'Tulis nama panggilanmu',
     nameError: 'Tulis dulu nama panggilanmu ya.',
     continueLabel: 'Mulai',
-    noAccountNote: 'Tidak perlu akun. Nama ini cuma disimpan di laptopmu sendiri.',
+    noAccountNote: 'Nggak perlu akun. Nama ini cuma kesimpen di laptop kamu sendiri.',
   },
 
   consent: {
@@ -47,7 +47,7 @@ export const strings = {
 
   framing: {
     title: 'Cek posisi duduk',
-    body: 'Pastikan wajahmu masuk ke dalam kotak, dan duduk seperti biasanya kamu belajar.',
+    body: 'Pastikan wajahmu masuk ke kotak, terus duduk kayak biasa kamu belajar ya.',
     permissionPending: 'Meminta izin kamera...',
     permissionDenied:
       'Izin kamera ditolak. HACHIKO butuh kamera untuk memperhatikan posisi dudukmu. Muat ulang halaman dan izinkan aksesnya ya.',
@@ -58,9 +58,9 @@ export const strings = {
 
   calibration: {
     title: 'Kalibrasi 15 detik',
-    body: 'Duduk seperti biasanya kamu belajar. HACHIKO sedang mengenali posisi normalmu.',
+    body: 'Duduk kayak biasa kamu belajar ya. Aku lagi ngapalin posisi dudukmu yang normal.',
     counting: (secondsLeft: number) => `${secondsLeft} detik lagi`,
-    done: 'Sudah selesai. Yuk lanjut.',
+    done: 'Beres! Yuk lanjut.',
     continueLabel: 'Lanjut',
   },
 
@@ -78,14 +78,14 @@ export const strings = {
   },
 
   ready: {
-    durationLabel: 'Pilih lama sesi',
+    durationLabel: 'Berapa lama kamu mau fokus?',
     roundsLabel: 'Berapa putaran sebelum istirahat panjang?',
     roundsChip: (n: number) => `${n} putaran`,
-    breakSettingsLabel: 'Pengaturan istirahat',
+    breakSettingsLabel: 'Atur istirahat',
     shortBreakLabel: 'Istirahat pendek',
     longBreakLabel: 'Istirahat panjang',
     continueLabel: 'Mulai',
-    timelineTitle: 'Pola sesimu',
+    timelineTitle: 'Alur sesimu',
     timelineBreakLabel: 'Istirahat',
     timelineLongBreakLabel: 'Istirahat panjang',
   },
@@ -132,19 +132,19 @@ export const strings = {
     body: 'Tadi ada beberapa momen kamu sepertinya terlihat kurang fokus. Kamu beneran masih fokus kan, atau ada distraksi?',
     optionBook: 'Masih Fokus Kok!',
     optionPhone: 'Ada Distraksi Tadi',
-    optionMixed: 'Salah Deteksi',
+    optionMixed: 'Deteksinya Meleset',
     optionSkip: 'Lewati',
     autoSkipNote: (seconds: number) => `Kalau didiamkan, ini otomatis lewat dalam ${seconds} detik.`,
   },
 
   sessionCard: {
     title: 'Kartu Sesi',
-    focusMinutesLabel: 'Menit fokus',
+    focusMinutesLabel: 'Waktu fokus',
     sittingMinutesLabel: 'Waktu duduk',
-    awayLabel: 'Waktu Away',
+    awayLabel: 'Waktu Absen',
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
-    uncertainLabel: 'Belum jelas',
+    uncertainLabel: 'Waktu belum jelas',
     uncertainThresholdNote:
       'Bagian "belum jelas" sesi ini agak besar. HACHIKO lebih baik mengaku belum tahu daripada menebak asal.',
     downloadLabel: 'Unduh laporan sesi',
@@ -166,7 +166,7 @@ export const strings = {
   },
 
   endScreen: {
-    doneTitle: 'Sesi selesai',
+    doneTitle: 'Sesi selesai!',
     doneMessage: 'Terima kasih sudah belajar bareng Hachiko hari ini.',
     reloadLabel: 'Muat ulang',
     deleteProfileLabel: 'Hapus profil',

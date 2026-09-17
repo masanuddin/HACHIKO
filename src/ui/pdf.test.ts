@@ -30,10 +30,10 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('/BaseFont /Helvetica')
     expect(pdf).toContain('HACHIKO')
     expect(pdf).toContain('Kartu Sesi')
-    expect(pdf).toContain('Menit fokus')
+    expect(pdf).toContain('Waktu fokus')
     expect(pdf).toContain('Waktu duduk')
-    expect(pdf).toContain('Waktu Away')
-    expect(pdf).toContain('Belum jelas')
+    expect(pdf).toContain('Waktu Absen')
+    expect(pdf).toContain('Waktu belum jelas')
   })
 
   it('shows sub-minute durations in seconds', () => {
