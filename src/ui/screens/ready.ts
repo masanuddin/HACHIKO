@@ -130,6 +130,11 @@ export interface ReadySetupResult {
   cameraRect: DOMRect
 }
 
+export interface ReadyExisting {
+  bundle: PerceptionBundle
+  video: HTMLVideoElement
+}
+
 /**
  * The merged camera-check + study-material + duration + rounds screen
  * (2026-09-17 design spec). Replaces the old Framing, Media, and Ready
@@ -137,8 +142,14 @@ export interface ReadySetupResult {
  * camera permission and builds the PerceptionBundle; everything
  * downstream (Calibration onward) still receives the same `bundle` and
  * `video` by reference as before.
+ *
+ * `existing` is set when main.ts is looping back here after the
+ * student cancels out of Calibration - reuses the already-running
+ * camera/bundle instead of tearing it down and re-requesting
+ * permission (which would re-negotiate the media stream for no
+ * reason, and risk a second permission prompt).
  */
-export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
+export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promise<ReadySetupResult> {
   return new Promise((resolve) => {
     const s = strings
     const { root: screenEl, content } = screen()
@@ -148,18 +159,22 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
     // sits as a narrow strip in the middle of a wide viewport.
     content.classList.add('screen__content--wide')
 
-    const status = el('p', { class: 'note' }, [s.framing.permissionPending])
+    const status = el('p', { class: 'note' }, [existing ? s.framing.body : s.framing.permissionPending])
     const preview = el('div', { class: 'camera-preview' })
-    const video = el('video', {})
+    const video = existing?.video ?? el('video', {})
+    // Calibration hides the raw <video> (opacity 0, drawing frames onto
+    // its own canvas instead) - reset that back to visible in case
+    // we're reusing a video element that just came from there.
+    video.style.opacity = ''
     const targetBox = el('div', { class: 'camera-preview__target' })
     preview.append(video, targetBox)
 
     const dot = cameraDot(s.common.cameraActive)
-    dot.style.visibility = 'hidden'
+    dot.style.visibility = existing ? 'visible' : 'hidden'
 
     const cameraTile = el('div', { class: 'bento-tile bento-tile--plain ready-grid__camera' }, [status, preview, dot])
 
-    let bundle: PerceptionBundle | null = null
+    let bundle: PerceptionBundle | null = existing?.bundle ?? null
     let loop: PerceptionLoopHandle | null = null
 
     // --- Short/long break steppers (collapsed behind a disclosure) ---
@@ -318,37 +333,46 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
       grid.prepend(streakChip(companion.totalSessions, companion.currentStreakDays))
     }
 
-    void (async () => {
-      try {
-        const camera = await startCamera(video)
-        dot.style.visibility = 'visible'
-        // Stays visible for the rest of this screen's lifetime, same as
-        // the old Framing screen - it's the only thing on screen that
-        // explains why "Mulai" is greyed out until a face is framed.
-        status.textContent = s.framing.body
+    if (existing) {
+      // Camera/models already running from before Calibration was
+      // cancelled - just (re)start the face-found loop, no permission
+      // request or model load to await.
+      loop = startPerceptionLoop(video, existing.bundle.faceLandmarker, existing.bundle.objectDetector, (tick) => {
+        if (tick.face) continueBtn.disabled = !tick.face.faceFound
+      }, 1000)
+    } else {
+      void (async () => {
+        try {
+          const camera = await startCamera(video)
+          dot.style.visibility = 'visible'
+          // Stays visible for the rest of this screen's lifetime, same as
+          // the old Framing screen - it's the only thing on screen that
+          // explains why "Mulai" is greyed out until a face is framed.
+          status.textContent = s.framing.body
 
-        const [faceLandmarker, objectDetector, faceDetector] = await Promise.all([
-          createFaceLandmarker(),
-          createObjectDetector(),
-          createFaceDetector(),
-        ])
-        bundle = { camera, faceLandmarker, objectDetector, faceDetector }
+          const [faceLandmarker, objectDetector, faceDetector] = await Promise.all([
+            createFaceLandmarker(),
+            createObjectDetector(),
+            createFaceDetector(),
+          ])
+          bundle = { camera, faceLandmarker, objectDetector, faceDetector }
 
-        // Same slower-than-default rate as the old Framing screen: this
-        // screen only checks faceFound to enable the button, nothing
-        // time-sensitive, and detectForVideo runs synchronously - at the
-        // default rate its periodic blocking was visible as stutter in
-        // the live preview.
-        loop = startPerceptionLoop(video, faceLandmarker, objectDetector, (tick) => {
-          if (tick.face) continueBtn.disabled = !tick.face.faceFound
-        }, 1000)
-      } catch (err) {
-        status.textContent =
-          err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
-            ? s.framing.permissionDenied
-            : s.framing.permissionError
-        console.error(err)
-      }
-    })()
+          // Same slower-than-default rate as the old Framing screen: this
+          // screen only checks faceFound to enable the button, nothing
+          // time-sensitive, and detectForVideo runs synchronously - at the
+          // default rate its periodic blocking was visible as stutter in
+          // the live preview.
+          loop = startPerceptionLoop(video, faceLandmarker, objectDetector, (tick) => {
+            if (tick.face) continueBtn.disabled = !tick.face.faceFound
+          }, 1000)
+        } catch (err) {
+          status.textContent =
+            err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
+              ? s.framing.permissionDenied
+              : s.framing.permissionError
+          console.error(err)
+        }
+      })()
+    }
   })
 }

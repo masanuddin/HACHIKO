@@ -47,12 +47,14 @@ function progressRing(): { element: HTMLDivElement; setProgress: (ratio: number,
   }
 }
 
+export type CalibrationResult = { cancelled: true } | { cancelled: false; cone: Cone }
+
 export function renderCalibration(
   root: HTMLElement,
   video: HTMLVideoElement,
   bundle: PerceptionBundle,
   fromRect: DOMRect,
-): Promise<{ cone: Cone }> {
+): Promise<CalibrationResult> {
   return new Promise((resolve) => {
     const s = strings.calibration
     const { root: screenEl, content } = screen()
@@ -82,12 +84,27 @@ export function renderCalibration(
         if (!cone) return
         overlayLoop.stop()
         root.replaceChildren()
-        resolve({ cone })
+        resolve({ cancelled: false, cone })
       },
       { disabled: true },
     )
 
-    content.append(titleWithDoodle(s.title), status, ring.element, countdown, preview, actions(continueBtn))
+    // Always enabled, unlike continueBtn - backs all the way out to
+    // Ready so the student can recheck framing/media/duration/rounds,
+    // reusing the same camera+bundle rather than re-requesting
+    // permission (see main.ts's loop and renderReady's `existing` param).
+    const cancelBtn = button(
+      strings.common.back,
+      () => {
+        overlayLoop.stop()
+        dataLoop.stop()
+        root.replaceChildren()
+        resolve({ cancelled: true })
+      },
+      { variant: 'secondary' },
+    )
+
+    content.append(titleWithDoodle(s.title), status, ring.element, countdown, preview, actions(cancelBtn, continueBtn))
     root.replaceChildren(screenEl)
     flipExpand(preview, fromRect)
 

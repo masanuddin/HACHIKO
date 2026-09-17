@@ -44,13 +44,32 @@ async function main(): Promise<void> {
     saveProfile(profile)
   }
 
-  const { bundle, video, declaredMedia, workMs, rounds, breakMs, longBreakMs, cameraRect } = await renderReady(root)
-  const { cone } = await renderCalibration(root, video, bundle, cameraRect)
+  // Calibration's "Kembali" backs all the way out to Ready rather than
+  // just retrying its own countdown - re-render Ready reusing the same
+  // camera/bundle (no re-request of permission) until the student
+  // actually gets through calibration.
+  let ready = await renderReady(root)
+  let calibration = await renderCalibration(root, ready.video, ready.bundle, ready.cameraRect)
+  while (calibration.cancelled) {
+    ready = await renderReady(root, { bundle: ready.bundle, video: ready.video })
+    calibration = await renderCalibration(root, ready.video, ready.bundle, ready.cameraRect)
+  }
+  const { cone } = calibration
 
   // runSession now owns the whole multi-cycle loop (Work -> Break ->
   // Work -> Break -> ...) internally, asking "Fokus lagi?" on its own
   // Break screen, and stops the camera itself once the student is done.
-  await runSession(root, video, bundle, cone, declaredMedia, workMs, rounds, breakMs, longBreakMs)
+  await runSession(
+    root,
+    ready.video,
+    ready.bundle,
+    cone,
+    ready.declaredMedia,
+    ready.workMs,
+    ready.rounds,
+    ready.breakMs,
+    ready.longBreakMs,
+  )
 
   renderEndScreen(root)
 }
