@@ -1,6 +1,7 @@
 import { strings } from '../strings'
 import { actions, body, button, el, screen, titleWithDoodle } from '../components'
 import { cssVar } from '../theme'
+import { flipExpand } from '../transition'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
 import type { FaceBox } from '../../perception/faceBox'
@@ -50,6 +51,7 @@ export function renderCalibration(
   root: HTMLElement,
   video: HTMLVideoElement,
   bundle: PerceptionBundle,
+  fromRect: DOMRect,
 ): Promise<{ cone: Cone }> {
   return new Promise((resolve) => {
     const s = strings.calibration
@@ -82,6 +84,7 @@ export function renderCalibration(
 
     content.append(titleWithDoodle(s.title), status, ring.element, countdown, preview, actions(continueBtn))
     root.replaceChildren(screenEl)
+    flipExpand(preview, fromRect)
 
     const ctx = canvas.getContext('2d')
     const nightColor = cssVar('--night')
