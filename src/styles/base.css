@@ -343,6 +343,7 @@ input:focus-visible,
   height: 20px;
   background: var(--tape-color);
   border: 1px solid var(--tape-border);
+  box-shadow: 0 2px 3px color-mix(in srgb, var(--ink) 25%, transparent);
   transform: translateX(-50%) rotate(-4deg);
   opacity: 0.85;
   pointer-events: none;

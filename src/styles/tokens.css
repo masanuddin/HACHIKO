@@ -94,11 +94,11 @@
      (night) screen: base.css's .screen--night rule fully replaces
      `background`, so --paper-grain never shows there, and none of the
      .card--paper/.bento-tile rules are used by session.ts. */
-  --tilt-a: -1.2deg;
-  --tilt-b: 1deg;
-  --tilt-c: -0.8deg;
-  --tilt-d: 1.3deg;
-  --tilt-e: -0.4deg;
+  --tilt-a: -2.4deg;
+  --tilt-b: 2deg;
+  --tilt-c: -1.6deg;
+  --tilt-d: 2.6deg;
+  --tilt-e: -0.8deg;
 
   /* Paper tints - other tiles in a bento grid, mixed only from the
      locked palette above, never a new hue. */
@@ -116,5 +116,5 @@
   /* Generated paper-grain noise (inline SVG feTurbulence), not an image
      asset - low-alpha ink speckle mixed at draw time, never stored or
      fetched. Applied only in base.css's .screen rule (not .screen--night). */
-  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.169 0 0 0 0 0.149 0 0 0 0 0.133 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.169 0 0 0 0 0.149 0 0 0 0 0.133 0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
