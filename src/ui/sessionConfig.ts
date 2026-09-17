@@ -36,6 +36,32 @@ export const ROUNDS_PER_SET_OPTIONS = [1, 2, 3, 4]
 export const DEFAULT_ROUNDS_PER_SET = 4
 
 /**
+ * Shared bounds for every duration stepper (work, short break, long
+ * break) on the merged Ready screen - see the 2026-09-17 design spec.
+ */
+export const DURATION_MIN_MS = 1 * 60_000
+export const DURATION_MAX_MS = 60 * 60_000
+
+// Break-duration ceilings are a share of the chosen work duration, not
+// a fixed number - a break shouldn't be able to outlast (or nearly
+// outlast) the work block it follows.
+export const BREAK_MAX_RATIO = 0.5
+export const LONG_BREAK_MAX_RATIO = 2 / 3
+
+/** Plain min/max clamp - deliberately does NOT round to whole minutes,
+ * so a preset like FAST_DEBUG_WORK_MS (30s) still passes through
+ * exactly instead of getting rounded up to a full minute. */
+export function clampDurationMs(rawMs: number, minMs: number, maxMs: number): number {
+  return Math.min(maxMs, Math.max(minMs, rawMs))
+}
+
+/** The effective ceiling for a break-duration stepper: a ratio of the
+ * current work duration, but never above the shared absolute max. */
+export function maxBreakMs(workMs: number, ratio: number): number {
+  return Math.min(DURATION_MAX_MS, workMs * ratio)
+}
+
+/**
  * ?fastdebug in the URL swaps in a 30-second work/break pair on the
  * Ready screen, so the multi-cycle loop can be iterated on without
  * waiting through a real block. Invisible without that query param -
