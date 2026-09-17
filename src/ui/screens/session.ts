@@ -4,12 +4,10 @@ import { cssVar } from '../theme'
 import { HachikoView, mascotPeek } from '../hachiko'
 import {
   BREAK_ABANDON_MS,
-  BREAK_MS,
   EARLY_STOP_RATIO,
   EXTENSION_MS,
   FAST_DEBUG_BREAK_MS,
   FAST_DEBUG_LONG_BREAK_MS,
-  LONG_BREAK_MS,
   NUDGE_AUTO_DISMISS_MS,
   STIRRING_RATIO,
   isFastDebugMode,
@@ -464,7 +462,12 @@ function runWorkPhase(
  * `isLongBreak` (see runSession's ROUNDS_PER_SET tracking) swaps in a
  * longer duration and different copy - everything else is identical.
  */
-function renderBreak(root: HTMLElement, isLongBreak: boolean): Promise<{ continueSession: boolean }> {
+function renderBreak(
+  root: HTMLElement,
+  isLongBreak: boolean,
+  shortBreakMs: number,
+  longBreakMs: number,
+): Promise<{ continueSession: boolean }> {
   return new Promise((resolve) => {
     const s = strings.session
     const { root: screenEl, content } = screen()
@@ -472,10 +475,10 @@ function renderBreak(root: HTMLElement, isLongBreak: boolean): Promise<{ continu
     const breakMs = isLongBreak
       ? isFastDebugMode()
         ? FAST_DEBUG_LONG_BREAK_MS
-        : LONG_BREAK_MS
+        : longBreakMs
       : isFastDebugMode()
         ? FAST_DEBUG_BREAK_MS
-        : BREAK_MS
+        : shortBreakMs
     const countdown = el('p', { class: 'screen__title' }, [formatTimer(breakMs)])
     let remaining = breakMs
     let settled = false
@@ -555,6 +558,8 @@ export async function runSession(
   declaredMedia: Media[],
   workMs: number,
   roundsPerSet: number,
+  breakMs: number,
+  longBreakMs: number,
 ): Promise<void> {
   const records: SessionRecord[] = []
   const telemetryParts: string[] = []
@@ -576,7 +581,7 @@ export async function runSession(
     } else {
       cycleInSet += 1
       const isLongBreak = cycleInSet >= roundsPerSet
-      const { continueSession } = await renderBreak(root, isLongBreak)
+      const { continueSession } = await renderBreak(root, isLongBreak, breakMs, longBreakMs)
       if (isLongBreak) cycleInSet = 0
       keepGoing = continueSession
     }
