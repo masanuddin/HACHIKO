@@ -348,27 +348,20 @@ input:focus-visible,
   pointer-events: none;
 }
 
-/* Placeholder slot for hand-supplied art (doodle marks, mascot,
-   bento-tile imagery) - dashed box + small label, aria-hidden. Not
-   final art; swap the element for a real <img>/<svg> when the asset
-   exists. */
-.doodle-slot {
-  border: 1.5px dashed color-mix(in srgb, var(--ink-muted) 55%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--ink-muted) 5%, transparent);
+/* Small hand-drawn-style decorative mark - see doodleMark() in
+   components.ts. Purely decorative, always aria-hidden. */
+.doodle-mark {
+  width: 28px;
+  height: 28px;
   color: var(--ink-muted);
-  font-size: var(--text-xs);
-  line-height: 1.2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: var(--space-1) var(--space-2);
   flex-shrink: 0;
+  display: inline-flex;
 }
 
-.doodle-slot--circle {
-  border-radius: 50%;
+.doodle-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .title-row {

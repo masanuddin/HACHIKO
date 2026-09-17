@@ -104,7 +104,7 @@ export function renderCalibration(
       { variant: 'secondary' },
     )
 
-    content.append(titleWithDoodle(s.title), status, ring.element, countdown, preview, actions(cancelBtn, continueBtn))
+    content.append(titleWithDoodle(s.title, 'sparkle'), status, ring.element, countdown, preview, actions(cancelBtn, continueBtn))
     root.replaceChildren(screenEl)
     flipExpand(preview, fromRect)
 

@@ -27,7 +27,7 @@ export function renderWelcome(root: HTMLElement): Promise<{ name: string }> {
 
     content.append(
       mascotPeek(),
-      titleWithDoodle(s.title),
+      titleWithDoodle(s.title, 'paw'),
       body(s.body),
       el('p', { class: 'screen__body' }, [s.browserNote]),
       nameField.element,

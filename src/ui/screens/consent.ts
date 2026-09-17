@@ -27,7 +27,7 @@ export function renderConsent(root: HTMLElement): Promise<{ guardianName: string
 
     content.append(
       mascotPeek(),
-      titleWithDoodle(s.title),
+      titleWithDoodle(s.title, 'squiggle'),
       body(s.intro),
       paperCard([el('h2', { class: 'card__title' }, [s.cameraExplainerTitle]), body(s.cameraExplainer)], {
         tilt: 'b',

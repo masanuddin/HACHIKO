@@ -34,7 +34,7 @@ export function renderClarify(root: HTMLElement): Promise<ClarificationAnswer | 
     }
 
     content.append(
-      titleWithDoodle(s.title),
+      titleWithDoodle(s.title, 'scribble-circle'),
       body(s.body),
       actions(
         button(s.optionBook, () => choose('book')),

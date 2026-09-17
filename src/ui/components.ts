@@ -95,34 +95,39 @@ export function paperCard(
   return el('div', { class: classes.join(' ') }, children)
 }
 
-/**
- * A dashed placeholder slot for hand-supplied art (doodle marks,
- * mascot, bento-tile imagery) - the user is providing their own assets,
- * so this stands in for them rather than any hand-rolled SVG. Purely
- * decorative; always aria-hidden.
- */
-export function doodleSlot(
-  label: string,
-  opts: { shape?: 'box' | 'circle'; size?: string } = {},
-): HTMLDivElement {
-  const slot = el(
-    'div',
-    { class: `doodle-slot${opts.shape === 'circle' ? ' doodle-slot--circle' : ''}`, 'aria-hidden': 'true' },
-    [label],
-  )
-  if (opts.size) {
-    slot.style.width = opts.size
-    slot.style.height = opts.size
-  }
-  return slot
+export type DoodleMarkName = 'squiggle' | 'sparkle' | 'swirl' | 'paw' | 'scribble-circle'
+
+const DOODLE_MARK_SVG: Record<DoodleMarkName, string> = {
+  squiggle: `<svg viewBox="0 0 32 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M2 11c3-8 6-8 9 0s6 8 9 0 6-8 9 0"/></svg>`,
+  sparkle: `<svg viewBox="0 0 32 32" fill="currentColor"><path d="M16 2c0 6.5 1 9 2.5 10.5S25 15 30 16c-6.5 0-9 1-10.5 2.5S16 25 16 30c0-6.5-1-9-2.5-10.5S8 17 2 16c6.5 0 9-1 10.5-2.5S16 8 16 2z"/></svg>`,
+  swirl: `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20c0 5 4 8 9 8s9-4 9-9-3-8-7-8-6 2-6 6 3 5 6 5 4-1.5 4-3.5"/><path d="M20 17l3 2-1 3.5"/></svg>`,
+  paw: `<svg viewBox="0 0 32 32" fill="currentColor"><ellipse cx="16" cy="22" rx="8" ry="6.5"/><ellipse cx="6" cy="12" rx="3" ry="4" transform="rotate(-15 6 12)"/><ellipse cx="13" cy="7" rx="3" ry="4"/><ellipse cx="20" cy="7" rx="3" ry="4"/><ellipse cx="27" cy="12" rx="3" ry="4" transform="rotate(15 27 12)"/></svg>`,
+  'scribble-circle': `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6c-8-3-16 2-16 10s7 12 13 10 9-8 7-14c-1-3-4-4-4-4"/></svg>`,
 }
 
-/** A screen title paired with a small inline doodle-mark placeholder -
- * the one consistent scrapbook touch every daylight screen shares, even
+/**
+ * A small hand-drawn-style decorative mark (never informational - always
+ * aria-hidden). Fixed, deterministic per call site, same "no
+ * Math.random()" rule the tilt tokens and confetti pattern already
+ * follow - each screen picks its mark explicitly, nothing rotates at
+ * runtime.
+ */
+export function doodleMark(name: DoodleMarkName, opts: { size?: string } = {}): HTMLDivElement {
+  const mark = el('div', { class: 'doodle-mark', 'aria-hidden': 'true' })
+  mark.innerHTML = DOODLE_MARK_SVG[name]
+  if (opts.size) {
+    mark.style.width = opts.size
+    mark.style.height = opts.size
+  }
+  return mark
+}
+
+/** A screen title paired with a small hand-drawn decorative mark - the
+ * one consistent scrapbook touch every daylight screen shares, even
  * ones (calibration, framing) whose main content can't be tilted
  * without breaking the live camera preview's geometry. */
-export function titleWithDoodle(text: string): HTMLDivElement {
-  return el('div', { class: 'title-row' }, [title(text), doodleSlot('doodle')])
+export function titleWithDoodle(text: string, mark: DoodleMarkName): HTMLDivElement {
+  return el('div', { class: 'title-row' }, [title(text), doodleMark(mark)])
 }
 
 /** Multi- or single-select chip group. Returns the element and a getter. */

@@ -1,5 +1,5 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
-import { actions, body, button, doodleSlot, el, paperCard, screen, titleWithDoodle } from '../components'
+import { actions, body, button, doodleMark, el, paperCard, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
@@ -61,7 +61,7 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
     bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs)), { torn: 'b' }),
     bentoTile('observation', 'sand', [
       el('p', { class: 'observation' }, [observationText]),
-      doodleSlot('doodle', { size: '36px' }),
+      doodleMark('paw', { size: '36px' }),
     ]),
   ])
 }
@@ -244,7 +244,7 @@ export function renderSessionCard(
     renderHistory()
 
     content.append(
-      titleWithDoodle(s.title),
+      titleWithDoodle(s.title, 'squiggle'),
       ...celebration,
       bento,
       ...(thresholdNote ? [thresholdNote] : []),

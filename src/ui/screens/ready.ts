@@ -318,7 +318,7 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
 
     const ctaRow = actions(continueBtn)
     ctaRow.classList.add('screen__actions--end')
-    content.append(titleWithDoodle(s.framing.title), grid, ctaRow)
+    content.append(titleWithDoodle(s.framing.title, 'swirl'), grid, ctaRow)
 
     root.replaceChildren(screenEl)
 
