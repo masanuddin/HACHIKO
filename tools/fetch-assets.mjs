@@ -40,12 +40,12 @@ const ASSETS = [
   },
   {
     dest: join(root, 'public', 'fonts', 'PlusJakartaSans-Variable.woff2'),
-    url: 'https://github.com/tokotype/PlusJakartaSans/raw/master/fonts/webfonts/PlusJakartaSans-VariableFont_wght.woff2',
+    url: 'https://github.com/tokotype/PlusJakartaSans/raw/master/fonts/webfonts/PlusJakartaSans%5Bwght%5D.woff2',
     required: false,
   },
   {
     dest: join(root, 'public', 'fonts', 'Inter-Variable.woff2'),
-    url: 'https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Variable.woff2',
+    url: 'https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.woff2',
     required: false,
   },
 ]
