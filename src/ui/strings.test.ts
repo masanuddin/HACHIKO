@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatFocusLine, strings } from './strings'
+import { formatDuration, formatFocusLine, sessionTitle, strings } from './strings'
 
 describe('formatDuration', () => {
   it('renders a genuine zero as "0 detik", not "0 menit"', () => {
@@ -13,10 +13,50 @@ describe('formatDuration', () => {
     expect(formatDuration(59_900)).toBe('59 detik')
   })
 
-  it('renders 60s and above in minutes, floored', () => {
+  it('renders exact whole minutes as "N menit"', () => {
     expect(formatDuration(60_000)).toBe('1 menit')
-    expect(formatDuration(90_000)).toBe('1 menit')
-    expect(formatDuration(125_000)).toBe('2 menit')
+    expect(formatDuration(120_000)).toBe('2 menit')
+  })
+
+  it('renders a minute with remaining seconds as "N+ menit"', () => {
+    expect(formatDuration(84_000)).toBe('1+ menit')
+    expect(formatDuration(119_000)).toBe('1+ menit')
+    expect(formatDuration(121_000)).toBe('2+ menit')
+  })
+})
+
+describe('formatDuration boundaries', () => {
+  it('covers the full second/minute boundary ladder', () => {
+    expect(formatDuration(2_000)).toBe('2 detik')
+    expect(formatDuration(36_000)).toBe('36 detik')
+    expect(formatDuration(59_000)).toBe('59 detik')
+    expect(formatDuration(60_000)).toBe('1 menit')
+    expect(formatDuration(84_000)).toBe('1+ menit')
+    expect(formatDuration(119_000)).toBe('1+ menit')
+    expect(formatDuration(120_000)).toBe('2 menit')
+    expect(formatDuration(121_000)).toBe('2+ menit')
+  })
+})
+
+describe('sessionTitle', () => {
+  it('personalises the title with the student name', () => {
+    expect(sessionTitle('Rafael Komala')).toBe('Kartu Sesi Rafael Komala')
+  })
+
+  it('falls back to the plain title when the name is missing', () => {
+    expect(sessionTitle(undefined)).toBe('Kartu Sesi')
+    expect(sessionTitle('')).toBe('Kartu Sesi')
+  })
+
+  it('trims surrounding whitespace and never leaves a trailing space', () => {
+    expect(sessionTitle('  Rafael  ')).toBe('Kartu Sesi Rafael')
+    expect(sessionTitle('   ')).toBe('Kartu Sesi')
+  })
+})
+
+describe('session card study-topic insight', () => {
+  it('names the topic when one exists', () => {
+    expect(strings.sessionCard.topicInsight('Matematika')).toBe('Kamu paling fokus pas belajar Matematika')
   })
 })
 

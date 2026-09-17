@@ -1,6 +1,7 @@
-import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
+import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from '../strings'
 import { actions, body, button, card, el, screen, title } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { loadProfile } from '../../storage/profile'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
 import type { Milestone } from '../../storage/companion'
@@ -35,6 +36,14 @@ function sessionTimeLabel(startedAt: number): string {
  *  sessions without the field never render an empty/undefined row). */
 function topicLine(record: SessionRecord): (Node | string)[] {
   return record.studyTopic ? [el('p', { class: 'session-topic' }, [record.studyTopic])] : []
+}
+
+/** The study-topic insight sentence, or nothing when the record has no
+ *  topic (old sessions stay clean rather than showing a broken sentence). */
+function topicInsight(record: SessionRecord): (Node | string)[] {
+  return record.studyTopic
+    ? [el('p', { class: 'observation' }, [strings.sessionCard.topicInsight(record.studyTopic)])]
+    : []
 }
 
 /**
@@ -146,7 +155,7 @@ export function renderSessionCard(
     const metrics = computeMetrics(record)
     const metricsGrid = metricGrid(metrics)
 
-    const cardChildren: (Node | string)[] = [...topicLine(record), metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)])]
+    const cardChildren: (Node | string)[] = [...topicLine(record), metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)]), ...topicInsight(record)]
     if (metrics.exceedsUncertainThreshold) {
       cardChildren.push(el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote]))
     }
@@ -198,7 +207,7 @@ export function renderSessionCard(
     renderHistory()
 
     content.append(
-      title(s.title),
+      title(sessionTitle(loadProfile()?.name)),
       ...celebration,
       card(...cardChildren),
       historyWrap,
