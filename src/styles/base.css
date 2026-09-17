@@ -119,6 +119,19 @@ svg {
   }
 }
 
+/* Calibration is the one screen a FLIP transition (transition.ts)
+   plays into - flipExpand measures and animates the camera preview's
+   own box, and preview is a descendant of .screen__content. Leaving
+   content-enter running at the same time means the ancestor is still
+   mid translateY(10px)->0 when flipExpand reads its "final" rect,
+   throwing off the computed offset by that amount, and the ancestor's
+   own opacity fade layers a crossfade on top of what's meant to read
+   as a single expanding box. Suppressing it here keeps the ancestor
+   geometrically stable for the one screen that needs it. */
+.screen__content--no-enter {
+  animation: none;
+}
+
 .screen__title {
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -461,7 +474,6 @@ input:focus-visible,
 .ready-grid__camera {
   grid-column: 1;
   grid-row: 2 / 4;
-  height: 320px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -469,11 +481,20 @@ input:focus-visible,
   gap: var(--space-2);
 }
 
+/* Responsive AND stable at once: sized from WIDTH (100% of this tile,
+   itself a fixed 2fr share of .ready-grid's own width), height derived
+   via aspect-ratio. This is one-directional - the tile's width never
+   depends on grid row auto-sizing, so it can't re-trigger the
+   feedback loop a height-first version of this hit during design
+   (any relayout in the stepper tiles nudging the camera's computed
+   size on every +/- click). A previous fixed-pixel version traded
+   away responsiveness entirely to dodge that bug; deriving from the
+   column's stable width dodges it without giving up responsiveness. */
 .ready-grid__camera .camera-preview {
-  width: auto;
-  height: 210px;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
   aspect-ratio: 4 / 3;
-  flex-shrink: 0;
 }
 
 .ready-grid__duration {
@@ -507,13 +528,8 @@ input:focus-visible,
     grid-column: 1;
     grid-row: auto;
   }
-  .ready-grid__camera {
-    height: auto;
-  }
-  .ready-grid__camera .camera-preview {
-    width: 100%;
-    height: auto;
-  }
+  /* .ready-grid__camera .camera-preview is already width-driven and
+     responsive by default (see above) - no override needed here. */
 }
 
 /* ---- Hybrid stepper ([-][input][+] + presets) ---- */

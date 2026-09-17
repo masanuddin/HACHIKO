@@ -12,6 +12,18 @@
     <title>HACHIKO</title>
     <link rel="stylesheet" href="/src/styles/tokens.css" />
     <link rel="stylesheet" href="/src/styles/base.css" />
+    <!-- All six Hachiko mascot poses (hachiko.ts's POSE_IMAGE), preloaded
+         so they're part of first load rather than fetched lazily the
+         first time a new pose appears mid-session - DevTools' Network
+         tab must stay empty after first load (CLAUDE.md), and without
+         this, the first TERALIH/celebrating/etc. mid-session triggered
+         a fresh request. -->
+    <link rel="preload" as="image" href="/mascot/sleeping.png" />
+    <link rel="preload" as="image" href="/mascot/stirring.png" />
+    <link rel="preload" as="image" href="/mascot/waking.png" />
+    <link rel="preload" as="image" href="/mascot/drowsy.png" />
+    <link rel="preload" as="image" href="/mascot/waiting.png" />
+    <link rel="preload" as="image" href="/mascot/celebrating.png" />
   </head>
   <body>
     <a class="skip-link" href="#app">Langsung ke konten</a>

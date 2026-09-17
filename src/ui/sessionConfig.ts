@@ -50,15 +50,23 @@ export const LONG_BREAK_MAX_RATIO = 2 / 3
 
 /** Plain min/max clamp - deliberately does NOT round to whole minutes,
  * so a preset like FAST_DEBUG_WORK_MS (30s) still passes through
- * exactly instead of getting rounded up to a full minute. */
+ * exactly instead of getting rounded up to a full minute. Guards
+ * against an inverted range (maxMs < minMs, reachable in practice when
+ * a very short work duration drives maxBreakMs below DURATION_MIN_MS -
+ * see maxBreakMs below) by widening maxMs up to minMs rather than
+ * letting Math.min/Math.max silently return the smaller, wrong bound. */
 export function clampDurationMs(rawMs: number, minMs: number, maxMs: number): number {
-  return Math.min(maxMs, Math.max(minMs, rawMs))
+  const safeMax = Math.max(minMs, maxMs)
+  return Math.min(safeMax, Math.max(minMs, rawMs))
 }
 
 /** The effective ceiling for a break-duration stepper: a ratio of the
- * current work duration, but never above the shared absolute max. */
+ * current work duration, floored to a whole minute so the displayed
+ * value (via formatDuration, which floors) never understates the
+ * actual clamped duration - never above the shared absolute max. */
 export function maxBreakMs(workMs: number, ratio: number): number {
-  return Math.min(DURATION_MAX_MS, workMs * ratio)
+  const raw = Math.min(DURATION_MAX_MS, workMs * ratio)
+  return Math.floor(raw / 60_000) * 60_000
 }
 
 /**

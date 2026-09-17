@@ -250,8 +250,10 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
       try {
         const camera = await startCamera(video)
         dot.style.visibility = 'visible'
-        status.textContent = ''
-        status.style.display = 'none'
+        // Stays visible for the rest of this screen's lifetime, same as
+        // the old Framing screen - it's the only thing on screen that
+        // explains why "Mulai" is greyed out until a face is framed.
+        status.textContent = s.framing.body
 
         const [faceLandmarker, objectDetector, faceDetector] = await Promise.all([
           createFaceLandmarker(),
@@ -269,7 +271,6 @@ export function renderReady(root: HTMLElement): Promise<ReadySetupResult> {
           if (tick.face) continueBtn.disabled = !tick.face.faceFound
         }, 1000)
       } catch (err) {
-        status.style.display = ''
         status.textContent =
           err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
             ? s.framing.permissionDenied

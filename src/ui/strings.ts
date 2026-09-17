@@ -47,6 +47,7 @@ export const strings = {
 
   framing: {
     title: 'Cek posisi duduk',
+    body: 'Pastikan wajahmu masuk ke dalam kotak, dan duduk seperti biasanya kamu belajar.',
     permissionPending: 'Meminta izin kamera...',
     permissionDenied:
       'Izin kamera ditolak. HACHIKO butuh kamera untuk memperhatikan posisi dudukmu. Muat ulang halaman dan izinkan aksesnya ya.',
@@ -65,7 +66,6 @@ export const strings = {
 
   media: {
     title: 'Sesi ini kamu belajar pakai apa?',
-    body: 'Boleh pilih lebih dari satu. HACHIKO memakai ini supaya tebakannya soal aktivitasmu lebih tepat.',
     chips: {
       laptop: 'Layar/laptop',
       phone: 'HP/tablet',
@@ -75,7 +75,6 @@ export const strings = {
       other: 'Lainnya',
     },
     requiredError: 'Pilih dulu setidaknya satu media belajar.',
-    continueLabel: 'Mulai sesi',
   },
 
   ready: {

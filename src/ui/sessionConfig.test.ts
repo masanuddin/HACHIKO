@@ -25,11 +25,17 @@ describe('clampDurationMs', () => {
   it('respects a caller-supplied max lower than DURATION_MAX_MS', () => {
     expect(clampDurationMs(20 * 60_000, DURATION_MIN_MS, 10 * 60_000)).toBe(10 * 60_000)
   })
+
+  it('widens an inverted range (maxMs below minMs) up to minMs instead of returning the smaller, wrong bound - reachable in practice when a very short work duration drives maxBreakMs below DURATION_MIN_MS', () => {
+    expect(clampDurationMs(5 * 60_000, DURATION_MIN_MS, 30_000)).toBe(DURATION_MIN_MS)
+  })
 })
 
 describe('maxBreakMs', () => {
-  it('is a ratio of the work duration when that is below the absolute ceiling', () => {
-    expect(maxBreakMs(25 * 60_000, BREAK_MAX_RATIO)).toBe(25 * 60_000 * 0.5)
+  it('is a ratio of the work duration, floored to a whole minute', () => {
+    // 25min * 0.5 = 12.5min, which would render as a lying "12 menit"
+    // via formatDuration's floor if this weren't floored here too.
+    expect(maxBreakMs(25 * 60_000, BREAK_MAX_RATIO)).toBe(12 * 60_000)
   })
 
   it('never exceeds DURATION_MAX_MS even for a work duration whose ratio share would otherwise be larger', () => {

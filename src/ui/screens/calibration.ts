@@ -56,6 +56,11 @@ export function renderCalibration(
   return new Promise((resolve) => {
     const s = strings.calibration
     const { root: screenEl, content } = screen()
+    // See the .screen__content--no-enter comment in base.css - the
+    // ancestor's own fade/slide-in would throw off flipExpand's rect
+    // math and layer a crossfade on top of the intended "box expands
+    // in place" read.
+    content.classList.add('screen__content--no-enter')
 
     const status = body(s.body)
     const ring = progressRing()

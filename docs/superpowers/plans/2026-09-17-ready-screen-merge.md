@@ -52,8 +52,12 @@ describe('clampDurationMs', () => {
     expect(clampDurationMs(999 * 60_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(DURATION_MAX_MS)
   })
 
-  it('does not round to whole minutes - fastdebug-style sub-minute values pass through clamping untouched', () => {
-    expect(clampDurationMs(30_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(30_000)
+  it('does not round an in-range value to the nearest whole minute', () => {
+    expect(clampDurationMs(90_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(90_000)
+  })
+
+  it('clamps a below-minimum sub-minute value up to the minimum, same as any other too-low value - callers that want a preset like FAST_DEBUG_WORK_MS (30s) to bypass this floor must not route it through clampDurationMs at all', () => {
+    expect(clampDurationMs(30_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(DURATION_MIN_MS)
   })
 
   it('respects a caller-supplied max lower than DURATION_MAX_MS', () => {
@@ -66,8 +70,13 @@ describe('maxBreakMs', () => {
     expect(maxBreakMs(25 * 60_000, BREAK_MAX_RATIO)).toBe(25 * 60_000 * 0.5)
   })
 
-  it('never exceeds DURATION_MAX_MS even for a long work duration', () => {
-    expect(maxBreakMs(60 * 60_000, LONG_BREAK_MAX_RATIO)).toBe(DURATION_MAX_MS)
+  it('never exceeds DURATION_MAX_MS even for a work duration whose ratio share would otherwise be larger', () => {
+    // In real usage the work-duration stepper itself never exceeds
+    // DURATION_MAX_MS (60 min), so this ceiling never actually engages
+    // in practice - but maxBreakMs is a pure function and must still be
+    // correct for any input on its own terms, independent of how its
+    // one current caller happens to use it.
+    expect(maxBreakMs(200 * 60_000, LONG_BREAK_MAX_RATIO)).toBe(DURATION_MAX_MS)
   })
 
   it('the default 5-minute short break and 15-minute long break both fit under a 25-minute work default', () => {
@@ -118,7 +127,7 @@ export function maxBreakMs(workMs: number, ratio: number): number {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run src/ui/sessionConfig.test.ts`
-Expected: PASS (8 tests)
+Expected: PASS (9 tests)
 
 - [ ] **Step 5: Type-check and commit**
 
@@ -182,17 +191,28 @@ export function stepper(opts: {
     class: 'stepper__input',
   }) as HTMLInputElement
 
-  function apply(ms: number): void {
-    valueMs = clampDurationMs(ms, opts.minMs, maxMs)
+  // Trusted values (presets, the initial value) are set exactly as
+  // given, bypassing the min/max clamp entirely - a preset like
+  // FAST_DEBUG_WORK_MS (30s) is deliberately below DURATION_MIN_MS
+  // (1 minute), and clamping it here would silently round it up to a
+  // full minute, defeating its whole purpose. Only interactive nudging
+  // (+/-, typed input, and a work-duration change re-clamping the break
+  // steppers via setMax) goes through applyClamped.
+  function setRaw(ms: number): void {
+    valueMs = ms
     input.value = formatDuration(valueMs)
     opts.onChange(valueMs)
+  }
+
+  function applyClamped(ms: number): void {
+    setRaw(clampDurationMs(ms, opts.minMs, maxMs))
   }
 
   const minusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Kurangi' }, ['-'])
   const plusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Tambah' }, ['+'])
 
-  minusBtn.addEventListener('click', () => apply(valueMs - 60_000))
-  plusBtn.addEventListener('click', () => apply(valueMs + 60_000))
+  minusBtn.addEventListener('click', () => applyClamped(valueMs - 60_000))
+  plusBtn.addEventListener('click', () => applyClamped(valueMs + 60_000))
 
   // Long-press auto-repeat: the click handlers above already cover a
   // single tap; holding the button repeats every ACCELERATE_MS once
@@ -213,7 +233,7 @@ export function stepper(opts: {
 
     btn.addEventListener('pointerdown', () => {
       timeout = window.setTimeout(() => {
-        interval = window.setInterval(() => apply(valueMs + direction * 60_000), ACCELERATE_MS)
+        interval = window.setInterval(() => applyClamped(valueMs + direction * 60_000), ACCELERATE_MS)
       }, ACCELERATE_AFTER_MS)
     })
     btn.addEventListener('pointerup', stop)
@@ -224,12 +244,21 @@ export function stepper(opts: {
   holdRepeat(plusBtn, 1)
 
   input.addEventListener('blur', () => {
+    // If the field wasn't actually edited, leave it alone. This matters
+    // because formatDuration() renders sub-minute values in SECONDS
+    // ("30 detik" for the fastdebug preset) but typed input is always
+    // interpreted as whole MINUTES below - without this early return,
+    // merely focusing and blurring the field without retyping anything
+    // would reparse "30 detik" as 30 (parseInt stops at the first
+    // non-digit) and reinterpret it as 30 minutes, silently destroying
+    // the exact sub-minute value setRaw/applyClamped exists to protect.
+    if (input.value === formatDuration(valueMs)) return
     const parsed = Number.parseInt(input.value, 10)
     if (Number.isNaN(parsed)) {
       input.value = formatDuration(valueMs)
       return
     }
-    apply(parsed * 60_000)
+    applyClamped(parsed * 60_000)
   })
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') input.blur()
@@ -237,7 +266,7 @@ export function stepper(opts: {
 
   const presetButtons = opts.presetsMs.map((presetMs) => {
     const btn = el('button', { class: 'preset-chip', type: 'button' }, [formatDuration(presetMs)])
-    btn.addEventListener('click', () => apply(presetMs))
+    btn.addEventListener('click', () => setRaw(presetMs))
     return btn
   })
 
@@ -247,13 +276,18 @@ export function stepper(opts: {
     el('div', { class: 'stepper__presets' }, presetButtons),
   ])
 
-  apply(valueMs)
+  setRaw(valueMs)
 
   return {
     element,
     setMax: (newMaxMs: number) => {
       maxMs = newMaxMs
-      apply(valueMs) // re-clamp against the new ceiling immediately
+      // Deliberate rough edge: if valueMs currently sits below
+      // DURATION_MIN_MS via a preset (only possible for the fastdebug
+      // 30s presets), this re-clamp silently normalizes it back up to
+      // the minimum. Accepted trade-off for a hidden dev-only shortcut
+      // rather than adding a "this came from a preset" tracking flag.
+      applyClamped(valueMs)
     },
   }
 }
