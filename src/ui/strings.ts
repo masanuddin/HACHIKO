@@ -47,12 +47,10 @@ export const strings = {
 
   framing: {
     title: 'Cek posisi duduk',
-    body: 'Pastikan wajahmu masuk ke dalam kotak, dan duduk seperti biasanya kamu belajar.',
     permissionPending: 'Meminta izin kamera...',
     permissionDenied:
       'Izin kamera ditolak. HACHIKO butuh kamera untuk memperhatikan posisi dudukmu. Muat ulang halaman dan izinkan aksesnya ya.',
     permissionError: 'Kamera belum bisa diakses. Coba periksa apakah laptop ini punya kamera yang aktif.',
-    continueLabel: 'Posisi sudah pas',
     companionSessionCount: (n: number) => `Kamu sudah ${n} sesi bareng Hachiko.`,
     companionStreak: (days: number) => ` ${days} hari berturut-turut!`,
   },
@@ -81,11 +79,12 @@ export const strings = {
   },
 
   ready: {
-    title: (durationLabel: string) => `Siap fokus ${durationLabel}?`,
-    body: 'Hachiko bakal nemenin dari sini. Begitu kamu tekan Mulai, sesi langsung berjalan.',
     durationLabel: 'Pilih lama sesi',
     roundsLabel: 'Berapa putaran sebelum istirahat panjang?',
     roundsChip: (n: number) => `${n} putaran`,
+    breakSettingsLabel: 'Pengaturan istirahat',
+    shortBreakLabel: 'Istirahat pendek',
+    longBreakLabel: 'Istirahat panjang',
     continueLabel: 'Mulai',
   },
 
