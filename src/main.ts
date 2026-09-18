@@ -1,7 +1,7 @@
 import { deleteProfile, loadProfile, saveProfile } from './storage/profile'
 import { deleteAllSessions } from './storage/sessions'
 import { strings } from './ui/strings'
-import { actions, body, button, card, el, screen, title } from './ui/components'
+import { actions, body, button, confirmOverlay, el, screen, title } from './ui/components'
 import { renderWelcome } from './ui/screens/welcome'
 import { renderConsent } from './ui/screens/consent'
 import { renderCalibration } from './ui/screens/calibration'
@@ -84,37 +84,32 @@ async function main(): Promise<void> {
 function renderEndScreen(root: HTMLElement): void {
   const s = strings.endScreen
   const { root: screenEl, content } = screen()
-  const slot = el('div')
 
-  function showActions(): void {
-    slot.replaceChildren(
-      actions(
-        button(s.reloadLabel, () => location.reload(), { variant: 'secondary' }),
-        button(s.deleteProfileLabel, showConfirm, { variant: 'secondary' }),
-      ),
-    )
-  }
+  const actionsRow = actions(
+    button(s.reloadLabel, () => location.reload(), { variant: 'secondary' }),
+    button(s.deleteProfileLabel, showConfirm, { variant: 'secondary' }),
+  )
 
   function showConfirm(): void {
-    slot.replaceChildren(
-      card(
+    const overlay = confirmOverlay(
+      screenEl,
+      [
         el('h2', { class: 'card__title' }, [s.deleteProfileConfirmTitle]),
         body(s.deleteProfileConfirmBody),
         actions(
-          button(s.deleteProfileConfirmCancel, showActions, { variant: 'secondary' }),
+          button(s.deleteProfileConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
           button(s.deleteProfileConfirmYes, () => {
             deleteProfile()
             deleteAllSessions()
             location.reload()
           }),
         ),
-      ),
+      ],
+      () => overlay.close(),
     )
   }
 
-  showActions()
-
-  content.append(title(s.doneTitle), body(s.doneMessage), slot)
+  content.append(title(s.doneTitle), body(s.doneMessage), actionsRow)
   root.replaceChildren(screenEl)
 }
 

@@ -1,5 +1,5 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
-import { actions, body, button, card, doodleMark, el, screen, titleWithDoodle } from '../components'
+import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
@@ -77,23 +77,34 @@ function sessionTimeLabel(startedAt: number): string {
  * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
  * current session (excluded from history) can never be deleted here.
  */
-function historyCard(record: SessionRecord, _index: number, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(
+  record: SessionRecord,
+  _index: number,
+  onDelete: (id: string) => void,
+  screenEl: HTMLElement,
+): HTMLDivElement {
   const s = strings.sessionCard
-  const controls = el('div', { class: 'history-card__actions' })
-
-  function showDelete(): void {
-    controls.replaceChildren(button(s.deleteSessionLabel, showConfirm, { variant: 'secondary' }))
-  }
 
   function showConfirm(): void {
-    controls.replaceChildren(
-      el('span', { class: 'history-card__confirm' }, [s.deleteConfirmTitle]),
-      button(s.deleteConfirmYes, () => onDelete(record.id), { variant: 'secondary' }),
-      button(s.deleteConfirmCancel, showDelete, { variant: 'secondary' }),
+    const overlay = confirmOverlay(
+      screenEl,
+      [
+        el('h2', { class: 'card__title' }, [s.deleteConfirmTitle]),
+        actions(
+          button(s.deleteConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+          button(s.deleteConfirmYes, () => {
+            overlay.close()
+            onDelete(record.id)
+          }),
+        ),
+      ],
+      () => overlay.close(),
     )
   }
 
-  showDelete()
+  const controls = el('div', { class: 'history-card__actions' }, [
+    button(s.deleteSessionLabel, showConfirm, { variant: 'secondary' }),
+  ])
 
   return card(
     el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
@@ -107,30 +118,40 @@ function historyCard(record: SessionRecord, _index: number, onDelete: (id: strin
  * session (saveSession appends); this just stops the UI from dropping
  * them. Renders only when there is at least one prior session.
  */
-function historySection(currentId: string, onDelete: (id: string) => void, onDeleteAll: () => void): HTMLElement | null {
+function historySection(
+  currentId: string,
+  onDelete: (id: string) => void,
+  onDeleteAll: () => void,
+  screenEl: HTMLElement,
+): HTMLElement | null {
   const previous = listSessions()
     .filter((r) => r.id !== currentId)
     .sort((a, b) => b.startedAt - a.startedAt)
   if (previous.length === 0) return null
 
   const s = strings.sessionCard
-  const cards = previous.map((r, i) => historyCard(r, i, onDelete))
-
-  const allControls = el('div', { class: 'session-history__delete-all' })
-
-  function showDeleteAll(): void {
-    allControls.replaceChildren(button(s.deleteAllSessionsLabel, showDeleteAllConfirm, { variant: 'secondary' }))
-  }
+  const cards = previous.map((r, i) => historyCard(r, i, onDelete, screenEl))
 
   function showDeleteAllConfirm(): void {
-    allControls.replaceChildren(
-      el('span', { class: 'history-card__confirm' }, [s.deleteAllConfirmTitle]),
-      button(s.deleteAllConfirmYes, onDeleteAll, { variant: 'secondary' }),
-      button(s.deleteConfirmCancel, showDeleteAll, { variant: 'secondary' }),
+    const overlay = confirmOverlay(
+      screenEl,
+      [
+        el('h2', { class: 'card__title' }, [s.deleteAllConfirmTitle]),
+        actions(
+          button(s.deleteConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+          button(s.deleteAllConfirmYes, () => {
+            overlay.close()
+            onDeleteAll()
+          }),
+        ),
+      ],
+      () => overlay.close(),
     )
   }
 
-  showDeleteAll()
+  const allControls = el('div', { class: 'session-history__delete-all' }, [
+    button(s.deleteAllSessionsLabel, showDeleteAllConfirm, { variant: 'secondary' }),
+  ])
 
   return el('div', { class: 'session-history' }, [
     el('h2', { class: 'session-history__title' }, [s.historyTitle]),
@@ -224,6 +245,7 @@ export function renderSessionCard(
           deleteAllSessions()
           renderHistory()
         },
+        screenEl,
       )
       historyWrap.replaceChildren(...(history ? [history] : []))
     }
