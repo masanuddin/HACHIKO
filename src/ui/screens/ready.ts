@@ -7,13 +7,14 @@ import {
   confirmOverlay,
   disclosure,
   el,
+  field,
   screen,
   stepper,
+  textInput,
   titleWithDoodle,
 } from '../components'
 import { startCamera, startPerceptionLoop, type PerceptionLoopHandle } from '../../perception/camera'
-import { createFaceLandmarker } from '../../perception/face'
-import { createObjectDetector } from '../../perception/objects'
+import { createAiRuntime } from '../../perception/aiRuntime'
 import { createFaceDetector } from '../../perception/faceBox'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { deriveCompanionState } from '../../storage/companion'
@@ -43,7 +44,6 @@ const MEDIA_OPTIONS: { value: Media; labelKey: keyof typeof strings.media.chips 
   { value: 'phone', labelKey: 'phone' },
   { value: 'book', labelKey: 'book' },
   { value: 'paper', labelKey: 'paper' },
-  { value: 'mixed', labelKey: 'mixed' },
   { value: 'other', labelKey: 'other' },
 ]
 
@@ -128,6 +128,7 @@ export interface ReadySetupResult {
   bundle: PerceptionBundle
   video: HTMLVideoElement
   declaredMedia: Media[]
+  studyTopic?: string
   workMs: number
   rounds: number
   breakMs: number
@@ -260,10 +261,16 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
       MEDIA_OPTIONS.map((o) => ({ value: o.value, label: s.media.chips[o.labelKey] })),
       { multi: true },
     )
+    // Optional, free-form study topic - metadata only, never feeds CV.
+    // Ported from the old standalone Media screen, absorbed here like
+    // everything else that screen used to own.
+    const topicInput = textInput(s.media.topicPlaceholder)
+    const topicField = field(s.media.topicLabel, topicInput)
     const mediaTile = el('div', { class: 'bento-tile ready-grid__media' }, [
       el('span', { class: 'metric__label' }, [s.media.title]),
       mediaChips,
       mediaError,
+      topicField.element,
     ])
 
     const durationTile = el('div', { class: 'bento-tile bento-tile--amber-tint ready-grid__duration' }, [
@@ -295,6 +302,7 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
           mediaError.style.display = 'block'
           return
         }
+        const studyTopic = topicInput.value.trim()
         const finish = () => {
           loop?.stop()
           const cameraRect = preview.getBoundingClientRect()
@@ -303,6 +311,7 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
             bundle: readyBundle,
             video,
             declaredMedia,
+            ...(studyTopic ? { studyTopic } : {}),
             workMs,
             rounds: selectedRounds,
             breakMs,
@@ -352,9 +361,16 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
       // Camera/models already running from before Calibration was
       // cancelled - just (re)start the face-found loop, no permission
       // request or model load to await.
-      loop = startPerceptionLoop(video, existing.bundle.faceLandmarker, existing.bundle.objectDetector, (tick) => {
-        if (tick.face) continueBtn.disabled = !tick.face.faceFound
-      }, 1000)
+      loop = startPerceptionLoop(
+        video,
+        existing.bundle.ai,
+        existing.bundle.faceEngine,
+        existing.bundle.objectEngine,
+        (tick) => {
+          continueBtn.disabled = !tick.frame.faceFound
+        },
+        1000,
+      )
     } else {
       void (async () => {
         try {
@@ -365,20 +381,16 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
           // explains why "Mulai" is greyed out until a face is framed.
           status.textContent = s.framing.body
 
-          const [faceLandmarker, objectDetector, faceDetector] = await Promise.all([
-            createFaceLandmarker(),
-            createObjectDetector(),
-            createFaceDetector(),
-          ])
-          bundle = { camera, faceLandmarker, objectDetector, faceDetector }
+          const [aiRuntime, faceDetector] = await Promise.all([createAiRuntime(), createFaceDetector()])
+          bundle = { camera, ...aiRuntime, faceDetector }
 
           // Same slower-than-default rate as the old Framing screen: this
           // screen only checks faceFound to enable the button, nothing
           // time-sensitive, and detectForVideo runs synchronously - at the
           // default rate its periodic blocking was visible as stutter in
           // the live preview.
-          loop = startPerceptionLoop(video, faceLandmarker, objectDetector, (tick) => {
-            if (tick.face) continueBtn.disabled = !tick.face.faceFound
+          loop = startPerceptionLoop(video, aiRuntime.ai, aiRuntime.faceEngine, aiRuntime.objectEngine, (tick) => {
+            continueBtn.disabled = !tick.frame.faceFound
           }, 1000)
         } catch (err) {
           status.textContent =

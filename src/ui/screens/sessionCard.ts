@@ -1,6 +1,7 @@
-import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
+import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from '../strings'
 import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { loadProfile } from '../../storage/profile'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
 import type { Milestone } from '../../storage/companion'
@@ -20,7 +21,7 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs)),
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
-    metric(s.uncertainLabel, formatDuration(m.uncertainMs)),
+    metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
   ])
 }
 
@@ -72,6 +73,20 @@ function sessionTimeLabel(startedAt: number): string {
   })
 }
 
+/** The user-authored study topic, or nothing at all when absent (so old
+ *  sessions without the field never render an empty/undefined row). */
+function topicLine(record: SessionRecord): (Node | string)[] {
+  return record.studyTopic ? [el('p', { class: 'session-topic' }, [record.studyTopic])] : []
+}
+
+/** The study-topic insight sentence, or nothing when the record has no
+ *  topic (old sessions stay clean rather than showing a broken sentence). */
+function topicInsight(record: SessionRecord): (Node | string)[] {
+  return record.studyTopic
+    ? [el('p', { class: 'observation' }, [strings.sessionCard.topicInsight(record.studyTopic)])]
+    : []
+}
+
 /**
  * One read-only history card with a delete control that opens a confirm
  * overlay. The current session (excluded from history) can never be
@@ -108,6 +123,7 @@ function historyCard(
 
   return card(
     el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
+    ...topicLine(record),
     metricGrid(computeMetrics(record)),
     controls,
   )
@@ -317,9 +333,11 @@ export function renderSessionCard(
     refreshDashboard()
 
     content.append(
-      titleWithDoodle(s.title, 'squiggle'),
+      titleWithDoodle(sessionTitle(loadProfile()?.name), 'squiggle'),
       ...celebration,
+      ...topicLine(record),
       grid,
+      ...topicInsight(record),
       ...(thresholdNote ? [thresholdNote] : []),
       body(s.downloadNote),
       reportActions,

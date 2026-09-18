@@ -65,6 +65,7 @@ async function main(): Promise<void> {
     ready.bundle,
     cone,
     ready.declaredMedia,
+    ready.studyTopic,
     ready.workMs,
     ready.rounds,
     ready.breakMs,

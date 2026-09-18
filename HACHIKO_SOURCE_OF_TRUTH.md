@@ -55,7 +55,7 @@ Welcome → Consent → Framing kamera → Calibration → Media → Ready (dura
 - "Ulangi sesi" repeats the same duration + cycle count.
 - "Selesai" ends the whole sequence (skips remaining cycles).
 - Cycle indicator label "Putaran i dari N" (shown only when cycle count > 1).
-- Session Card metrics: Waktu fokus / Waktu duduk / Waktu Absen / Waktu belum jelas.
+- Session Card metrics: Waktu fokus / Waktu duduk / Waktu absen / Waktu tidak fokus.
 - Session history (previous sessions) with per-session delete + delete-all.
 - PDF report download (zero-dependency writer).
 - "Muat ulang" action on the end screen.

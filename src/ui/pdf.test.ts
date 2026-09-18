@@ -33,7 +33,7 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('Waktu fokus')
     expect(pdf).toContain('Waktu duduk')
     expect(pdf).toContain('Waktu absen')
-    expect(pdf).toContain('Waktu belum jelas')
+    expect(pdf).toContain('Waktu tidak fokus')
   })
 
   it('shows sub-minute durations in seconds', () => {
@@ -45,6 +45,27 @@ describe('buildSessionReportPdf', () => {
   it('shows whole-minute durations in minutes', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000 } }))
     expect(pdf).toContain('1 menit')
+  })
+
+  it('reports "Waktu tidak fokus" as the present-but-not-focused total', () => {
+    const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000, TERALIH: 120_000 } }))
+    expect(pdf).toContain('2 menit')
+  })
+
+  it('includes the study topic when present', () => {
+    const pdf = pdfText(record({ studyTopic: 'Matematika - Integral' }))
+    expect(pdf).toContain('Matematika - Integral')
+  })
+
+  it('omits the study topic for old records without one (still valid)', () => {
+    const pdf = pdfText(record())
+    expect(pdf.startsWith('%PDF-1.4')).toBe(true)
+    expect(pdf).toContain('%%EOF')
+  })
+
+  it('omits a non-Latin-1 topic rather than emitting an undrawable glyph', () => {
+    const pdf = pdfText(record({ studyTopic: 'Matematika \u{1F600}' }))
+    expect(pdf).not.toContain('Matematika')
   })
 
   it('has a self-consistent cross-reference table', () => {

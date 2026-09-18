@@ -60,6 +60,8 @@ describe('computeMetrics', () => {
     expect(m.awayMs).toBe(20_000)
     expect(m.focusMs).toBe(60_000)
     expect(m.uncertainMs).toBe(5_000)
+    expect(m.notFocusedMs).toBe(30_000 + 10_000 + 5_000)
+    expect(m.notFocusedPercent).toBeCloseTo(45_000 / 105_000)
   })
 
   it('never treats TERALIH as away', () => {
@@ -79,6 +81,7 @@ describe('computeMetrics', () => {
     expect(m.focusMs).toBe(65_000)
     expect(m.uncertainMs).toBe(0)
     expect(m.sittingMs).toBe(65_000)
+    expect(m.notFocusedMs).toBe(0)
   })
 
   it('"Pegang HP" clarification zeroes uncertain but leaves sitting present', () => {
@@ -92,6 +95,15 @@ describe('computeMetrics', () => {
     expect(m.focusMs).toBe(60_000)
     expect(m.uncertainMs).toBe(0)
     expect(m.sittingMs).toBe(65_000)
+    expect(m.notFocusedMs).toBe(5_000)
+  })
+
+  it('accumulates "Waktu tidak fokus" across merged multi-cycle records', () => {
+    const cycle1 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 600_000 } })
+    const cycle2 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 300_000 } })
+    const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
+    const m = computeMetrics(merged)
+    expect(m.notFocusedMs).toBe(900_000)
   })
 })
 
@@ -130,6 +142,18 @@ describe('session storage', () => {
     // A later deleteAllSessions on an already-empty history stays empty.
     deleteAllSessions()
     expect(listSessions()).toEqual([])
+  })
+
+  it('persists a non-empty studyTopic and reads it back', () => {
+    saveSession(record({ id: 'a', studyTopic: 'IPA - Sistem Pernapasan' }))
+    const saved = listSessions()[0]
+    expect(saved?.studyTopic).toBe('IPA - Sistem Pernapasan')
+  })
+
+  it('reads a legacy record without studyTopic as undefined', () => {
+    localStorage.setItem('hachiko.sessions.v1', JSON.stringify([{ id: 'old', startedAt: 0, declaredMedia: ['book'] }]))
+    const old = listSessions()[0]
+    expect(old?.studyTopic).toBeUndefined()
   })
 })
 
@@ -226,5 +250,17 @@ describe('mergeSessionRecords', () => {
     const a = record({ clarification: { answer: 'book' } })
     const merged = mergeSessionRecords('s-merged', [a])
     expect(merged.clarification).toBeNull()
+  })
+
+  it('propagates studyTopic from the first record', () => {
+    const a = record({ studyTopic: 'Matematika - Integral' })
+    const b = record({ studyTopic: 'should be ignored' })
+    const merged = mergeSessionRecords('s-merged', [a, b])
+    expect(merged.studyTopic).toBe('Matematika - Integral')
+  })
+
+  it('leaves studyTopic undefined when records lack it (old sessions stay readable)', () => {
+    const merged = mergeSessionRecords('s-merged', [record(), record()])
+    expect(merged.studyTopic).toBeUndefined()
   })
 })

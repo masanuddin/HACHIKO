@@ -29,8 +29,22 @@ const ASSETS = [
     required: true,
   },
   {
+    // Legacy: still fetched because the CURRENT (old) HACHIKO runtime
+    // (src/perception/objects.ts) loads it. Retired once Phase 3 switches
+    // the runtime to the AI-Engine ObjectDetectorEngine.
     dest: join(root, 'public', 'models', 'efficientdet_lite0.tflite'),
     url: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite',
+    required: true,
+  },
+  {
+    // SELECTED production object-detector model for the AI integration
+    // (EfficientDet-Lite2, float16). Decision is final; do not substitute
+    // edl0_float16.tflite. Consumed by the AI runtime from Phase 3 onward;
+    // fetched now so the asset exists ahead of the runtime switch.
+    // URL = official Google/MediaPipe model host, verified against
+    // AI-Engine tools/benchmark/candidates.js.
+    dest: join(root, 'public', 'models', 'edl2_float16.tflite'),
+    url: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite',
     required: true,
   },
   {

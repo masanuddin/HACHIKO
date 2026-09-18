@@ -83,7 +83,7 @@ Session view uses `--night`. Everything else uses `--cream`. No red.
 ## Engine contract — do not change these signatures
 
 ```ts
-type Media = 'laptop' | 'phone' | 'book' | 'paper' | 'mixed' | 'other'
+type Media = 'laptop' | 'phone' | 'book' | 'paper' | 'other'
 type FocusState = 'FOKUS' | 'TERALIH' | 'TIDAK_HADIR' | 'UNCERTAIN' | 'MENGANTUK'
 
 interface Frame {

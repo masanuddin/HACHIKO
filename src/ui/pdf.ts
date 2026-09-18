@@ -63,6 +63,14 @@ function sessionTimestamp(startedAt: number): string {
   return `${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()} - ${pad2(d.getHours())}.${pad2(d.getMinutes())}`
 }
 
+/** The Helvetica Type1 fonts here are Latin-1 only (see module docstring).
+ *  A study topic is user-authored free text, so only render it when every
+ *  character is representable; otherwise skip it rather than emit a glyph
+ *  that the font can't draw. The on-screen Session Card is unaffected. */
+function isLatin1Safe(s: string): boolean {
+  return /^[\u0020-\u007E\u00A0-\u00FF]*$/.test(s)
+}
+
 /** Builds the page content stream (text + a filled card) for one session. */
 function buildContent(record: SessionRecord): string {
   const s = strings.sessionCard
@@ -71,7 +79,7 @@ function buildContent(record: SessionRecord): string {
   const focusValue = formatFocusLine(m.focusMs, m.sittingMs)
   const sittingValue = formatDuration(m.sittingMs)
   const awayValue = formatDuration(m.awayMs)
-  const uncertainValue = formatDuration(m.uncertainMs)
+  const uncertainValue = formatDuration(m.notFocusedMs)
 
   const out: string[] = []
 
@@ -79,6 +87,13 @@ function buildContent(record: SessionRecord): string {
   out.push(drawText('F2', 15, 64, 790, C.amber, strings.common.appName))
   out.push(drawText('F2', 26, 64, 756, C.ink, s.title))
   out.push(drawText('F1', 11, 64, 738, C.muted, sessionTimestamp(record.startedAt)))
+
+  // Study topic (metadata), shown in the header gap when present and
+  // Latin-1 representable. Single line; long topics simply clip at the
+  // right edge rather than reflowing the fixed summary card below.
+  if (record.studyTopic && isLatin1Safe(record.studyTopic)) {
+    out.push(drawText('F1', 12, 64, 720, C.ink, record.studyTopic))
+  }
 
   // Summary card (sand background)
   out.push(`${C.sand} rg`)
@@ -94,7 +109,7 @@ function buildContent(record: SessionRecord): string {
   out.push(drawText('F2', 15, colRight, 652, C.ink, sittingValue))
   out.push(drawText('F1', 11, colLeft, 622, C.muted, s.awayLabel))
   out.push(drawText('F2', 15, colLeft, 600, C.ink, awayValue))
-  out.push(drawText('F1', 11, colRight, 622, C.muted, s.uncertainLabel))
+  out.push(drawText('F1', 11, colRight, 622, C.muted, s.notFocusedLabel))
   out.push(drawText('F2', 15, colRight, 600, C.ink, uncertainValue))
 
   // Summary message, wrapped to the content width.

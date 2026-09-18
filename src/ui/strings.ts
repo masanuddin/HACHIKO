@@ -76,10 +76,11 @@ export const strings = {
       phone: 'HP/tablet',
       book: 'Buku/LKS',
       paper: 'Kertas/nulis',
-      mixed: 'Campuran',
       other: 'Lainnya',
     },
     requiredError: 'Pilih dulu setidaknya satu media belajar.',
+    topicLabel: 'Di sesi ini, kamu mau belajar apa?',
+    topicPlaceholder: 'contoh: Matematika - Integral',
   },
 
   ready: {
@@ -104,10 +105,10 @@ export const strings = {
     selesaiConfirmNo: 'Lanjut fokus',
     stateLabels: {
       FOKUS: 'Fokus',
-      TERALIH: 'Perhatian teralih',
+      TERALIH: 'Teralih',
       TIDAK_HADIR: 'Tidak di depan laptop',
-      UNCERTAIN: 'Belum jelas',
-      MENGANTUK: 'Mulai mengantuk',
+      UNCERTAIN: 'Teralih',
+      MENGANTUK: 'Teralih',
     },
     breakTitle: 'Waktunya istirahat',
     breakBody: 'Regangkan badan sebentar. Kalau siap, kamu yang tentuin lanjut atau selesai.',
@@ -151,6 +152,8 @@ export const strings = {
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
     uncertainLabel: 'Waktu belum jelas',
+    notFocusedLabel: 'Waktu tidak fokus',
+    topicInsight: (topic: string) => `Kamu paling fokus pas belajar ${topic}`,
     uncertainThresholdNote:
       'Bagian "belum jelas" sesi ini agak besar. HACHIKO lebih baik mengaku belum tahu daripada menebak asal.',
     downloadLabel: 'Unduh laporan sesi',
@@ -187,14 +190,17 @@ export const strings = {
 
 /**
  * Unit-aware duration formatter shared across screens. Sub-minute values
- * render in seconds so a non-zero focus of a few seconds never reads as
- * "0 menit"; a genuine zero renders as "0 detik" so an instantly-finished
- * session reads "0 detik" rather than "0 menit". Raw milliseconds are
- * preserved - this is presentation only.
+ * render in seconds; whole minutes render as "N menit"; and a minute that
+ * has remaining seconds renders as "N+ menit" (84s -> "1+ menit", never a
+ * misleading "1 menit"). Raw milliseconds are preserved - this is
+ * presentation only.
  */
 export function formatDuration(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)} detik`
-  return `${Math.floor(ms / 60_000)} menit`
+  const totalSeconds = Math.floor(ms / 1000)
+  if (totalSeconds < 60) return `${totalSeconds} detik`
+  const minutes = Math.floor(totalSeconds / 60)
+  if (totalSeconds % 60 === 0) return `${minutes} menit`
+  return `${minutes}+ menit`
 }
 
 /** "14 menit dari 25 menit" (or seconds when sub-minute) - shared by the
@@ -202,6 +208,16 @@ export function formatDuration(ms: number): string {
  * `totalMs` is the session's active (present) time. */
 export function formatFocusLine(focusMs: number, totalMs: number): string {
   return `${formatDuration(focusMs)} dari ${formatDuration(totalMs)}`
+}
+
+/**
+ * The Session Card heading. Personalised with the student's name when one
+ * is present, falling back to the plain base title otherwise - so "Kartu
+ * Sesi undefined" or a trailing space never render.
+ */
+export function sessionTitle(name?: string): string {
+  const trimmed = name?.trim()
+  return trimmed ? `${strings.sessionCard.title} ${trimmed}` : strings.sessionCard.title
 }
 
 /**

@@ -1,7 +1,8 @@
-import type { FaceDetector, FaceLandmarker, ObjectDetector } from '@mediapipe/tasks-vision'
-import { readFace, type FaceReading } from './face'
+import type { FaceDetector } from '@mediapipe/tasks-vision'
+import type { FaceLandmarkerEngine, HachikoAI, ObjectDetectorEngine } from '../ai/index.js'
+import type { Frame } from '../engine/types'
+import { toFrame, type AiTelemetryFrame } from './aiAdapter'
 import { readFaceBox, type FaceBox } from './faceBox'
-import { detectObjects } from './objects'
 
 export interface CameraSession {
   video: HTMLVideoElement
@@ -35,12 +36,12 @@ export async function startCamera(video: HTMLVideoElement): Promise<CameraSessio
   }
 }
 
-export interface PerceptionTick {
+export interface AiPerceptionTick {
   timestampMs: number
-  /** null on ticks where the 5fps face clock didn't fire this frame. */
-  face: FaceReading | null
-  /** null on ticks where the 1fps object clock didn't fire this frame. */
-  objectLabels: string[] | null
+  /** Adapted frame ready for FocusEngine.step(), one per face-clock tick. */
+  frame: Frame
+  /** Full AI-Engine telemetry for debugging/instrumentation. */
+  telemetry: AiTelemetryFrame
 }
 
 export interface PerceptionLoopHandle {
@@ -48,61 +49,60 @@ export interface PerceptionLoopHandle {
 }
 
 /**
- * Drives face inference at ~5fps and object inference at ~1fps off
- * `video.requestVideoFrameCallback()` - NOT `requestAnimationFrame`,
- * which throttles (or stops entirely) when the tab loses focus.
- * BUILD_PROMPTS P1's week-1 gate: background the tab for 60s and confirm
- * this keeps firing. The whole laptop premise depends on it.
+ * The single production perception loop: camera frame -> AI-Engine face
+ * engine -> AI-Engine object engine -> HachikoAI.processFrame ->
+ * adapter -> Frame. Runs off `video.requestVideoFrameCallback()` - NOT
+ * `requestAnimationFrame`, which throttles (or stops entirely) when the
+ * tab loses focus. BUILD_PROMPTS P1's week-1 gate: background the tab for
+ * 60s and confirm this keeps firing. The whole laptop premise depends on it.
+ *
+ * Face inference fires at the face clock (default 5fps); object inference
+ * is throttled inside ObjectDetectorEngine by the host-configured cadence
+ * (see aiRuntime.ts), never per camera frame.
  */
 export function startPerceptionLoop(
   video: HTMLVideoElement,
-  faceLandmarker: FaceLandmarker,
-  objectDetector: ObjectDetector,
-  onTick: (tick: PerceptionTick) => void,
+  ai: HachikoAI,
+  faceEngine: FaceLandmarkerEngine,
+  objectEngine: ObjectDetectorEngine,
+  onTick: (tick: AiPerceptionTick) => void,
   faceIntervalMs = 200,
-  objectIntervalMs = 1000,
 ): PerceptionLoopHandle {
   let stopped = false
   let lastFaceT = -Infinity
-  let lastObjectT = -Infinity
 
   const onFrame: VideoFrameRequestCallback = () => {
     if (stopped) return
 
     // Not metadata.mediaTime: re-registering requestVideoFrameCallback on
     // a still-live MediaStream (every screen after Framing does exactly
-    // this, reusing the same video/faceLandmarker) can reset or repeat
-    // mediaTime values, which breaks MediaPipe's requirement that
-    // timestamps fed to a shared FaceLandmarker/ObjectDetector instance
-    // always increase - a "Packet timestamp mismatch" thrown from
-    // detectForVideo, with no try/catch below, used to silently and
-    // permanently freeze whichever screen hit it first (Calibration,
-    // stuck at 15s forever). performance.now() is monotonic for the
-    // whole page lifetime regardless of how many times this loop is torn
-    // down and restarted, and everything downstream (the engine,
-    // calibration, session) only ever uses elapsed differences between
-    // consecutive timestamps, never an absolute value - so this is a
-    // drop-in replacement.
+    // this, reusing the same video) can reset or repeat mediaTime values,
+    // which breaks MediaPipe's requirement that timestamps always increase.
+    // performance.now() is monotonic for the whole page lifetime.
     const timestampMs = Math.round(performance.now())
 
-    // Without this, one thrown error (from either detector) would return
+    // Without this, one thrown error (from either engine) would return
     // before reaching the requestVideoFrameCallback re-registration
-    // below, permanently and silently freezing the loop - see above.
+    // below, permanently and silently freezing the loop.
     try {
-      let face: FaceReading | null = null
       if (timestampMs - lastFaceT >= faceIntervalMs) {
-        face = readFace(faceLandmarker, video, timestampMs)
         lastFaceT = timestampMs
-      }
 
-      let objectLabels: string[] | null = null
-      if (timestampMs - lastObjectT >= objectIntervalMs) {
-        objectLabels = detectObjects(objectDetector, video, timestampMs)
-        lastObjectT = timestampMs
-      }
+        const { measurement, inferenceMs, skipped } = faceEngine.detect(video, timestampMs)
+        if (!skipped) {
+          const object = objectEngine.detect(video, timestampMs)
+          const telemetry = ai.processFrame(measurement, timestampMs, {
+            faceInferenceMs: inferenceMs,
+            objectInferenceMs: object.inferenceMs,
+            objectDetections: object.detections,
+          }) as unknown as AiTelemetryFrame
 
-      if (face || objectLabels) {
-        onTick({ timestampMs, face, objectLabels })
+          onTick({
+            timestampMs,
+            frame: toFrame(telemetry),
+            telemetry,
+          })
+        }
       }
     } catch (err) {
       console.error('[hachiko] perception loop', err)
@@ -128,7 +128,7 @@ export interface OverlayLoopHandle {
  * Simpler than startPerceptionLoop: one job (feed the live preview's
  * overlay), no interval throttling - the whole point is running on
  * every frame, since the model behind onBox is cheap enough to afford
- * that (see faceBox.ts).
+ * that (see faceBox.ts). UI-only: BlazeFace never feeds the FocusEngine.
  */
 export function startFaceBoxLoop(
   video: HTMLVideoElement,

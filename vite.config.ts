@@ -8,7 +8,9 @@ export default defineConfig({
     // session-orchestration policy, not the core decision table.
     // src/storage/companion.ts is pure functions (no browser APIs) consuming
     // session data, also tested under Node.
-    include: ['src/engine/**/*.test.ts', 'src/ui/**/*.test.ts', 'src/storage/**/*.test.ts'],
+    // src/perception/aiAdapter.ts is the pure AI-Engine -> Frame bridge, also
+    // DOM-free, tested under Node.
+    include: ['src/engine/**/*.test.ts', 'src/ui/**/*.test.ts', 'src/storage/**/*.test.ts', 'src/perception/**/*.test.ts'],
     environment: 'node',
   },
 })

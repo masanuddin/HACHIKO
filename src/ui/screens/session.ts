@@ -15,12 +15,12 @@ import {
 } from '../sessionConfig'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from '../pacing'
 import type { PerceptionBundle } from '../../perception/bundle'
-import { startPerceptionLoop } from '../../perception/camera'
-import type { FaceReading } from '../../perception/face'
-import { FrameAdapter } from '../../perception/adapter'
+import { startFaceBoxLoop, startPerceptionLoop, type OverlayLoopHandle } from '../../perception/camera'
+import type { FaceBox } from '../../perception/faceBox'
+import type { AiObjectDiagnostics, AiTelemetryFrame } from '../../perception/aiAdapter'
 import { FocusEngine } from '../../engine/focusEngine'
 import { DEFAULT_CONFIG } from '../../engine/config'
-import type { Cone, FocusState, Media } from '../../engine/types'
+import type { Cone, EngineOutput, FocusState, Frame, Media } from '../../engine/types'
 import { TelemetryRecorder, persistRecording } from '../../storage/telemetry'
 import { emptyDurations, mergeSessionRecords, saveSession, listSessions, type DistractionSpan, type SessionRecord } from '../../storage/sessions'
 import { deriveCompanionState, findNewMilestone, type Milestone } from '../../storage/companion'
@@ -38,11 +38,12 @@ function newSessionId(): string {
   return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function newSessionRecord(declaredMedia: Media[]): SessionRecord {
+function newSessionRecord(declaredMedia: Media[], studyTopic?: string): SessionRecord {
   return {
     id: newSessionId(),
     startedAt: Date.now(),
     declaredMedia,
+    ...(studyTopic ? { studyTopic } : {}),
     durationsMs: emptyDurations(),
     distractionEvents: [],
     recoveryTimesMs: [],
@@ -61,6 +62,19 @@ interface WorkPhaseResult {
 // The mentoring panel's preview box uses the same 4:3 that base.css's
 // `.mentor-panel__video` declares, mirroring the calibration preview.
 const PANEL_ASPECT = 4 / 3
+
+/** Canonical detector label for the phone class (mirrors the AI-Engine config). */
+const PHONE_LABEL = 'cell phone'
+
+/** COCO-90 zero-based index of 'cell phone' (AI-Engine labelIndices.PHONE). */
+const PHONE_COCO_INDEX = 76
+
+/**
+ * Mentor-only: how long the last ACCEPTED phone box may be redrawn after its
+ * detection tick before being considered stale. Object inference runs about
+ * once per second, so ~1.5 s covers one missed tick without lingering.
+ */
+const PHONE_BOX_STALE_MS = 1500
 
 /**
  * The mentor panel is a thin visualization layer only (see CLAUDE.md /
@@ -97,18 +111,18 @@ function toDeg(rad: number | null): string {
 }
 
 /**
- * Draws the face bounding box derived from FaceLandmarker's normalized
- * landmarks (min/max over x/y), transformed from raw video pixels into
- * the cropped panel space, then mirrored by CSS to match the video.
- * `face` is null on ticks where the 5fps face clock didn't fire; it's
- * `faceFound: false` when a face isn't in frame - either way, no box.
+ * Draws the face bounding box from the UI-only BlazeFace loop (faceBox.ts),
+ * transformed from raw video pixels into the cropped panel space, then
+ * mirrored by CSS to match the video. The old implementation derived this
+ * box from FaceLandmarker landmarks; the AI-Engine face engine emits
+ * measurements, not landmarks, so the debug box now comes from the cheap
+ * overlay detector - it still never feeds the FocusEngine.
  */
-function drawMentorOverlay(
+function drawMentorBox(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
-  face: FaceReading | null,
-  metaEl: HTMLParagraphElement,
+  box: FaceBox | null,
 ): void {
   const w = video.videoWidth
   const h = video.videoHeight
@@ -123,30 +137,204 @@ function drawMentorOverlay(
   }
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-  const landmarks = face && face.faceFound ? face.landmarks : null
-  if (landmarks && landmarks.length > 0) {
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const lm of landmarks) {
-      if (lm.x < minX) minX = lm.x
-      if (lm.x > maxX) maxX = lm.x
-      if (lm.y < minY) minY = lm.y
-      if (lm.y > maxY) maxY = lm.y
-    }
-    const x = minX * w - crop.cropX
-    const y = minY * h - crop.cropY
-    const bw = (maxX - minX) * w
-    const bh = (maxY - minY) * h
+  if (box) {
+    const x = box.originX - crop.cropX
+    const y = box.originY - crop.cropY
     ctx.strokeStyle = cssVar('--amber')
     ctx.lineWidth = 2
-    ctx.strokeRect(x, y, bw, bh)
+    ctx.strokeRect(x, y, box.width, box.height)
+  }
+}
+
+/**
+ * Draws the diagnostic phone box from the LAST ACCEPTED 'cell phone'
+ * detection, transformed into the same cropped panel space as the face box.
+ * The label glyphs are un-mirrored so they stay readable on the CSS-flipped
+ * overlay canvas (base.css mirrors both video and overlay). Mentor mode only;
+ * purely observational, sourced from the single existing object pipeline.
+ */
+function drawMentorPhoneBox(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  phone: { originX: number; originY: number; width: number; height: number; confidence: number } | null,
+): void {
+  if (!phone) return
+  const w = video.videoWidth
+  const h = video.videoHeight
+  if (!w || !h) return
+
+  const crop = coverCrop(w, h, PANEL_ASPECT)
+  const x = phone.originX - crop.cropX
+  const y = phone.originY - crop.cropY
+
+  ctx.strokeStyle = cssVar('--sage')
+  ctx.lineWidth = 2
+  ctx.strokeRect(x, y, phone.width, phone.height)
+
+  const label = `cell phone ${phone.confidence.toFixed(2)}`
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
+  ctx.fillStyle = cssVar('--sage')
+  ctx.save()
+  // The overlay canvas is mirrored by CSS to align with the mirrored video,
+  // so mirror the glyphs back here. Anchoring at the box's right edge (its
+  // on-screen left edge) makes the label read correctly after the CSS flip.
+  ctx.translate(x + phone.width, y + 14)
+  ctx.scale(-1, 1)
+  ctx.fillText(label, 0, 0)
+  ctx.restore()
+}
+
+/** Mentor meta line, fed by the AI-Engine perception tick's adapted frame. */
+function updateMentorMeta(metaEl: HTMLParagraphElement, frame: Frame): void {
+  metaEl.textContent = `faceFound: ${frame.faceFound} · yaw ${toDeg(frame.yaw)} · pitch ${toDeg(frame.pitch)}`
+}
+
+/** Active-phone-event subset used by the mentor CONTEXT group. */
+interface AiPhoneEventRecord {
+  status: string
+  context: string
+  durationMs: number
+}
+
+const fmtDeg = (v: number | null | undefined): string => (v == null ? '—' : `${v.toFixed(1)}°`)
+const fmtEar = (v: number | null | undefined): string => (v == null ? '—' : v.toFixed(3))
+const fmtNum = (v: number | null | undefined, digits = 0): string => (v == null ? '—' : v.toFixed(digits))
+const fmtConf = (v: number | null | undefined): string => (v == null ? '—' : v.toFixed(2))
+const fmtSeconds = (v: number | null | undefined): string => (v == null ? '—' : `${(v / 1000).toFixed(1)}s`)
+
+/**
+ * OBJECTS block for the mentor panel. Distinguishes the four detector states
+ * the phone-recall diagnostic needs - idle / ran-nothing / ran-rejected /
+ * phone-accepted - using the SAME telemetry the adapter consumes plus the
+ * ObjectDetectorEngine diagnostics snapshot. Observation only; nothing here
+ * feeds FocusEngine or any decision path.
+ */
+function buildObjectDiagnosticLines(
+  t: AiTelemetryFrame,
+  diag: AiObjectDiagnostics | null,
+): string[] {
+  const o = t.objects
+  const acceptedPhone = o.detections.find((d) => d.category === PHONE_LABEL)
+
+  const lines = [
+    `  person: ${o.primaryPersonPresent} (${fmtConf(o.primaryPersonConfidence)})`,
+    `  phone: ${o.phonePresent} (${fmtConf(o.phoneConfidence)})`,
+  ]
+
+  if (!o.detectorRan) {
+    lines.push('  detector: IDLE (did not run this tick)')
+    lines.push('  cell phone raw: —')
+    lines.push('  phone bbox: —')
+    return lines
   }
 
-  metaEl.textContent = face
-    ? `faceFound: ${face.faceFound} · yaw ${toDeg(face.yaw)} · pitch ${toDeg(face.pitch)}`
-    : ''
+  // Diagnostics are written by the same synchronous detect() call that
+  // produced this tick's detections, so a matching timestamp proves the
+  // snapshot is from THIS run rather than a stale previous one.
+  const fresh = diag !== null && diag.lastTimestampMs === t.timestampMs
+  const raw = fresh && diag ? diag.lastRawDetections : []
+
+  const rawPhone = raw.find(
+    (d) => d.index === PHONE_COCO_INDEX || d.categoryName === PHONE_LABEL,
+  )
+
+  let state: string
+  if (!fresh) {
+    state = 'RAN'
+  } else if (rawPhone && acceptedPhone) {
+    state = 'RAN — PHONE ACCEPTED'
+  } else if (rawPhone) {
+    state = 'RAN — PHONE REJECTED'
+  } else if (raw.length === 0) {
+    state = 'RAN — NO DETECTIONS'
+  } else {
+    state = 'RAN'
+  }
+  lines.push(`  detector: ${state}`)
+
+  if (!fresh || !diag) {
+    lines.push('  cell phone raw: — (diagnostics unavailable)')
+  } else if (!rawPhone) {
+    lines.push('  cell phone raw: none')
+  } else if (acceptedPhone) {
+    lines.push(`  cell phone raw: ${fmtConf(rawPhone.score)} (accepted)`)
+  } else {
+    const rejects = Object.keys(diag.lastRejectReasons)
+    const reason = rejects.find((r) => r.startsWith('PHONE')) ?? rejects[0] ?? 'REJECTED'
+    lines.push(`  cell phone raw: ${fmtConf(rawPhone.score)} (rejected: ${reason})`)
+  }
+
+  if (fresh && diag && raw.length > 0) {
+    const rawLine = raw.slice(0, 4).map((d) =>
+      `${d.categoryName ?? `#${d.index}`} ${d.score.toFixed(2)}`).join(' · ')
+    lines.push(`  raw: ${rawLine}`)
+  }
+
+  if (fresh && diag && Object.keys(diag.lastRejectReasons).length > 0) {
+    const rejectsLine = Object.entries(diag.lastRejectReasons)
+      .map(([reason, count]) => `${reason}×${count}`).join(', ')
+    lines.push(`  rejects: ${rejectsLine}`)
+  }
+
+  if (fresh && diag && Object.keys(diag.observedCategories).length > 0) {
+    const catsLine = Object.entries(diag.observedCategories)
+      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([key, count]) => `${key}×${count}`).join(' · ')
+    lines.push(`  cats: ${catsLine}`)
+  }
+
+  lines.push(`  phone bbox: ${acceptedPhone && acceptedPhone.boundingBox ? 'visible' : 'unavailable'}`)
+
+  return lines
+}
+
+/**
+ * Grouped AI telemetry for the mentor panel. Consumes the SAME telemetry the
+ * adapter builds the Frame from - no second detector, no second pipeline.
+ * The OBJECTS block additionally reads the ObjectDetectorEngine diagnostics
+ * snapshot (raw detections, rejection reasons, observed categories) -
+ * observation only, never an input to FocusEngine. The STATE group shows the
+ * HACHIKO FocusEngine output only; the AI's own internal classification is
+ * deliberately not rendered.
+ */
+function renderMentorTelemetry(
+  el: HTMLElement,
+  t: AiTelemetryFrame,
+  lastOut: EngineOutput | null,
+  phoneEvents: AiPhoneEventRecord[],
+  objectDiag: AiObjectDiagnostics | null,
+): void {
+  const m = t.measurement
+  const activePhone = phoneEvents.find((e) => e.status === 'ACTIVE')
+  const ctx = t.sessionContext
+
+  el.textContent = [
+    'FACE',
+    `  faceFound: ${m.facePresent} · presence ${t.presence.status}`,
+    '',
+    'HEAD',
+    `  yaw ${fmtDeg(m.yawRaw)}  pitch ${fmtDeg(m.pitchRaw)}`,
+    '',
+    'EYES',
+    `  EAR L ${fmtEar(m.earLeft)}  R ${fmtEar(m.earRight)}  mean ${fmtEar(m.earMean)}`,
+    `  earRelative ${fmtNum(t.calibrated.earRelative, 2)}`,
+    `  eligible ${t.evidence?.eyeEligible ?? '—'}${t.evidence?.eyeIneligibleReason ? ` (${t.evidence.eyeIneligibleReason})` : ''}`,
+    '',
+    'OBJECTS',
+    ...buildObjectDiagnosticLines(t, objectDiag),
+    '',
+    'CONTEXT',
+    `  tools: ${ctx ? ctx.learningTools.join(', ') : '(none)'}`,
+    `  includesPhone: ${ctx ? ctx.declaredIncludesPhone : '—'}`,
+    `  phoneContext: ${activePhone ? activePhone.context : '—'}`,
+    `  phoneEvent: ${activePhone ? `#${activePhone.status} ${fmtSeconds(activePhone.durationMs)}` : '—'}`,
+    '',
+    'STATE',
+    `  ${lastOut ? lastOut.state : '—'}`,
+    '',
+    'PERFORMANCE',
+    `  fps ${fmtNum(t.performance?.fps, 1)} · face ${fmtNum(t.performance?.faceInferenceMs, 0)}ms · object ${fmtNum(t.performance?.objectInferenceMs, 0)}ms`,
+  ].join('\n')
 }
 
 /**
@@ -164,6 +352,7 @@ function runWorkPhase(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  studyTopic: string | undefined,
   workMs: number,
 ): Promise<WorkPhaseResult> {
   return new Promise((resolve) => {
@@ -208,6 +397,20 @@ function runWorkPhase(
     let mentorOverlayCtx: CanvasRenderingContext2D | null = null
     let mentorState: HTMLParagraphElement | null = null
     let mentorMeta: HTMLParagraphElement | null = null
+    let mentorTelemetry: HTMLDivElement | null = null
+    let mentorBoxLoop: OverlayLoopHandle | null = null
+    // Diagnostic-only: the last ACCEPTED 'cell phone' detection, held so the
+    // overlay can redraw it between the ~1 s object-inference ticks and
+    // dropped once PHONE_BOX_STALE_MS passes. Mentor visualization only -
+    // this state never reaches FocusEngine or any storage path.
+    let lastPhoneBox: {
+      originX: number
+      originY: number
+      width: number
+      height: number
+      confidence: number
+      seenAt: number
+    } | null = null
 
     if (mentor) {
       // Calibration set this to '0' for its canvas-drawn preview; the
@@ -218,17 +421,29 @@ function runWorkPhase(
       const videoWrap = el('div', { class: 'mentor-panel__video' }, [video, overlay])
       const panelState = el('p', { class: 'mentor-panel__state' }, [''])
       const panelMeta = el('p', { class: 'mentor-panel__meta' }, [''])
+      const panelTelemetry = el('div', { class: 'mentor-panel__telemetry' }, [''])
       const panel = el('div', { class: 'mentor-panel' }, [
         el('p', { class: 'mentor-panel__title' }, ['CAMERA']),
         videoWrap,
         panelState,
         panelMeta,
+        panelTelemetry,
       ])
 
       mentorOverlay = overlay
       mentorOverlayCtx = overlay.getContext('2d')
       mentorState = panelState
       mentorMeta = panelMeta
+      mentorTelemetry = panelTelemetry
+
+      // The bounding box comes from the UI-only BlazeFace overlay loop; the
+      // meta text and telemetry come from the AI perception tick below.
+      mentorBoxLoop = startFaceBoxLoop(video, bundle.faceDetector, (box, ts) => {
+        if (!mentorOverlayCtx || !mentorOverlay) return
+        if (lastPhoneBox && ts - lastPhoneBox.seenAt > PHONE_BOX_STALE_MS) lastPhoneBox = null
+        drawMentorBox(mentorOverlay, mentorOverlayCtx, video, box)
+        drawMentorPhoneBox(mentorOverlayCtx, video, lastPhoneBox)
+      })
 
       // Appended to the <main> shell (not .screen__content) so the fixed
       // positioning isn't captured by content's enter animation transform.
@@ -257,9 +472,13 @@ function runWorkPhase(
     void video.play().catch(() => {})
 
     const engine = new FocusEngine(DEFAULT_CONFIG, cone, declaredMedia)
-    const adapter = new FrameAdapter()
+    // The student's declared learning tools flow straight into the AI core as
+    // provenance for phone events (EXPECTED_TOOL / DISTRACTION_CANDIDATE).
+    // The AI-Engine session context never decides a state - FocusEngine keeps
+    // its own declaredMedia argument and remains the sole authority.
+    bundle.ai.setSessionContext({ learningTools: declaredMedia })
     const telemetry = new TelemetryRecorder()
-    const record = newSessionRecord(declaredMedia)
+    const record = newSessionRecord(declaredMedia, studyTopic)
 
     let remainingMs = workMs
     // Whichever duration currently governs the countdown - reassigned
@@ -273,6 +492,9 @@ function runWorkPhase(
     let stateEnteredAt = 0
     let openTeralihSpan: DistractionSpan | null = null
     let finished = false
+    // Last FocusEngine output, for the mentor STATE group (updates on the
+    // next tick while paused, since the engine is not stepped when paused).
+    let lastOut: EngineOutput | null = null
 
     // Adaptive pacing (ADHD-focused): the app only ever offers, never
     // imposes. See src/ui/pacing.ts for the pure decision functions.
@@ -369,13 +591,39 @@ function runWorkPhase(
       }, NUDGE_AUTO_DISMISS_MS)
     }
 
-    const loop = startPerceptionLoop(video, bundle.faceLandmarker, bundle.objectDetector, (tick) => {
-      if (mentorOverlayCtx && mentorOverlay && mentorMeta) {
-        drawMentorOverlay(mentorOverlay, mentorOverlayCtx, video, tick.face, mentorMeta)
+    const loop = startPerceptionLoop(video, bundle.ai, bundle.faceEngine, bundle.objectEngine, (tick) => {
+      if (mentor) {
+        // Capture the highest-confidence ACCEPTED phone detection so the
+        // overlay can hold it across idle object-inference ticks. Accepted
+        // detections only - raw diagnostics never reach this state.
+        let bestPhone: typeof lastPhoneBox = null
+        for (const d of tick.telemetry.objects.detections) {
+          if (d.category !== PHONE_LABEL || !d.boundingBox) continue
+          if (!bestPhone || d.confidence > bestPhone.confidence) {
+            bestPhone = {
+              originX: d.boundingBox.originX,
+              originY: d.boundingBox.originY,
+              width: d.boundingBox.width,
+              height: d.boundingBox.height,
+              confidence: d.confidence,
+              seenAt: tick.timestampMs,
+            }
+          }
+        }
+        if (bestPhone) lastPhoneBox = bestPhone
+      }
+      if (mentorMeta) updateMentorMeta(mentorMeta, tick.frame)
+      if (mentorTelemetry) {
+        renderMentorTelemetry(
+          mentorTelemetry,
+          tick.telemetry,
+          lastOut,
+          bundle.ai.getPhoneEvents() as unknown as AiPhoneEventRecord[],
+          bundle.objectEngine.getDiagnostics() as unknown as AiObjectDiagnostics,
+        )
       }
       if (paused || finished) return
-      const frame = adapter.toFrame(tick)
-      if (!frame) return
+      const frame = tick.frame
 
       if (sessionStartT === null) sessionStartT = frame.t
       const relativeT = frame.t - sessionStartT
@@ -387,6 +635,7 @@ function runWorkPhase(
       lastFrameT = frame.t
 
       const out = engine.step(frame)
+      lastOut = out
 
       if (out.state !== previousState) {
         if (previousState === 'TERALIH' && openTeralihSpan) {
@@ -448,6 +697,7 @@ function runWorkPhase(
       if (finished) return
       finished = true
       loop.stop()
+      mentorBoxLoop?.stop()
       // The camera stream and the perception bundle deliberately stay
       // alive here: runSession's loop reuses them for the next cycle
       // without re-prompting permission or re-calibrating, and stops
@@ -565,6 +815,7 @@ export async function runSession(
   bundle: PerceptionBundle,
   cone: Cone,
   declaredMedia: Media[],
+  studyTopic: string | undefined,
   workMs: number,
   roundsPerSet: number,
   breakMs: number,
@@ -581,7 +832,7 @@ export async function runSession(
   // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
   // the whole plan immediately, skipping Break for that final cycle.
   while (keepGoing) {
-    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, workMs)
+    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, studyTopic, workMs)
     records.push(record)
     telemetryParts.push(telemetryJsonl)
 

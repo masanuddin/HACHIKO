@@ -280,23 +280,23 @@ export function renderCalibration(
     })
 
     // --- Slow loop: calibrate()'s data collection + the countdown/ring UI ---
-    // Only FaceLandmarker's yaw/pitch feed calibrate() - the fast loop's
-    // FaceDetector above has no pose data, only a bounding box. calibrate()
-    // filters by real elapsed time, not frame count, and floors its
-    // tolerance estimate against a minimum, so this loop's own cadence
+    // Only AI-Engine head pose (yaw/pitch) feeds calibrate() - the fast
+    // loop's FaceDetector above has no pose data, only a bounding box.
+    // calibrate() filters by real elapsed time, not frame count, and floors
+    // its tolerance estimate against a minimum, so this loop's own cadence
     // only affects sample density, not correctness.
-    const dataLoop = startPerceptionLoop(video, bundle.faceLandmarker, bundle.objectDetector, (tick) => {
-      if (!tick.face || settled) return
+    const dataLoop = startPerceptionLoop(video, bundle.ai, bundle.faceEngine, bundle.objectEngine, (tick) => {
+      if (settled) return
 
-      if (startT === null) startT = tick.timestampMs
-      frames.push({
-        t: tick.timestampMs,
-        faceFound: tick.face.faceFound,
-        yaw: tick.face.yaw,
-        pitch: tick.face.pitch,
-        eyeBlink: tick.face.eyeBlink,
-        objects: [],
-      })
+      if (startT === null) {
+        startT = tick.timestampMs
+        // The AI core keeps its own 5 s perceptual baseline (used for
+        // EAR-relative eye signals). Started inside the same 15 s window
+        // the student already sits neutrally for the cone; HACHIKO's cone
+        // calibration and its duration/thresholds are untouched.
+        bundle.ai.startCalibration(tick.timestampMs)
+      }
+      frames.push(tick.frame)
 
       const elapsedMs = tick.timestampMs - startT
       const secondsLeft = Math.max(0, Math.ceil((CALIBRATION_MS - elapsedMs) / 1000))
@@ -330,6 +330,6 @@ export function renderCalibration(
           hint.textContent = s.hints[0] ?? ''
         }
       }
-    }, 1000, Number.POSITIVE_INFINITY)
+    }, 1000)
   })
 }
