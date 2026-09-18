@@ -365,12 +365,14 @@ You're building a desktop web app now, so most One UI mobile guidance doesn't ap
 ```
 Cream       #FDF8F3   background
 Warm sand   #F5EBE0   cards
-Amber       #E8934A   Hachiko / primary
-Deep amber  #C4692A   pressed
+Amber       #F7A547   Hachiko / primary       (Sandy Brown, refreshed 2026-09-18)
+Deep amber  derived   pressed                 (Harvest Orange x ink, see tokens.css)
 Ink         #2B2622   text
 Muted ink   #8A7F76   secondary
-Sage        #7A9471   focus state
+Sage        #00AFB5   focus state             (Tropical Teal, refreshed 2026-09-18)
 Night       #14110F   session view
+Yale Blue   #004777   bento tile tint only    (new 2026-09-18)
+Soft Peach  #EFD28D   bento tile tint only    (new 2026-09-18)
 ```
 
 ### ⚠️ Your mockups are now wrong twice over

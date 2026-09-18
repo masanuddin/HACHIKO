@@ -6,20 +6,42 @@
  */
 
 :root {
-  /* ---- Palette (CLAUDE.md - exact values, do not adjust) ---- */
+  /* ---- Palette (CLAUDE.md - exact values, do not adjust) ----
+     Accent palette per the 2026-09-18 brand refresh: amber/amber-deep/
+     sage now source from the new brand ramp (Sandy Brown / Harvest
+     Orange / Tropical Teal) instead of the original terracotta/olive
+     set. Cream, sand, ink, ink-muted and night are the neutral canvas
+     and stay exactly as before - the refresh is accents only, never a
+     wash over the whole page. Yale Blue and Soft Peach (below) round
+     out the new palette for tile-tint use. The brand ramp's sixth
+     color, "Inferno" (#A30000), is a saturated red and is deliberately
+     excluded: CLAUDE.md's "never use red anywhere" rule is a hard
+     constraint, not a style preference. */
   --cream: #fdf8f3;
   --sand: #f5ebe0;
-  --amber: #e8934a;
-  --amber-deep: #c4692a;
+  --amber: #f7a547; /* Sandy Brown */
   --ink: #2b2622;
   --ink-muted: #8a7f76;
-  --sage: #7a9471;
+  --sage: #00afb5; /* Tropical Teal */
   --night: #14110f;
+
+  /* Yale Blue and Soft Peach - new to this refresh, used only for the
+     two additional bento tile tints below (see sessionCard.ts), never
+     as text color or a page background. */
+  --accent-blue: #004777; /* Yale Blue */
+  --accent-peach: #efd28d; /* Soft Peach */
 
   /* Derived, still from the fixed palette above - never a new hue. */
   --night-surface: #1d1a16; /* cards on the session view */
   --night-border: #322c26;
   --cream-border: #e9ddcd;
+  /* Harvest Orange (#FF7700) mixed with ink, not used at full
+     saturation: full-strength Harvest Orange is too light to clear
+     WCAG AA as text color on cream/sand (the four .field__error /
+     .threshold-note / .session-history-dashboard__cta / .milestone-badge
+     spots that render amber-deep as foreground text), so it's darkened
+     the same way the original amber-deep was already darker than amber. */
+  --amber-deep: color-mix(in srgb, #ff7700 60%, var(--ink) 40%);
   --focus-ring: color-mix(in srgb, var(--amber) 60%, transparent);
 
   /* ---- Typography ---- */
@@ -95,4 +117,9 @@
      take precedence there. */
   --tile-amber: color-mix(in srgb, var(--amber) 28%, var(--cream));
   --tile-sage: color-mix(in srgb, var(--sage) 22%, var(--cream));
+  --tile-blue: color-mix(in srgb, var(--accent-blue) 22%, var(--cream));
+  /* Soft Peach's own lightness sits close to cream's, so it needs a
+     heavier concentration than the other tile tints to read as a
+     distinct wash rather than disappearing into the canvas. */
+  --tile-peach: color-mix(in srgb, var(--accent-peach) 55%, var(--cream));
 }

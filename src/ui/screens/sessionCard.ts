@@ -27,7 +27,7 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
 
 function bentoTile(
   modifier: string,
-  tint: 'sand' | 'amber-tint' | 'sage-tint' | null,
+  tint: 'sand' | 'amber-tint' | 'sage-tint' | 'blue-tint' | 'peach-tint' | null,
   children: (Node | string)[],
 ): HTMLDivElement {
   const classes = ['bento-tile', `bento-tile--${modifier}`]
@@ -52,9 +52,9 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'bento' }, [
-    bentoTile('mascot', 'sand', [mascotPeek()]),
+    bentoTile('mascot', 'peach-tint', [mascotPeek()]),
     bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true)),
-    bentoTile('duduk', null, tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
+    bentoTile('duduk', 'blue-tint', tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
     bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
     bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),
     bentoTile('observation', 'sand', [

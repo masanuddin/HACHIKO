@@ -408,6 +408,8 @@ input:focus-visible,
 .bento-tile--sand { background: var(--sand); border-color: transparent; }
 .bento-tile--amber-tint { background: var(--tile-amber); border-color: transparent; }
 .bento-tile--sage-tint { background: var(--tile-sage); border-color: transparent; }
+.bento-tile--blue-tint { background: var(--tile-blue); border-color: transparent; }
+.bento-tile--peach-tint { background: var(--tile-peach); border-color: transparent; }
 
 .bento-tile--mascot {
   grid-column: 1 / 3;
