@@ -132,6 +132,34 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
   }
 }
 
+/**
+ * Which studyTopic has accumulated the most total focus time across
+ * every given session, not just the most recent one - "kamu paling
+ * fokus pas belajar X" is a claim about all of a student's history, so
+ * it has to be computed from all of it rather than echoed from
+ * whichever session happens to be on screen. Sessions with no declared
+ * topic don't participate; returns null when nothing has one.
+ */
+export function bestFocusTopic(records: SessionRecord[]): string | null {
+  const totalFocusMsByTopic = new Map<string, number>()
+  for (const record of records) {
+    const topic = record.studyTopic?.trim()
+    if (!topic) continue
+    const focusMs = computeMetrics(record).focusMs
+    totalFocusMsByTopic.set(topic, (totalFocusMsByTopic.get(topic) ?? 0) + focusMs)
+  }
+
+  let best: string | null = null
+  let bestFocusMs = -1
+  for (const [topic, focusMs] of totalFocusMsByTopic) {
+    if (focusMs > bestFocusMs) {
+      best = topic
+      bestFocusMs = focusMs
+    }
+  }
+  return best
+}
+
 export function emptyDurations(): Record<FocusState, number> {
   return { FOKUS: 0, TERALIH: 0, TIDAK_HADIR: 0, UNCERTAIN: 0, MENGANTUK: 0 }
 }
