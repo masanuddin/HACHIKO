@@ -292,7 +292,7 @@ to:
 
 **`sessionCard.ts`'s `historyCard()`** (per-session delete): currently toggles the delete button itself between "Hapus" and an inline "Hapus sesi ini? / Ya / Batal" row via `showDelete()`/`showConfirm()`. With an overlay, the delete button never needs to change — clicking it just pops the overlay; canceling closes it, leaving the same button in place. This also removes the `showDelete()`/`showConfirm()` ping-pong entirely. `historyCard` needs the screen's root element threaded in as a new parameter (`screenEl`) to pass to `confirmOverlay`. Change:
 ```ts
-function historyCard(record: SessionRecord, index: number, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(record: SessionRecord, _index: number, onDelete: (id: string) => void): HTMLDivElement {
   const s = strings.sessionCard
   const controls = el('div', { class: 'history-card__actions' })
 
@@ -321,7 +321,7 @@ to:
 ```ts
 function historyCard(
   record: SessionRecord,
-  index: number,
+  _index: number,
   onDelete: (id: string) => void,
   screenEl: HTMLElement,
 ): HTMLDivElement {
@@ -355,7 +355,7 @@ function historyCard(
   )
 }
 ```
-The `index` parameter is unused by this function's body both before and after this change (it was already only consumed by the now-deleted `HISTORY_TILTS` lookup, removed by the scrapbook-removal plan) — leave it as-is; removing an unused parameter from a function whose call site (`historySection`'s `.map((r, i) => historyCard(r, i, onDelete))`) still naturally provides the index is out of scope for this plan and not worth a signature churn.
+The parameter is named `_index`, not `index` — the scrapbook-removal plan already renamed it this way, since it's unused (it was already only consumed by the now-deleted `HISTORY_TILTS` lookup) and this project's `tsconfig.json` has `noUnusedParameters: true`, which rejects a plain unused `index`. It stays unused and thus still underscore-prefixed after this change too — deleting `showDelete()` above doesn't give it a new consumer. Leave the name as `_index`; do not rename it back or remove it (the call site, `historySection`'s `.map((r, i) => historyCard(r, i, onDelete))`, still naturally provides a positional argument regardless of the parameter's name).
 
 **`historySection()`** (delete-all): same conversion, plus threading `screenEl` through to `historyCard`. Change:
 ```ts

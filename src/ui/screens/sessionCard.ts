@@ -42,7 +42,7 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
 }
 
 /**
- * The current session's numbers as a scrapbook bento grid (mascot tile,
+ * The current session's numbers as a bento grid (mascot tile,
  * a bigger Fokus tile since it's the headline number, the remaining
  * three metrics, and a wide observation tile) instead of the flat 2x2
  * grid `metricGrid` still renders for history. Same six pieces of

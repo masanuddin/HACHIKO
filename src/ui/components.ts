@@ -106,9 +106,7 @@ export function doodleMark(name: DoodleMarkName, opts: { size?: string } = {}): 
 }
 
 /** A screen title paired with a small hand-drawn decorative mark - the
- * one consistent scrapbook touch every daylight screen shares, even
- * ones (calibration, framing) whose main content can't be tilted
- * without breaking the live camera preview's geometry. */
+ * one consistent decorative touch every daylight screen shares. */
 export function titleWithDoodle(text: string, mark: DoodleMarkName): HTMLDivElement {
   return el('div', { class: 'title-row' }, [title(text), doodleMark(mark)])
 }

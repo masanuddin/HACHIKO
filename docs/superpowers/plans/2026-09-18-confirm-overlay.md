@@ -373,7 +373,7 @@ git commit -m "Convert session.ts's Selesai and break confirms to the overlay"
 
 **Interfaces:**
 - Consumes: `confirmOverlay(mount, children, onCancel)` from Task 1.
-- Changes: `historyCard(record, index, onDelete, screenEl)` and `historySection(currentId, onDelete, onDeleteAll, screenEl)` both gain a new final `screenEl: HTMLElement` parameter — both are private (unexported) functions local to `sessionCard.ts`, so this is not a public interface change.
+- Changes: `historyCard(record, _index, onDelete, screenEl)` and `historySection(currentId, onDelete, onDeleteAll, screenEl)` both gain a new final `screenEl: HTMLElement` parameter — both are private (unexported) functions local to `sessionCard.ts`, so this is not a public interface change. Note the parameter is `_index`, not `index` — the scrapbook-removal plan already renamed it (it's unused, and this project's `tsconfig.json` has `noUnusedParameters: true`).
 
 - [ ] **Step 1: Add `confirmOverlay` to `sessionCard.ts`'s import line**
 
@@ -391,7 +391,7 @@ import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, ti
 
 Change:
 ```ts
-function historyCard(record: SessionRecord, index: number, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(record: SessionRecord, _index: number, onDelete: (id: string) => void): HTMLDivElement {
   const s = strings.sessionCard
   const controls = el('div', { class: 'history-card__actions' })
 
@@ -420,7 +420,7 @@ to:
 ```ts
 function historyCard(
   record: SessionRecord,
-  index: number,
+  _index: number,
   onDelete: (id: string) => void,
   screenEl: HTMLElement,
 ): HTMLDivElement {
@@ -454,7 +454,7 @@ function historyCard(
   )
 }
 ```
-Leave the `index` parameter exactly as-is (unused by this function both before and after this change — it's already only there because the call site's `.map((r, i) => ...)` naturally provides it; removing it is out of scope for this plan).
+Leave the `_index` parameter exactly as-is, underscore and all (unused by this function both before and after this change — it's already only there because the call site's `.map((r, i) => ...)` naturally provides it; removing it, or renaming it back to `index`, is out of scope for this plan and would reintroduce a `noUnusedParameters` compile error).
 
 - [ ] **Step 3: Convert `historySection()`**
 
