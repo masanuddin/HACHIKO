@@ -303,6 +303,46 @@ input:focus-visible,
   color: var(--ink);
 }
 
+/* ---- Confirm overlay (modal) ----
+   Reserved for confirming a decision the student/parent already
+   initiated (Selesai, Fokus lagi, delete). Never used for an
+   unprompted system offer - session__nudge's own "never a modal" rule
+   above is untouched by this. */
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(6px);
+  animation: overlay-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.overlay-dialog {
+  width: 100%;
+  max-width: 400px;
+  animation: overlay-dialog-in var(--duration-base) var(--ease-spring-soft);
+}
+
+@keyframes overlay-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 /* Small hand-drawn-style decorative mark - see doodleMark() in
    components.ts. Purely decorative, always aria-hidden. */
 .doodle-mark {

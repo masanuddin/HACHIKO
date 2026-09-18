@@ -78,6 +78,61 @@ export function card(...children: (Node | string)[]): HTMLDivElement {
   return el('div', { class: 'card' }, children)
 }
 
+/**
+ * A modal confirm: a dimmed backdrop plus a centered card, appended to
+ * the screen's own root element (the <main class="screen">, NOT
+ * .screen__content) - same reasoning as session.ts's mentor panel:
+ * appending here escapes .screen__content's entrance-animation
+ * transform (which would otherwise become this element's `position:
+ * fixed` containing block) while staying a descendant of
+ * .screen--night when the caller is the night screen, so the night
+ * card palette still applies via the existing `.screen--night .card`
+ * rule. Reserved for confirming a decision the student/parent already
+ * initiated - never for an unprompted system offer (see
+ * showEarlyBreakNudge/showExtensionNudge in session.ts, which stay
+ * inline on purpose).
+ *
+ * Backdrop click and Escape both call `onCancel` - dismissing a modal
+ * must never be equivalent to confirming it. The caller is responsible
+ * for calling the returned `close()` from both its own Cancel button
+ * and its confirm button (and from `onCancel` too, if it doesn't
+ * already delegate to the same cancel function that does).
+ */
+export function confirmOverlay(
+  mount: HTMLElement,
+  children: (Node | string)[],
+  onCancel: () => void,
+): { close: () => void } {
+  const previouslyFocused = document.activeElement as HTMLElement | null
+  const backdrop = el('div', { class: 'overlay-backdrop' })
+  const dialog = card(...children)
+  dialog.classList.add('overlay-dialog')
+  dialog.setAttribute('role', 'dialog')
+  dialog.setAttribute('aria-modal', 'true')
+  dialog.tabIndex = -1
+  backdrop.append(dialog)
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') onCancel()
+  }
+
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) onCancel()
+  })
+  document.addEventListener('keydown', onKeydown)
+
+  mount.append(backdrop)
+  dialog.focus()
+
+  return {
+    close: () => {
+      backdrop.remove()
+      document.removeEventListener('keydown', onKeydown)
+      previouslyFocused?.focus()
+    },
+  }
+}
+
 export type DoodleMarkName = 'squiggle' | 'sparkle' | 'swirl' | 'paw' | 'scribble-circle'
 
 const DOODLE_MARK_SVG: Record<DoodleMarkName, string> = {
