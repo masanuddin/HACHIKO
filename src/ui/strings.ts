@@ -159,6 +159,8 @@ export const strings = {
     pdfFooter: 'HACHIKO - semua data tetap di perangkatmu saja',
     doneLabel: 'Selesai',
     historyTitle: 'Sesi sebelumnya',
+    historyCount: (n: number) => `${n} sesi tersimpan`,
+    historyViewAll: 'Lihat semua',
     deleteSessionLabel: 'Hapus',
     deleteConfirmTitle: 'Hapus sesi ini?',
     deleteConfirmYes: 'Hapus',

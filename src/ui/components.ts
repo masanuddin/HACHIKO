@@ -97,16 +97,25 @@ export function card(...children: (Node | string)[]): HTMLDivElement {
  * for calling the returned `close()` from both its own Cancel button
  * and its confirm button (and from `onCancel` too, if it doesn't
  * already delegate to the same cancel function that does).
+ *
+ * `opts.wide` is for content that can genuinely be long (a scrollable
+ * list, not a title + two buttons) - it caps the dialog's own height
+ * and scrolls internally instead, rather than relying on the backdrop
+ * scrolling: centering a flex item that overflows a scroll container
+ * can clip its start in some browsers, and this sidesteps that
+ * entirely for the one case tall enough to hit it.
  */
 export function confirmOverlay(
   mount: HTMLElement,
   children: (Node | string)[],
   onCancel: () => void,
+  opts: { wide?: boolean } = {},
 ): { close: () => void } {
   const previouslyFocused = document.activeElement as HTMLElement | null
   const backdrop = el('div', { class: 'overlay-backdrop' })
   const dialog = card(...children)
   dialog.classList.add('overlay-dialog')
+  if (opts.wide) dialog.classList.add('overlay-dialog--wide')
   dialog.setAttribute('role', 'dialog')
   dialog.setAttribute('aria-modal', 'true')
   dialog.tabIndex = -1

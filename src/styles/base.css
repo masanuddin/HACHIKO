@@ -348,6 +348,18 @@ input:focus-visible,
   }
 }
 
+/* For content that can genuinely run long (a scrollable list) - see
+   confirmOverlay's `opts.wide` doc comment in components.ts. Bounds the
+   dialog's own height and scrolls internally rather than relying on
+   the backdrop's own overflow-y, which can clip a centered flex item's
+   start once it overflows in some browsers. overflow-y here overrides
+   just that axis of .card's own `overflow: hidden` shorthand. */
+.overlay-dialog--wide {
+  max-width: 640px;
+  max-height: min(80vh, 720px);
+  overflow-y: auto;
+}
+
 /* Small hand-drawn-style decorative mark - see doodleMark() in
    components.ts. Purely decorative, always aria-hidden. */
 .doodle-mark {
@@ -1164,18 +1176,60 @@ input:focus-visible,
   color: var(--amber-deep);
 }
 
-/* ---- Session history (previous sessions on the Session Card) ---- */
-.session-history {
+/* ---- Session Card grid (history dashboard left, current-session bento
+   right) - collapses to a single stacked column below 720px, same
+   breakpoint Ready/Calibration already use. --solo drops to one column
+   at any width when there's no history yet, so the (removed-from-flow,
+   display:none) empty dashboard slot never leaves a phantom grid gap
+   above the bento grid. */
+.session-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.session-card-grid--solo {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 720px) {
+  .session-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A compact, clickable summary of past sessions - opens the full list
+   in a wide confirmOverlay (see sessionCard.ts's openHistoryOverlay).
+   A real <button>, not a div with a click handler, so it's reachable
+   and activatable by keyboard like every other control in the app. */
+.session-history-dashboard {
+  appearance: none;
+  border: none;
+  cursor: pointer;
   text-align: left;
+  width: 100%;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
-.session-history__title {
-  font-size: var(--text-base);
-  font-weight: 700;
+.session-history-dashboard:hover {
+  transform: translateY(-2px);
+}
+
+.session-history-dashboard__count {
+  font-size: var(--text-sm);
   color: var(--ink-muted);
-  margin-bottom: var(--space-3);
 }
 
+.session-history-dashboard__cta {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--amber-deep);
+}
+
+/* ---- Session history (the expanded list, inside the wide overlay) ---- */
 .session-history__list {
   display: flex;
   flex-direction: column;
