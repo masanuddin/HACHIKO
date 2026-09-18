@@ -2,6 +2,7 @@ import { strings } from '../strings'
 import { actions, body, button, el, screen, titleWithDoodle } from '../components'
 import { cssVar } from '../theme'
 import { flipExpand } from '../transition'
+import { mascotPeek } from '../hachiko'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
 import type { FaceBox } from '../../perception/faceBox'
@@ -10,6 +11,12 @@ import { DEFAULT_CONFIG } from '../../engine/config'
 import type { Cone, Frame } from '../../engine/types'
 
 const CALIBRATION_MS = 15_000
+// The countdown is split into three equal windows, each showing one of
+// strings.calibration.hints - ambient/glanceable only, never something
+// the student has to stop and read (they still need to look at the
+// camera and sit naturally). Derived from CALIBRATION_MS rather than a
+// separate constant so the two can never drift out of sync.
+const HINT_WINDOW_MS = CALIBRATION_MS / 3
 const RING_RADIUS = 42
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 // Beyond this many ms since the last real detection, extrapolation stops
@@ -64,10 +71,20 @@ export function renderCalibration(
     // in place" read.
     content.classList.add('screen__content--no-enter')
 
+    // A calm, watching presence for the 15 seconds - the student still
+    // needs to sit naturally and look at the camera, so this stays
+    // peripheral: a gentle idle motion (reusing the existing breathing
+    // animation, not a new one) rather than anything that asks for
+    // attention. Swapped to 'celebrating' as a small payoff on completion.
+    let mascotEl = mascotPeek('waiting')
+    mascotEl.querySelector('img')?.classList.add('hachiko-sleep')
+
     const status = body(s.body)
     const ring = progressRing()
     ring.setProgress(0, '15')
     const countdown = el('p', { class: 'screen__body' }, [s.counting(15)])
+    const hint = el('p', { class: 'calibration-hint' }, [s.hints[0] ?? ''])
+    let lastHintIndex = 0
     const preview = el('div', { class: 'camera-preview' })
     const canvas = el('canvas', {})
     // The canvas draws the video frame itself (see the tick loop below) and
@@ -104,7 +121,16 @@ export function renderCalibration(
       { variant: 'secondary' },
     )
 
-    content.append(titleWithDoodle(s.title, 'sparkle'), status, ring.element, countdown, preview, actions(cancelBtn, continueBtn))
+    content.append(
+      titleWithDoodle(s.title, 'sparkle'),
+      mascotEl,
+      status,
+      ring.element,
+      countdown,
+      hint,
+      preview,
+      actions(cancelBtn, continueBtn),
+    )
     root.replaceChildren(screenEl)
     flipExpand(preview, fromRect)
 
@@ -274,6 +300,12 @@ export function renderCalibration(
       countdown.textContent = s.counting(secondsLeft)
       ring.setProgress(elapsedMs / CALIBRATION_MS, String(secondsLeft))
 
+      const hintIndex = Math.min(s.hints.length - 1, Math.floor(elapsedMs / HINT_WINDOW_MS))
+      if (hintIndex !== lastHintIndex) {
+        lastHintIndex = hintIndex
+        hint.textContent = s.hints[hintIndex] ?? ''
+      }
+
       if (elapsedMs >= CALIBRATION_MS) {
         try {
           cone = calibrate(frames, DEFAULT_CONFIG)
@@ -282,12 +314,17 @@ export function renderCalibration(
           status.textContent = s.done
           ring.setProgress(1, '✓')
           continueBtn.disabled = false
+          const celebratingMascot = mascotPeek('celebrating')
+          mascotEl.replaceWith(celebratingMascot)
+          mascotEl = celebratingMascot
         } catch {
           // Face dropped out too much of the window - restart the clock
           // rather than hand back a cone built from too little data.
           frames = []
           startT = null
           ring.setProgress(0, '15')
+          lastHintIndex = 0
+          hint.textContent = s.hints[0] ?? ''
         }
       }
     }, 1000, Number.POSITIVE_INFINITY)

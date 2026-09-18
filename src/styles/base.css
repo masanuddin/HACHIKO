@@ -747,6 +747,17 @@ input:focus-visible,
   color: color-mix(in srgb, var(--cream) 60%, transparent);
 }
 
+/* Calibration's ambient rotating hint - deliberately quiet (small,
+   muted, italic) so it reads as a passing thought, not an instruction
+   competing with the main body text above it. min-height keeps the
+   layout stable across the three hints' different lengths. */
+.calibration-hint {
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--ink-muted);
+  min-height: 1.5em;
+}
+
 /* ---- Camera preview + framing ---- */
 .camera-preview {
   position: relative;

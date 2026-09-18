@@ -62,6 +62,11 @@ export const strings = {
     counting: (secondsLeft: number) => `${secondsLeft} detik lagi`,
     done: 'Beres! Yuk lanjut.',
     continueLabel: 'Lanjut',
+    hints: [
+      'Santai aja, duduk kayak biasa kamu belajar.',
+      'Aku lagi merhatiin posisi dudukmu, tahan sebentar.',
+      'Hampir selesai, sedikit lagi!',
+    ],
   },
 
   media: {
