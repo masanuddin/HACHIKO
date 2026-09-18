@@ -88,6 +88,45 @@ export function mascotPeek(pose: HachikoPose = 'sleeping'): HTMLDivElement {
   return wrap
 }
 
+// 16 individually-exported frames (public/mascot/walking/), not one
+// composited sprite sheet - cycled via plain setInterval below rather
+// than a CSS steps() background-position animation, since there's no
+// single sheet image for steps() to slice.
+const WALKING_FRAME_COUNT = 16
+const WALKING_FRAME_INTERVAL_MS = 120 // ~8fps - smooth enough for a small decorative loop
+
+function walkingFrameSrc(n: number): string {
+  return `/mascot/walking/frame-${String(n).padStart(2, '0')}.png`
+}
+
+/**
+ * A small looping walk animation - Hachiko in a graduation cap - used
+ * on the Calibration screen while the student waits. Distinct from the
+ * six FocusState-driven poses above: purely decorative, no bearing on
+ * focus state, and not part of `poseForState`'s mapping. `aria-hidden`
+ * for the same reason `mascotPeek` is. The caller must call the
+ * returned `stop()` when the screen tears down or swaps to a different
+ * mascot, or the interval keeps writing to a detached <img> forever.
+ */
+export function walkingMascot(): { element: HTMLDivElement; stop: () => void } {
+  const wrap = document.createElement('div')
+  wrap.className = 'mascot-peek'
+  wrap.setAttribute('aria-hidden', 'true')
+  const img = document.createElement('img')
+  img.className = 'hachiko-pose'
+  img.alt = ''
+  img.src = walkingFrameSrc(1)
+  wrap.append(img)
+
+  let frame = 1
+  const interval = window.setInterval(() => {
+    frame = (frame % WALKING_FRAME_COUNT) + 1
+    img.src = walkingFrameSrc(frame)
+  }, WALKING_FRAME_INTERVAL_MS)
+
+  return { element: wrap, stop: () => window.clearInterval(interval) }
+}
+
 export class HachikoView {
   readonly element: HTMLDivElement
   private currentPose: HachikoPose | null = null

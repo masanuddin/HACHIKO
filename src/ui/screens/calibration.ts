@@ -2,7 +2,7 @@ import { strings } from '../strings'
 import { actions, body, button, el, screen, titleWithDoodle } from '../components'
 import { cssVar } from '../theme'
 import { flipExpand } from '../transition'
-import { mascotPeek } from '../hachiko'
+import { mascotPeek, walkingMascot } from '../hachiko'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
 import type { FaceBox } from '../../perception/faceBox'
@@ -80,8 +80,8 @@ export function renderCalibration(
     // peripheral: a gentle idle motion (reusing the existing breathing
     // animation, not a new one) rather than anything that asks for
     // attention. Swapped to 'celebrating' as a small payoff on completion.
-    let mascotEl = mascotPeek('waiting')
-    mascotEl.querySelector('img')?.classList.add('hachiko-sleep')
+    const walking = walkingMascot()
+    let mascotEl: HTMLElement = walking.element
 
     const status = body(s.body)
     const ring = progressRing()
@@ -119,6 +119,7 @@ export function renderCalibration(
       () => {
         overlayLoop.stop()
         dataLoop.stop()
+        walking.stop()
         root.replaceChildren()
         resolve({ cancelled: true })
       },
@@ -317,6 +318,7 @@ export function renderCalibration(
           status.textContent = s.done
           ring.setProgress(1, '✓')
           continueBtn.disabled = false
+          walking.stop()
           const celebratingMascot = mascotPeek('celebrating')
           mascotEl.replaceWith(celebratingMascot)
           mascotEl = celebratingMascot
