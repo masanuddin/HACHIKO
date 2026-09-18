@@ -3,8 +3,8 @@ import {
   actions,
   button,
   cameraDot,
-  card,
   chipGroup,
+  confirmOverlay,
   disclosure,
   el,
   screen,
@@ -79,19 +79,24 @@ function streakChip(sessionCount: number, streakDays: number): HTMLDivElement {
 
 /**
  * A one-time, purely informational preview of what one full set looks
- * like under the chosen durations/rounds - shown when "Mulai" is
- * tapped, before advancing to Calibration. Not a commitment: dismissing
- * it just starts the session exactly as tapping "Mulai" always has;
- * the multi-cycle "Fokus lagi?" loop (session.ts) still asks after
- * every real break, indefinitely, unchanged.
+ * like under the chosen durations/rounds - shown in a confirmOverlay
+ * when "Mulai" is tapped, before advancing to Calibration. Not a
+ * commitment: closing it (Batal, backdrop click, or Escape) leaves the
+ * Ready screen exactly as it was, untouched - the student can change
+ * their mind and keep adjusting settings. Continuing starts the session
+ * exactly as tapping "Mulai" always has; the multi-cycle "Fokus lagi?"
+ * loop (session.ts) still asks after every real break, indefinitely,
+ * unchanged. Returns plain content (not a pre-built card) since
+ * confirmOverlay wraps its children in one card itself.
  */
-function timelinePreviewCard(
+function timelinePreviewContent(
   workMs: number,
   breakMs: number,
   longBreakMs: number,
   rounds: number,
   onContinue: () => void,
-): HTMLDivElement {
+  onClose: () => void,
+): (Node | string)[] {
   const s = strings
   const items = buildTimelinePreview(workMs, breakMs, longBreakMs, rounds)
   const row = el('div', { class: 'timeline-preview__row' })
@@ -109,11 +114,14 @@ function timelinePreviewCard(
     }
   })
 
-  return card(
+  return [
     el('h2', { class: 'card__title' }, [s.ready.timelineTitle]),
     row,
-    actions(button(s.common.continueLabel, onContinue)),
-  )
+    actions(
+      button(s.ready.timelineCloseLabel, onClose, { variant: 'secondary' }),
+      button(s.common.continueLabel, onContinue),
+    ),
+  ]
 }
 
 export interface ReadySetupResult {
@@ -265,11 +273,13 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
     // --- Submit: hard-gated on camera+face (button stays disabled until
     // then, matching the old Framing screen's gate exactly); media is a
     // soft gate (inline error on click, matching the old Media screen).
-    // Tapping "Mulai" doesn't advance straight to Calibration - it swaps
-    // this row for a one-time timeline preview first (see
-    // timelinePreviewCard above); the grid above stays exactly as it is,
-    // so the camera tile's on-screen position (and the cameraRect the
-    // Calibration expand-transition reads) doesn't shift underneath it. ---
+    // Tapping "Mulai" doesn't advance straight to Calibration - it opens
+    // a one-time timeline preview overlay first (see
+    // timelinePreviewContent above). The grid and ctaRow behind it are
+    // never touched, so closing the overlay (Batal, backdrop, Escape)
+    // leaves this screen exactly as it was - including the camera
+    // tile's on-screen position, which the Calibration expand-transition
+    // reads via cameraRect below.
     const continueBtn = button(
       s.ready.continueLabel,
       () => {
@@ -300,16 +310,21 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
             cameraRect,
           })
         }
-        // .screen__actions--end's justify-content:flex-end suited a lone
-        // right-aligned button; the preview card should fill the row.
-        // (Named previewCard, not preview - `preview` is already the
-        // camera-preview element finish() reads getBoundingClientRect()
-        // from; shadowing it here would silently break the FLIP
-        // transition's rect capture.)
-        ctaRow.classList.remove('screen__actions--end')
-        const previewCard = timelinePreviewCard(workMs, breakMs, longBreakMs, selectedRounds, finish)
-        previewCard.style.flex = '1'
-        ctaRow.replaceChildren(previewCard)
+        const overlay = confirmOverlay(
+          screenEl,
+          timelinePreviewContent(
+            workMs,
+            breakMs,
+            longBreakMs,
+            selectedRounds,
+            () => {
+              overlay.close()
+              finish()
+            },
+            () => overlay.close(),
+          ),
+          () => overlay.close(),
+        )
       },
       { disabled: true },
     )

@@ -93,6 +93,7 @@ export const strings = {
     timelineTitle: 'Alur sesimu',
     timelineBreakLabel: 'Istirahat',
     timelineLongBreakLabel: 'Istirahat panjang',
+    timelineCloseLabel: 'Batal',
   },
 
   session: {
