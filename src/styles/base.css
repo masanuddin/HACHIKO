@@ -889,8 +889,12 @@ input:focus-visible,
 
 .session__hachiko {
   position: relative;
-  width: 220px;
-  height: 220px;
+  /* Fixed 220px on any normal desktop width - min() only kicks in below
+     a ~400px viewport (a resized window, or an actual phone), scaling
+     down instead of sitting fixed-size with no fallback at all. The
+     ::before glow below is inset in %, so it follows automatically. */
+  width: min(220px, 55vw);
+  height: min(220px, 55vw);
 }
 
 /* A quiet pool of warmth under the mascot, like a nightlight - reinforces
