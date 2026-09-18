@@ -76,8 +76,8 @@ async function main(): Promise<void> {
 
 /**
  * The final, dead-end state after "Selesai". Offers a reload and one
- * destructive action - delete the stored profile - behind an inline
- * confirmation. "Hapus profil" clears both `hachiko.profile.v1` and the
+ * destructive action - delete the stored profile - that opens a confirm
+ * overlay. "Hapus profil" clears both `hachiko.profile.v1` and the
  * whole session history, so the next flow starts from zero (Welcome +
  * Consent) with no stale "sesi bareng Hachiko" count; telemetry stays.
  */

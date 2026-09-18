@@ -145,6 +145,10 @@ svg {
   color: var(--cream);
 }
 
+.screen--night .card__title {
+  color: var(--cream);
+}
+
 .screen__body {
   font-size: var(--text-base);
   color: var(--ink-muted);
@@ -316,6 +320,7 @@ input:focus-visible,
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  overflow-y: auto;
   background: color-mix(in srgb, var(--ink) 45%, transparent);
   backdrop-filter: blur(6px);
   animation: overlay-in var(--duration-fast) var(--ease-standard);
@@ -1147,11 +1152,6 @@ input:focus-visible,
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-
-.history-card__confirm {
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
 }
 
 .session-history__delete-all {

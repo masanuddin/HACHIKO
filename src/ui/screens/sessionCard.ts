@@ -73,9 +73,9 @@ function sessionTimeLabel(startedAt: number): string {
 }
 
 /**
- * One read-only history card with an inline-confirmed delete control.
- * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
- * current session (excluded from history) can never be deleted here.
+ * One read-only history card with a delete control that opens a confirm
+ * overlay. The current session (excluded from history) can never be
+ * deleted here.
  */
 function historyCard(
   record: SessionRecord,

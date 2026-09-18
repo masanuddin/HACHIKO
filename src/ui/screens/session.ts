@@ -302,7 +302,7 @@ function runWorkPhase(
       function cancel(): void {
         paused = pausedBeforeSelesaiConfirm
         jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
-        nudgeVisible = null
+        hideNudge()
         overlay.close()
       }
 
@@ -318,7 +318,7 @@ function runWorkPhase(
         actions(
           button(s.selesaiConfirmNo, cancel, { variant: 'secondary' }),
           button(s.selesaiConfirmYes, () => {
-            nudgeVisible = null
+            hideNudge()
             overlay.close()
             finishNow(true)
           }),
