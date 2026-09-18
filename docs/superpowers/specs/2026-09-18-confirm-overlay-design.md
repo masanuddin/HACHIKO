@@ -94,7 +94,8 @@ export function confirmOverlay(
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(6px);
   animation: overlay-in var(--duration-fast) var(--ease-standard);
 }
 
@@ -550,7 +551,7 @@ function renderEndScreen(root: HTMLElement): void {
 ## Global Constraints (same as every prior pass)
 
 - No new npm dependencies.
-- No red anywhere in the UI — the backdrop color is `color-mix(in srgb, var(--ink) 55%, transparent)`, composed only from the fixed palette.
+- No red anywhere in the UI — the backdrop color is `color-mix(in srgb, var(--ink) 45%, transparent)`, composed only from the fixed palette.
 - Session (night) screen: the overlay must render correctly there too (it's used by `showSelesaiConfirm`/`showContinueConfirm`/`showStopConfirm`, all night-screen call sites) — this is exactly why `confirmOverlay` mounts on `screenEl` rather than `document.body`, so `.screen--night .card`'s existing override still applies.
 - `src/engine/` untouched.
 - No copy/string changes — every string used above already exists in `strings.ts`.

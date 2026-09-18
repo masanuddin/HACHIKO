@@ -111,7 +111,8 @@ Add this block anywhere after the `.card`/`.card__title` rules (a good spot is r
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(6px);
   animation: overlay-in var(--duration-fast) var(--ease-standard);
 }
 
