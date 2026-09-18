@@ -1,5 +1,5 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation } from '../strings'
-import { actions, body, button, doodleMark, el, paperCard, screen, titleWithDoodle } from '../components'
+import { actions, body, button, card, doodleMark, el, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
@@ -28,12 +28,9 @@ function bentoTile(
   modifier: string,
   tint: 'sand' | 'amber-tint' | 'sage-tint' | null,
   children: (Node | string)[],
-  opts: { torn?: 'b'; tape?: boolean } = {},
 ): HTMLDivElement {
   const classes = ['bento-tile', `bento-tile--${modifier}`]
   if (tint) classes.push(`bento-tile--${tint}`)
-  if (opts.torn === 'b') classes.push('torn-b')
-  if (opts.tape) classes.push('paper-tape')
   return el('div', { class: classes.join(' ') }, children)
 }
 
@@ -54,11 +51,11 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'bento' }, [
-    bentoTile('mascot', 'sand', [mascotPeek()], { tape: true }),
-    bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true), { tape: true }),
+    bentoTile('mascot', 'sand', [mascotPeek()]),
+    bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true)),
     bentoTile('duduk', null, tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
-    bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs)), { torn: 'b' }),
-    bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs)), { torn: 'b' }),
+    bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
+    bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),
     bentoTile('observation', 'sand', [
       el('p', { class: 'observation' }, [observationText]),
       doodleMark('paw', { size: '36px' }),
@@ -75,18 +72,12 @@ function sessionTimeLabel(startedAt: number): string {
   })
 }
 
-// Deterministic, alternating tilt/torn-edge per history card - same
-// "fixed set of values, no Math.random()" rule as the confetti pattern.
-const HISTORY_TILTS = ['c', 'b', 'e', 'a', 'd'] as const
-
 /**
  * One read-only history card with an inline-confirmed delete control.
  * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
  * current session (excluded from history) can never be deleted here.
- * Lighter paper treatment than the current-session bento tiles (tilt +
- * torn edge, no tape) since this can be a long scrolling list.
  */
-function historyCard(record: SessionRecord, index: number, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(record: SessionRecord, _index: number, onDelete: (id: string) => void): HTMLDivElement {
   const s = strings.sessionCard
   const controls = el('div', { class: 'history-card__actions' })
 
@@ -104,15 +95,10 @@ function historyCard(record: SessionRecord, index: number, onDelete: (id: string
 
   showDelete()
 
-  const tilt = HISTORY_TILTS[index % HISTORY_TILTS.length] ?? 'a'
-
-  return paperCard(
-    [
-      el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
-      metricGrid(computeMetrics(record)),
-      controls,
-    ],
-    index % 2 === 1 ? { tilt, torn: 'b' } : { tilt },
+  return card(
+    el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
+    metricGrid(computeMetrics(record)),
+    controls,
   )
 }
 

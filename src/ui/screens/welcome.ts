@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, el, field, paperCard, screen, textInput, titleWithDoodle } from '../components'
+import { actions, body, button, card, el, field, screen, textInput, titleWithDoodle } from '../components'
 import { mascotPeek } from '../hachiko'
 
 export function renderWelcome(root: HTMLElement): Promise<{ name: string }> {
@@ -28,7 +28,7 @@ export function renderWelcome(root: HTMLElement): Promise<{ name: string }> {
     content.append(
       mascotPeek(),
       titleWithDoodle(s.title, 'paw'),
-      paperCard([body(s.body), el('p', { class: 'screen__body' }, [s.browserNote])], { tilt: 'a', tape: true }),
+      card(body(s.body), el('p', { class: 'screen__body' }, [s.browserNote])),
       nameField.element,
       actions(button(s.continueLabel, submit)),
       el('p', { class: 'note' }, [s.noAccountNote]),

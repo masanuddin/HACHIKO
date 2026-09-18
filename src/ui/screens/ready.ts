@@ -172,7 +172,7 @@ export function renderReady(root: HTMLElement, existing?: ReadyExisting): Promis
     const dot = cameraDot(s.common.cameraActive)
     dot.style.visibility = existing ? 'visible' : 'hidden'
 
-    const cameraTile = el('div', { class: 'bento-tile bento-tile--plain ready-grid__camera' }, [status, preview, dot])
+    const cameraTile = el('div', { class: 'bento-tile ready-grid__camera' }, [status, preview, dot])
 
     let bundle: PerceptionBundle | null = existing?.bundle ?? null
     let loop: PerceptionLoopHandle | null = null

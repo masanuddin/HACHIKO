@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, checkboxItem, el, field, paperCard, screen, textInput, titleWithDoodle } from '../components'
+import { actions, body, button, card, checkboxItem, el, field, screen, textInput, titleWithDoodle } from '../components'
 import { mascotPeek } from '../hachiko'
 
 export function renderConsent(root: HTMLElement): Promise<{ guardianName: string }> {
@@ -29,11 +29,8 @@ export function renderConsent(root: HTMLElement): Promise<{ guardianName: string
       mascotPeek(),
       titleWithDoodle(s.title, 'squiggle'),
       body(s.intro),
-      paperCard([el('h2', { class: 'card__title' }, [s.cameraExplainerTitle]), body(s.cameraExplainer)], {
-        tilt: 'b',
-        tape: true,
-      }),
-      paperCard([permission.element, camera.element, noReport.element], { tilt: 'e', torn: 'b' }),
+      card(el('h2', { class: 'card__title' }, [s.cameraExplainerTitle]), body(s.cameraExplainer)),
+      card(permission.element, camera.element, noReport.element),
       nameField.element,
       actions(button(s.continueLabel, submit)),
     )

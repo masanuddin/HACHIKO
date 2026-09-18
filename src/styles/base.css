@@ -327,8 +327,8 @@ input:focus-visible,
 }
 
 /* ---- Session Card bento grid (current-session recap only; history
-   cards below it stay in the plain .metrics list, just with the paper
-   card treatment - see sessionCard.ts) ---- */
+   cards below it stay in the plain .metrics list, just with the same
+   card look - see sessionCard.ts) ---- */
 .bento {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
