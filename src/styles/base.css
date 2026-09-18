@@ -519,6 +519,34 @@ input:focus-visible,
      responsive by default (see above) - no override needed here. */
 }
 
+/* ---- Calibration grid (camera left, mascot/status/ring/countdown
+   in line with it on the right) - same two-column shape as
+   .ready-grid above, just simpler: two stacked columns, not a named
+   4-area grid, since there's no stepper/chip content here. */
+.calibration-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.calibration-grid__camera {
+  min-width: 0;
+}
+
+.calibration-grid__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .calibration-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Hybrid stepper ([-][input][+] + presets) ---- */
 .stepper {
   display: flex;

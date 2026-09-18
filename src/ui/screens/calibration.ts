@@ -70,6 +70,10 @@ export function renderCalibration(
     // math and layer a crossfade on top of the intended "box expands
     // in place" read.
     content.classList.add('screen__content--no-enter')
+    // Same reasoning as Ready's own fix: a 2-column layout (camera left,
+    // text right) needs more room than .screen__content's 720px default,
+    // or it strands as a narrow strip in the middle of a wide viewport.
+    content.classList.add('screen__content--wide')
 
     // A calm, watching presence for the 15 seconds - the student still
     // needs to sit naturally and look at the camera, so this stays
@@ -121,16 +125,15 @@ export function renderCalibration(
       { variant: 'secondary' },
     )
 
-    content.append(
-      titleWithDoodle(s.title, 'sparkle'),
-      mascotEl,
-      status,
-      ring.element,
-      countdown,
-      hint,
-      preview,
-      actions(cancelBtn, continueBtn),
-    )
+    // Camera on the left, the mascot/status/ring/countdown/hint stacked
+    // in line with it on the right - same two-column shape as Ready's
+    // own camera+controls grid, just with the info column narrower
+    // since there's no stepper/chip content here.
+    const infoColumn = el('div', { class: 'calibration-grid__info' }, [mascotEl, status, ring.element, countdown, hint])
+    const cameraColumn = el('div', { class: 'calibration-grid__camera' }, [preview])
+    const grid = el('div', { class: 'calibration-grid' }, [cameraColumn, infoColumn])
+
+    content.append(titleWithDoodle(s.title, 'sparkle'), grid, actions(cancelBtn, continueBtn))
     root.replaceChildren(screenEl)
     flipExpand(preview, fromRect)
 
