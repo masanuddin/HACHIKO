@@ -1,4 +1,4 @@
-import { strings, formatDuration, formatFocusLine, sessionObservation } from './strings'
+import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from './strings'
 import { computeMetrics, type SessionRecord } from '../storage/sessions'
 
 /**
@@ -71,10 +71,15 @@ function isLatin1Safe(s: string): boolean {
   return /^[\u0020-\u007E\u00A0-\u00FF]*$/.test(s)
 }
 
-/** Builds the page content stream (text + a filled card) for one session. */
-function buildContent(record: SessionRecord): string {
+/** Builds the page content stream (text + a filled card) for one session.
+ *  `name` is the student's own profile name (see storage/profile.ts) -
+ *  passed in rather than read here, since this module stays pure/DOM-free
+ *  and testable under Node, and profile storage is a browser-only,
+ *  localStorage-backed concern the caller already has loaded. */
+function buildContent(record: SessionRecord, name?: string): string {
   const s = strings.sessionCard
   const m = computeMetrics(record)
+  const title = isLatin1Safe(name ?? '') ? sessionTitle(name) : s.title
 
   const focusValue = formatFocusLine(m.focusMs, m.sittingMs)
   const sittingValue = formatDuration(m.sittingMs)
@@ -85,7 +90,7 @@ function buildContent(record: SessionRecord): string {
 
   // Header
   out.push(drawText('F2', 15, 64, 790, C.amber, strings.common.appName))
-  out.push(drawText('F2', 26, 64, 756, C.ink, s.title))
+  out.push(drawText('F2', 26, 64, 756, C.ink, title))
   out.push(drawText('F1', 11, 64, 738, C.muted, sessionTimestamp(record.startedAt)))
 
   // Study topic (metadata), shown in the header gap when present and
@@ -161,9 +166,12 @@ function buildPdfDocument(content: string): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(header + body + xref + trailer)
 }
 
-/** Generates a human-readable PDF for the current session. Pure - no DOM. */
-export function buildSessionReportPdf(record: SessionRecord): Uint8Array<ArrayBuffer> {
-  return buildPdfDocument(buildContent(record))
+/** Generates a human-readable PDF for the current session. Pure - no DOM.
+ *  `name` is optional and comes from the caller's already-loaded profile
+ *  (see buildContent's doc comment for why this module doesn't load it
+ *  itself); omitting it falls back to the plain, unpersonalized title. */
+export function buildSessionReportPdf(record: SessionRecord, name?: string): Uint8Array<ArrayBuffer> {
+  return buildPdfDocument(buildContent(record, name))
 }
 
 /** `hachiko-session-YYYY-MM-DD-HH-mm.pdf`, from the session's start time. */
