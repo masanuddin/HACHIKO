@@ -36,6 +36,71 @@ export const ROUNDS_PER_SET_OPTIONS = [1, 2, 3, 4]
 export const DEFAULT_ROUNDS_PER_SET = 4
 
 /**
+ * Shared bounds for every duration stepper (work, short break, long
+ * break) on the merged Ready screen - see the 2026-09-17 design spec.
+ */
+export const DURATION_MIN_MS = 1 * 60_000
+export const DURATION_MAX_MS = 60 * 60_000
+
+// Break-duration ceilings are a share of the chosen work duration, not
+// a fixed number - a break shouldn't be able to outlast (or nearly
+// outlast) the work block it follows.
+export const BREAK_MAX_RATIO = 0.5
+export const LONG_BREAK_MAX_RATIO = 2 / 3
+
+/** Plain min/max clamp - deliberately does NOT round to whole minutes,
+ * so a preset like FAST_DEBUG_WORK_MS (30s) still passes through
+ * exactly instead of getting rounded up to a full minute. Guards
+ * against an inverted range (maxMs < minMs, reachable in practice when
+ * a very short work duration drives maxBreakMs below DURATION_MIN_MS -
+ * see maxBreakMs below) by widening maxMs up to minMs rather than
+ * letting Math.min/Math.max silently return the smaller, wrong bound. */
+export function clampDurationMs(rawMs: number, minMs: number, maxMs: number): number {
+  const safeMax = Math.max(minMs, maxMs)
+  return Math.min(safeMax, Math.max(minMs, rawMs))
+}
+
+/** The effective ceiling for a break-duration stepper: a ratio of the
+ * current work duration, floored to a whole minute so the displayed
+ * value (via formatDuration, which floors) never understates the
+ * actual clamped duration - never above the shared absolute max. */
+export function maxBreakMs(workMs: number, ratio: number): number {
+  const raw = Math.min(DURATION_MAX_MS, workMs * ratio)
+  return Math.floor(raw / 60_000) * 60_000
+}
+
+export interface TimelinePreviewItem {
+  kind: 'work' | 'break' | 'longBreak'
+  ms: number
+}
+
+/**
+ * A preview of what one full set looks like under the chosen durations
+ * and rounds-per-set - purely informational, shown once when the
+ * student taps "Mulai", before the real multi-cycle loop starts. Not a
+ * commitment: `runSession`'s "Fokus lagi?" loop (session.ts) still asks
+ * after every real break, exactly as it always has, and can keep going
+ * indefinitely past what's shown here. This mirrors that same loop's
+ * actual cadence exactly (`cycleInSet >= roundsPerSet` - see
+ * session.ts) rather than inventing a different rule for the preview:
+ * a long break completes each set, everything before it is a normal
+ * short break.
+ */
+export function buildTimelinePreview(
+  workMs: number,
+  breakMs: number,
+  longBreakMs: number,
+  rounds: number,
+): TimelinePreviewItem[] {
+  const items: TimelinePreviewItem[] = []
+  for (let round = 1; round <= rounds; round++) {
+    items.push({ kind: 'work', ms: workMs })
+    items.push({ kind: round === rounds ? 'longBreak' : 'break', ms: round === rounds ? longBreakMs : breakMs })
+  }
+  return items
+}
+
+/**
  * ?fastdebug in the URL swaps in a 30-second work/break pair on the
  * Ready screen, so the multi-cycle loop can be iterated on without
  * waiting through a real block. Invisible without that query param -
@@ -61,6 +126,13 @@ export const FAST_DEBUG_LONG_BREAK_MS = 60_000
 // so a rough first minute can't trigger it.
 export const EARLY_BREAK_MIN_ELAPSED_RATIO = 1 / 3
 
+// Below this share of the block elapsed, "Selesai" is treated as
+// stopping well short of the committed time - the confirm card shows a
+// neutral (not sad) mascot reaction instead of the plain text-only
+// version. Same ratio as EARLY_BREAK_MIN_ELAPSED_RATIO, kept as its own
+// named constant since the two checks mean different things.
+export const EARLY_STOP_RATIO = 1 / 3
+
 // Share of elapsed time spent in TERALIH/UNCERTAIN/MENGANTUK that counts
 // as "this block isn't working right now."
 export const EARLY_BREAK_STRUGGLE_RATIO = 0.5
@@ -83,3 +155,15 @@ export const STIRRING_RATIO = 0.5
 // defaults to its declined outcome instead of blocking the session at
 // 0:00 forever. Same "silent safety net" style as BREAK_ABANDON_MS.
 export const NUDGE_AUTO_DISMISS_MS = 25 * 1000
+
+// Beyond this many ms since the last processed frame, session.ts treats
+// the gap as a stall (Jeda held, the Selesai confirm left open, a
+// backgrounded tab) rather than continuously-elapsed time - otherwise
+// the frame that arrives right after resuming would credit the whole
+// real-world paused duration to remainingMs/durationsMs in one step,
+// since Frame.t (performance.now(), see camera.ts) keeps advancing
+// through the pause even though ticks are ignored while `paused` is
+// true. Same value and reasoning as focusEngine.ts's own
+// MAX_PLAUSIBLE_DT_MS - kept as a separate constant rather than a
+// shared import since src/engine/ must stay independent of src/ui/.
+export const MAX_PLAUSIBLE_DT_MS = 1000

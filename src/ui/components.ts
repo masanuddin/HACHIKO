@@ -4,6 +4,9 @@
  * (keeps attributes safe without an escaping layer to maintain).
  */
 
+import { clampDurationMs } from './sessionConfig'
+import { formatDuration } from './strings'
+
 type Attrs = Record<string, string | undefined>
 
 export function el<K extends keyof HTMLElementTagNameMap>(
@@ -75,6 +78,103 @@ export function card(...children: (Node | string)[]): HTMLDivElement {
   return el('div', { class: 'card' }, children)
 }
 
+/**
+ * A modal confirm: a dimmed backdrop plus a centered card, appended to
+ * the screen's own root element (the <main class="screen">, NOT
+ * .screen__content) - same reasoning as session.ts's mentor panel:
+ * appending here escapes .screen__content's entrance-animation
+ * transform (which would otherwise become this element's `position:
+ * fixed` containing block) while staying a descendant of
+ * .screen--night when the caller is the night screen, so the night
+ * card palette still applies via the existing `.screen--night .card`
+ * rule. Reserved for confirming a decision the student/parent already
+ * initiated - never for an unprompted system offer (see
+ * showEarlyBreakNudge/showExtensionNudge in session.ts, which stay
+ * inline on purpose).
+ *
+ * Backdrop click and Escape both call `onCancel` - dismissing a modal
+ * must never be equivalent to confirming it. The caller is responsible
+ * for calling the returned `close()` from both its own Cancel button
+ * and its confirm button (and from `onCancel` too, if it doesn't
+ * already delegate to the same cancel function that does).
+ *
+ * `opts.wide` is for content that can genuinely be long (a scrollable
+ * list, not a title + two buttons) - it caps the dialog's own height
+ * and scrolls internally instead, rather than relying on the backdrop
+ * scrolling: centering a flex item that overflows a scroll container
+ * can clip its start in some browsers, and this sidesteps that
+ * entirely for the one case tall enough to hit it.
+ */
+export function confirmOverlay(
+  mount: HTMLElement,
+  children: (Node | string)[],
+  onCancel: () => void,
+  opts: { wide?: boolean } = {},
+): { close: () => void } {
+  const previouslyFocused = document.activeElement as HTMLElement | null
+  const backdrop = el('div', { class: 'overlay-backdrop' })
+  const dialog = card(...children)
+  dialog.classList.add('overlay-dialog')
+  if (opts.wide) dialog.classList.add('overlay-dialog--wide')
+  dialog.setAttribute('role', 'dialog')
+  dialog.setAttribute('aria-modal', 'true')
+  dialog.tabIndex = -1
+  backdrop.append(dialog)
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') onCancel()
+  }
+
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) onCancel()
+  })
+  document.addEventListener('keydown', onKeydown)
+
+  mount.append(backdrop)
+  dialog.focus()
+
+  return {
+    close: () => {
+      backdrop.remove()
+      document.removeEventListener('keydown', onKeydown)
+      previouslyFocused?.focus()
+    },
+  }
+}
+
+export type DoodleMarkName = 'squiggle' | 'sparkle' | 'swirl' | 'paw' | 'scribble-circle'
+
+const DOODLE_MARK_SVG: Record<DoodleMarkName, string> = {
+  squiggle: `<svg viewBox="0 0 32 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M2 11c3-8 6-8 9 0s6 8 9 0 6-8 9 0"/></svg>`,
+  sparkle: `<svg viewBox="0 0 32 32" fill="currentColor"><path d="M16 2c0 6.5 1 9 2.5 10.5S25 15 30 16c-6.5 0-9 1-10.5 2.5S16 25 16 30c0-6.5-1-9-2.5-10.5S8 17 2 16c6.5 0 9-1 10.5-2.5S16 8 16 2z"/></svg>`,
+  swirl: `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20c0 5 4 8 9 8s9-4 9-9-3-8-7-8-6 2-6 6 3 5 6 5 4-1.5 4-3.5"/><path d="M20 17l3 2-1 3.5"/></svg>`,
+  paw: `<svg viewBox="0 0 32 32" fill="currentColor"><ellipse cx="16" cy="22" rx="8" ry="6.5"/><ellipse cx="6" cy="12" rx="3" ry="4" transform="rotate(-15 6 12)"/><ellipse cx="13" cy="7" rx="3" ry="4"/><ellipse cx="20" cy="7" rx="3" ry="4"/><ellipse cx="27" cy="12" rx="3" ry="4" transform="rotate(15 27 12)"/></svg>`,
+  'scribble-circle': `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6c-8-3-16 2-16 10s7 12 13 10 9-8 7-14c-1-3-4-4-4-4"/></svg>`,
+}
+
+/**
+ * A small hand-drawn-style decorative mark (never informational - always
+ * aria-hidden). Fixed, deterministic per call site, same "no
+ * Math.random()" rule the tilt tokens and confetti pattern already
+ * follow - each screen picks its mark explicitly, nothing rotates at
+ * runtime.
+ */
+export function doodleMark(name: DoodleMarkName, opts: { size?: string } = {}): HTMLDivElement {
+  const mark = el('div', { class: 'doodle-mark', 'aria-hidden': 'true' })
+  mark.innerHTML = DOODLE_MARK_SVG[name]
+  if (opts.size) {
+    mark.style.width = opts.size
+    mark.style.height = opts.size
+  }
+  return mark
+}
+
+/** A screen title paired with a small hand-drawn decorative mark - the
+ * one consistent decorative touch every daylight screen shares. */
+export function titleWithDoodle(text: string, mark: DoodleMarkName): HTMLDivElement {
+  return el('div', { class: 'title-row' }, [title(text), doodleMark(mark)])
+}
+
 /** Multi- or single-select chip group. Returns the element and a getter. */
 export function chipGroup(
   options: { value: string; label: string }[],
@@ -143,4 +243,154 @@ export function checkboxItem(labelText: string): { element: HTMLDivElement; chec
   const labelEl = el('label', { for: id }, [labelText])
   const wrap = el('div', { class: 'consent-item' }, [checkbox, labelEl])
   return { element: wrap, checkbox }
+}
+
+/**
+ * `[-] [input] [+]` plus a row of preset buttons, for any duration in
+ * milliseconds. Used for work/short-break/long-break duration on the
+ * Ready screen - NOT for rounds-per-set, which stays the simple
+ * preset-chip picker (`chipGroup`) it already was; a free-typed number
+ * of rounds has no sensible general meaning past a handful of presets
+ * (see the 2026-09-17 design spec's "Algorithm notes").
+ */
+export function stepper(opts: {
+  label: string
+  initialMs: number
+  minMs: number
+  maxMs: number
+  presetsMs: number[]
+  onChange: (ms: number) => void
+}): { element: HTMLDivElement; setMax: (newMaxMs: number) => void } {
+  let valueMs = opts.initialMs
+  let maxMs = opts.maxMs
+
+  const input = el('input', {
+    type: 'text',
+    inputmode: 'numeric',
+    class: 'stepper__input',
+  }) as HTMLInputElement
+
+  // Trusted values (presets, the initial value) are set exactly as
+  // given, bypassing the min/max clamp entirely - a preset like
+  // FAST_DEBUG_WORK_MS (30s) is deliberately below DURATION_MIN_MS
+  // (1 minute), and clamping it here would silently round it up to a
+  // full minute, defeating its whole purpose. Only interactive nudging
+  // (+/-, typed input, and a work-duration change re-clamping the break
+  // steppers via setMax) goes through applyClamped.
+  function setRaw(ms: number): void {
+    valueMs = ms
+    input.value = formatDuration(valueMs)
+    opts.onChange(valueMs)
+  }
+
+  function applyClamped(ms: number): void {
+    setRaw(clampDurationMs(ms, opts.minMs, maxMs))
+  }
+
+  const minusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Kurangi' }, ['-'])
+  const plusBtn = el('button', { class: 'stepper__btn', type: 'button', 'aria-label': 'Tambah' }, ['+'])
+
+  minusBtn.addEventListener('click', () => applyClamped(valueMs - 60_000))
+  plusBtn.addEventListener('click', () => applyClamped(valueMs + 60_000))
+
+  // Long-press auto-repeat: the click handlers above already cover a
+  // single tap; holding the button repeats every ACCELERATE_MS once
+  // ACCELERATE_AFTER_MS has passed. Plain timers, no new dependency.
+  const ACCELERATE_MS = 120
+  const ACCELERATE_AFTER_MS = 600
+
+  function holdRepeat(btn: HTMLButtonElement, direction: 1 | -1): void {
+    let timeout: number | null = null
+    let interval: number | null = null
+
+    function stop(): void {
+      if (timeout !== null) window.clearTimeout(timeout)
+      if (interval !== null) window.clearInterval(interval)
+      timeout = null
+      interval = null
+    }
+
+    btn.addEventListener('pointerdown', () => {
+      timeout = window.setTimeout(() => {
+        interval = window.setInterval(() => applyClamped(valueMs + direction * 60_000), ACCELERATE_MS)
+      }, ACCELERATE_AFTER_MS)
+    })
+    btn.addEventListener('pointerup', stop)
+    btn.addEventListener('pointerleave', stop)
+  }
+
+  holdRepeat(minusBtn, -1)
+  holdRepeat(plusBtn, 1)
+
+  input.addEventListener('blur', () => {
+    // If the field wasn't actually edited, leave it alone. formatDuration()
+    // renders sub-minute values in SECONDS ("30 detik" for the fastdebug
+    // preset) but typed input is always interpreted as whole MINUTES below -
+    // without this early return, merely focusing and blurring the field
+    // without retyping anything would reparse "30 detik" as 30 and
+    // reinterpret it as 30 minutes, silently destroying the exact
+    // sub-minute value setRaw/applyClamped exists to protect.
+    if (input.value === formatDuration(valueMs)) return
+    const parsed = Number.parseInt(input.value, 10)
+    if (Number.isNaN(parsed)) {
+      input.value = formatDuration(valueMs)
+      return
+    }
+    applyClamped(parsed * 60_000)
+  })
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur()
+  })
+
+  const presetButtons = opts.presetsMs.map((presetMs) => {
+    const btn = el('button', { class: 'preset-chip', type: 'button' }, [formatDuration(presetMs)])
+    btn.addEventListener('click', () => setRaw(presetMs))
+    return btn
+  })
+
+  const element = el('div', { class: 'stepper' }, [
+    el('span', { class: 'metric__label' }, [opts.label]),
+    el('div', { class: 'stepper__row' }, [minusBtn, input, plusBtn]),
+    el('div', { class: 'stepper__presets' }, presetButtons),
+  ])
+
+  setRaw(valueMs)
+
+  return {
+    element,
+    setMax: (newMaxMs: number) => {
+      maxMs = newMaxMs
+      // Deliberate rough edge: if valueMs currently sits below
+      // DURATION_MIN_MS via a preset (only possible for the fastdebug
+      // 30s presets), this re-clamp silently normalizes it back up to
+      // the minimum. Accepted trade-off for a hidden dev-only shortcut
+      // rather than adding a "this came from a preset" tracking flag.
+      applyClamped(valueMs)
+    },
+  }
+}
+
+/**
+ * A collapsed-by-default section - used for "Pengaturan istirahat" on
+ * the Ready screen so the common case (just pick a duration and go)
+ * doesn't get more crowded than the app already is.
+ */
+export function disclosure(summaryText: string, content: HTMLElement[]): { element: HTMLDivElement } {
+  const chevron = el('span', { class: 'disclosure__chevron', 'aria-hidden': 'true' }, ['▸'])
+  const summaryBtn = el(
+    'button',
+    { class: 'disclosure__summary', type: 'button', 'aria-expanded': 'false' },
+    [chevron, summaryText],
+  )
+  const panel = el('div', { class: 'disclosure__panel' }, content)
+  panel.hidden = true
+
+  summaryBtn.addEventListener('click', () => {
+    const opening = panel.hidden
+    panel.hidden = !opening
+    summaryBtn.setAttribute('aria-expanded', String(opening))
+    summaryBtn.classList.toggle('disclosure__summary--open', opening)
+  })
+
+  return { element: el('div', { class: 'disclosure' }, [summaryBtn, panel]) }
 }

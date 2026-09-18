@@ -20,11 +20,11 @@ woff2 per family (smallest total payload, matches the `font-weight: 400
 ```bash
 # Plus Jakarta Sans variable font, from the official GitHub release
 curl -L -o public/fonts/PlusJakartaSans-Variable.woff2 \
-  https://github.com/tokotype/PlusJakartaSans/raw/master/fonts/webfonts/PlusJakartaSans-VariableFont_wght.woff2
+  "https://github.com/tokotype/PlusJakartaSans/raw/master/fonts/webfonts/PlusJakartaSans%5Bwght%5D.woff2"
 
 # Inter variable font, from the official GitHub release
 curl -L -o public/fonts/Inter-Variable.woff2 \
-  https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Variable.woff2
+  https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.woff2
 ```
 
 If either link has moved, download the "variable font" package from the

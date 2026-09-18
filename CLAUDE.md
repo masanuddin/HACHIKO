@@ -129,7 +129,7 @@ attempt, so those specific constraints never mattered either way.
 - `runSession` (in `src/ui/screens/session.ts`) owns the loop; `runWorkPhase` runs a single cycle and returns its own record, merged afterward - see `docs/superpowers/specs/2026-09-13-multi-cycle-pomodoro-port-design.md`.
 
 ### Metrics
-- **Waktu Away** = `durationsMs.TIDAK_HADIR`.
+- **Waktu Absen** = `durationsMs.TIDAK_HADIR`.
 - **Waktu Duduk** = `FOKUS + TERALIH + MENGANTUK + UNCERTAIN` (present time).
 - Focus line zero state renders `"0 detik dari 0 detik"`.
 - Recovery time is recorded but not displayed as a metric.

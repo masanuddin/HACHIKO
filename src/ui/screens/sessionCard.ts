@@ -1,5 +1,5 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from '../strings'
-import { actions, body, button, card, el, screen, title } from '../components'
+import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
 import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { loadProfile } from '../../storage/profile'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
@@ -10,9 +10,11 @@ function metric(label: string, value: string): HTMLDivElement {
   return el('div', { class: 'metric' }, [el('span', { class: 'metric__label' }, [label]), el('span', { class: 'metric__value' }, [value])])
 }
 
-/** The Session Card numbers (PRD §8), shared by the current card and
- * the read-only history cards below it. `dari` total is the session's
- * actual active time (focus + sitting + uncertain) - no new timing here. */
+/** The Session Card numbers (PRD §8), used by the read-only history
+ * cards below the current session (the current session gets the bento
+ * layout instead - see `bentoMetrics` below, which reads the same
+ * `SessionMetrics` shape). `dari` total is the session's actual active
+ * time (focus + sitting + uncertain) - no new timing here. */
 function metricGrid(m: SessionMetrics): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'metrics' }, [
@@ -20,6 +22,45 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
+  ])
+}
+
+function bentoTile(
+  modifier: string,
+  tint: 'sand' | 'amber-tint' | 'sage-tint' | null,
+  children: (Node | string)[],
+): HTMLDivElement {
+  const classes = ['bento-tile', `bento-tile--${modifier}`]
+  if (tint) classes.push(`bento-tile--${tint}`)
+  return el('div', { class: classes.join(' ') }, children)
+}
+
+function tileMetric(label: string, value: string, big = false): HTMLElement[] {
+  return [
+    el('span', { class: 'metric__label' }, [label]),
+    el('span', { class: big ? 'metric__value metric__value--big' : 'metric__value' }, [value]),
+  ]
+}
+
+/**
+ * The current session's numbers as a bento grid (mascot tile,
+ * a bigger Fokus tile since it's the headline number, the remaining
+ * three metrics, and a wide observation tile) instead of the flat 2x2
+ * grid `metricGrid` still renders for history. Same six pieces of
+ * content as before - no metric added or dropped, just recomposed.
+ */
+function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
+  const s = strings.sessionCard
+  return el('div', { class: 'bento' }, [
+    bentoTile('mascot', 'sand', [mascotPeek()]),
+    bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true)),
+    bentoTile('duduk', null, tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
+    bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
+    bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),
+    bentoTile('observation', 'sand', [
+      el('p', { class: 'observation' }, [observationText]),
+      doodleMark('paw', { size: '36px' }),
+    ]),
   ])
 }
 
@@ -47,27 +88,38 @@ function topicInsight(record: SessionRecord): (Node | string)[] {
 }
 
 /**
- * One read-only history card with an inline-confirmed delete control.
- * The delete button swaps in place to a "Hapus sesi ini?" confirm; the
- * current session (excluded from history) can never be deleted here.
+ * One read-only history card with a delete control that opens a confirm
+ * overlay. The current session (excluded from history) can never be
+ * deleted here.
  */
-function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTMLDivElement {
+function historyCard(
+  record: SessionRecord,
+  _index: number,
+  onDelete: (id: string) => void,
+  screenEl: HTMLElement,
+): HTMLDivElement {
   const s = strings.sessionCard
-  const controls = el('div', { class: 'history-card__actions' })
-
-  function showDelete(): void {
-    controls.replaceChildren(button(s.deleteSessionLabel, showConfirm, { variant: 'secondary' }))
-  }
 
   function showConfirm(): void {
-    controls.replaceChildren(
-      el('span', { class: 'history-card__confirm' }, [s.deleteConfirmTitle]),
-      button(s.deleteConfirmYes, () => onDelete(record.id), { variant: 'secondary' }),
-      button(s.deleteConfirmCancel, showDelete, { variant: 'secondary' }),
+    const overlay = confirmOverlay(
+      screenEl,
+      [
+        el('h2', { class: 'card__title' }, [s.deleteConfirmTitle]),
+        actions(
+          button(s.deleteConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+          button(s.deleteConfirmYes, () => {
+            overlay.close()
+            onDelete(record.id)
+          }),
+        ),
+      ],
+      () => overlay.close(),
     )
   }
 
-  showDelete()
+  const controls = el('div', { class: 'history-card__actions' }, [
+    button(s.deleteSessionLabel, showConfirm, { variant: 'secondary' }),
+  ])
 
   return card(
     el('p', { class: 'history-card__time' }, [sessionTimeLabel(record.startedAt)]),
@@ -78,40 +130,91 @@ function historyCard(record: SessionRecord, onDelete: (id: string) => void): HTM
 }
 
 /**
- * Previous completed sessions, newest first. Storage already keeps every
- * session (saveSession appends); this just stops the UI from dropping
- * them. Renders only when there is at least one prior session.
+ * A compact, clickable summary of past sessions - shown as a "dashboard"
+ * beside the current-session bento grid (see .session-card-grid).
+ * Clicking it opens the full list in a wide confirmOverlay rather than
+ * navigating anywhere - this app has no router, and a large overlay
+ * reuses the same dismissible pattern every other confirm already does.
  */
-function historySection(currentId: string, onDelete: (id: string) => void, onDeleteAll: () => void): HTMLElement | null {
-  const previous = listSessions()
-    .filter((r) => r.id !== currentId)
-    .sort((a, b) => b.startedAt - a.startedAt)
-  if (previous.length === 0) return null
-
+function historyDashboard(count: number, onExpand: () => void): HTMLButtonElement {
   const s = strings.sessionCard
-  const cards = previous.map((r) => historyCard(r, onDelete))
+  const dashboard = el('button', { class: 'card session-history-dashboard', type: 'button' }, [
+    el('h2', { class: 'card__title' }, [s.historyTitle]),
+    el('p', { class: 'session-history-dashboard__count' }, [s.historyCount(count)]),
+    el('span', { class: 'session-history-dashboard__cta' }, [s.historyViewAll]),
+  ])
+  dashboard.addEventListener('click', onExpand)
+  return dashboard
+}
 
+/**
+ * The expanded history list's content, shown inside a wide confirmOverlay.
+ * `render()` re-draws just the list/delete-all controls in place (the
+ * overlay itself stays open) so deleting an entry doesn't kick the
+ * student back out to the main screen - and calls `onEmpty` if that
+ * delete just emptied the list entirely, since there's nothing left to
+ * browse at that point. `onChange` runs after every delete so the
+ * caller can refresh the compact dashboard's count behind the overlay.
+ */
+function historyOverlayContent(
+  currentId: string,
+  onDelete: (id: string) => void,
+  onDeleteAll: () => void,
+  onChange: () => void,
+  onEmpty: () => void,
+  screenEl: HTMLElement,
+): (Node | string)[] {
+  const s = strings.sessionCard
+  const listEl = el('div', { class: 'session-history__list' })
   const allControls = el('div', { class: 'session-history__delete-all' })
 
-  function showDeleteAll(): void {
+  function render(): void {
+    const previous = listSessions()
+      .filter((r) => r.id !== currentId)
+      .sort((a, b) => b.startedAt - a.startedAt)
+    if (previous.length === 0) {
+      onEmpty()
+      return
+    }
+    listEl.replaceChildren(
+      ...previous.map((r, i) =>
+        historyCard(
+          r,
+          i,
+          (id) => {
+            onDelete(id)
+            onChange()
+            render()
+          },
+          screenEl,
+        ),
+      ),
+    )
     allControls.replaceChildren(button(s.deleteAllSessionsLabel, showDeleteAllConfirm, { variant: 'secondary' }))
   }
 
   function showDeleteAllConfirm(): void {
-    allControls.replaceChildren(
-      el('span', { class: 'history-card__confirm' }, [s.deleteAllConfirmTitle]),
-      button(s.deleteAllConfirmYes, onDeleteAll, { variant: 'secondary' }),
-      button(s.deleteConfirmCancel, showDeleteAll, { variant: 'secondary' }),
+    const overlay = confirmOverlay(
+      screenEl,
+      [
+        el('h2', { class: 'card__title' }, [s.deleteAllConfirmTitle]),
+        actions(
+          button(s.deleteConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+          button(s.deleteAllConfirmYes, () => {
+            overlay.close()
+            onDeleteAll()
+            onChange()
+            render()
+          }),
+        ),
+      ],
+      () => overlay.close(),
     )
   }
 
-  showDeleteAll()
+  render()
 
-  return el('div', { class: 'session-history' }, [
-    el('h2', { class: 'session-history__title' }, [s.historyTitle]),
-    el('div', { class: 'session-history__list' }, cards),
-    allControls,
-  ])
+  return [el('h2', { class: 'card__title' }, [s.historyTitle]), listEl, allControls]
 }
 
 /** Only ever positive - there is no "you missed a milestone" text, because
@@ -152,13 +255,15 @@ export function renderSessionCard(
   return new Promise((resolve) => {
     const s = strings.sessionCard
     const { root: screenEl, content } = screen()
+    // Same reasoning as Ready/Calibration's own fix: a 2-column layout
+    // (history dashboard left, bento right) needs more room than
+    // .screen__content's 720px default.
+    content.classList.add('screen__content--wide')
     const metrics = computeMetrics(record)
-    const metricsGrid = metricGrid(metrics)
-
-    const cardChildren: (Node | string)[] = [...topicLine(record), metricsGrid, el('p', { class: 'observation' }, [sessionObservation(metrics.firstCollapseAtMs)]), ...topicInsight(record)]
-    if (metrics.exceedsUncertainThreshold) {
-      cardChildren.push(el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote]))
-    }
+    const bento = bentoMetrics(metrics, sessionObservation(metrics.firstCollapseAtMs))
+    const thresholdNote = metrics.exceedsUncertainThreshold
+      ? el('p', { class: 'threshold-note' }, [s.uncertainThresholdNote])
+      : null
 
     let settled = false
 
@@ -188,29 +293,52 @@ export function renderSessionCard(
     const reportActions = actions(downloadBtn, doneBtn)
 
     const celebration: (Node | string)[] = milestone ? [celebrationBlock(milestone)] : []
-    const historyWrap = el('div')
 
-    function renderHistory(): void {
-      const history = historySection(
-        record.id,
-        (id) => {
-          deleteSession(id)
-          renderHistory()
-        },
-        () => {
-          deleteAllSessions()
-          renderHistory()
-        },
-      )
-      historyWrap.replaceChildren(...(history ? [history] : []))
+    // The history dashboard sits beside bento in this grid; when there's
+    // no history yet, dashboardWrap is removed from grid flow entirely
+    // (display:none) rather than left empty, so --solo's single column
+    // never leaves a phantom gap above bento (see the CSS comment).
+    const dashboardWrap = el('div')
+    const grid = el('div', { class: 'session-card-grid' }, [dashboardWrap, bento])
+
+    function refreshDashboard(): void {
+      const previousCount = listSessions().filter((r) => r.id !== record.id).length
+      if (previousCount === 0) {
+        dashboardWrap.replaceChildren()
+        dashboardWrap.style.display = 'none'
+        grid.classList.add('session-card-grid--solo')
+        return
+      }
+      dashboardWrap.style.display = ''
+      grid.classList.remove('session-card-grid--solo')
+      dashboardWrap.replaceChildren(historyDashboard(previousCount, openHistoryOverlay))
     }
-    renderHistory()
+
+    function openHistoryOverlay(): void {
+      const overlay = confirmOverlay(
+        screenEl,
+        historyOverlayContent(
+          record.id,
+          deleteSession,
+          deleteAllSessions,
+          refreshDashboard,
+          () => overlay.close(),
+          screenEl,
+        ),
+        () => overlay.close(),
+        { wide: true },
+      )
+    }
+
+    refreshDashboard()
 
     content.append(
-      title(sessionTitle(loadProfile()?.name)),
+      titleWithDoodle(sessionTitle(loadProfile()?.name), 'squiggle'),
       ...celebration,
-      card(...cardChildren),
-      historyWrap,
+      ...topicLine(record),
+      grid,
+      ...topicInsight(record),
+      ...(thresholdNote ? [thresholdNote] : []),
       body(s.downloadNote),
       reportActions,
       errorNote,

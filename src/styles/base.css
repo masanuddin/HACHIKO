@@ -10,14 +10,18 @@
    tokens.css take over - the UI stays legible either way. */
 @font-face {
   font-family: 'Plus Jakarta Sans';
-  src: url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations');
+  src:
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations'),
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
   font-weight: 400 800;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Inter';
-  src: url('/fonts/Inter-Variable.woff2') format('woff2-variations');
+  src:
+    url('/fonts/Inter-Variable.woff2') format('woff2-variations'),
+    url('/fonts/Inter-Variable.woff2') format('woff2');
   font-weight: 400 700;
   font-display: swap;
 }
@@ -115,6 +119,19 @@ svg {
   }
 }
 
+/* Calibration is the one screen a FLIP transition (transition.ts)
+   plays into - flipExpand measures and animates the camera preview's
+   own box, and preview is a descendant of .screen__content. Leaving
+   content-enter running at the same time means the ancestor is still
+   mid translateY(10px)->0 when flipExpand reads its "final" rect,
+   throwing off the computed offset by that amount, and the ancestor's
+   own opacity fade layers a crossfade on top of what's meant to read
+   as a single expanding box. Suppressing it here keeps the ancestor
+   geometrically stable for the one screen that needs it. */
+.screen__content--no-enter {
+  animation: none;
+}
+
 .screen__title {
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -125,6 +142,10 @@ svg {
 }
 
 .screen--night .screen__title {
+  color: var(--cream);
+}
+
+.screen--night .card__title {
   color: var(--cream);
 }
 
@@ -286,6 +307,418 @@ input:focus-visible,
   color: var(--ink);
 }
 
+/* ---- Confirm overlay (modal) ----
+   Reserved for confirming a decision the student/parent already
+   initiated (Selesai, Fokus lagi, delete). Never used for an
+   unprompted system offer - session__nudge's own "never a modal" rule
+   above is untouched by this. */
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(6px);
+  animation: overlay-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.overlay-dialog {
+  width: 100%;
+  max-width: 400px;
+  animation: overlay-dialog-in var(--duration-base) var(--ease-spring-soft);
+}
+
+@keyframes overlay-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* For content that can genuinely run long (a scrollable list) - see
+   confirmOverlay's `opts.wide` doc comment in components.ts. Bounds the
+   dialog's own height and scrolls internally rather than relying on
+   the backdrop's own overflow-y, which can clip a centered flex item's
+   start once it overflows in some browsers. overflow-y here overrides
+   just that axis of .card's own `overflow: hidden` shorthand. */
+.overlay-dialog--wide {
+  max-width: 640px;
+  max-height: min(80vh, 720px);
+  overflow-y: auto;
+}
+
+/* Small hand-drawn-style decorative mark - see doodleMark() in
+   components.ts. Purely decorative, always aria-hidden. */
+.doodle-mark {
+  width: 28px;
+  height: 28px;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.doodle-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* ---- Session Card bento grid (current-session recap only; history
+   cards below it stay in the plain .metrics list, just with the same
+   card look - see sessionCard.ts) ---- */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(84px, auto);
+  gap: var(--space-4);
+}
+
+.bento-tile {
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--cream);
+  border: 1px solid var(--cream-border);
+}
+
+.bento-tile--sand { background: var(--sand); border-color: transparent; }
+.bento-tile--amber-tint { background: var(--tile-amber); border-color: transparent; }
+.bento-tile--sage-tint { background: var(--tile-sage); border-color: transparent; }
+
+.bento-tile--mascot {
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+  align-items: center;
+  justify-content: center;
+}
+
+.bento-tile--focus { grid-column: 3 / 5; grid-row: 1; }
+.bento-tile--duduk { grid-column: 3; grid-row: 2; }
+.bento-tile--away { grid-column: 4; grid-row: 2; }
+.bento-tile--uncertain { grid-column: 1 / 3; grid-row: 3; }
+.bento-tile--observation { grid-column: 3 / 5; grid-row: 3; }
+
+@media (max-width: 640px) {
+  .bento {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bento-tile--mascot,
+  .bento-tile--focus,
+  .bento-tile--uncertain,
+  .bento-tile--observation {
+    grid-column: 1 / 3;
+    grid-row: auto;
+  }
+  .bento-tile--duduk,
+  .bento-tile--away {
+    grid-column: span 1;
+    grid-row: auto;
+  }
+}
+
+/* ---- Ready screen merge (camera + streak + media + duration + rounds) ----
+   A different grid shape from the Session Card's .bento (2 columns,
+   not 4), sharing only the .bento-tile base look. The camera tile gets
+   a FIXED height, never aspect-ratio derived from its spanned rows - that
+   combination caused a real bug during design (any relayout in the stepper
+   tiles, even a text-width change from clicking +/-, nudged the camera
+   box's computed size on every click). Fixed height sidesteps it entirely. */
+
+/* Found during manual verification: .screen__content's default
+   max-width (720px, tokens.css) is right for every other screen's
+   single-column text, but left this screen's 2-column bento grid
+   stranded as a narrow strip in the middle of a wide viewport. Applied
+   via ready.ts adding this class - scoped to this one screen, not a
+   change to the shared .screen__content default. */
+.screen__content--wide {
+  max-width: 1100px;
+}
+
+.ready-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-4);
+}
+
+.ready-grid__streak {
+  grid-column: 1 / 3;
+  grid-row: 1;
+  align-self: center;
+}
+
+.ready-grid__camera {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Responsive AND stable at once: sized from WIDTH (100% of this tile,
+   itself a fixed 2fr share of .ready-grid's own width), height derived
+   via aspect-ratio. This is one-directional - the tile's width never
+   depends on grid row auto-sizing, so it can't re-trigger the
+   feedback loop a height-first version of this hit during design
+   (any relayout in the stepper tiles nudging the camera's computed
+   size on every +/- click). A previous fixed-pixel version traded
+   away responsiveness entirely to dodge that bug; deriving from the
+   column's stable width dodges it without giving up responsiveness. */
+.ready-grid__camera .camera-preview {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
+.ready-grid__duration {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.ready-grid__rounds {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.ready-grid__media {
+  grid-column: 1 / 3;
+  grid-row: 4;
+}
+
+.screen__actions--end {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .ready-grid {
+    grid-template-columns: 1fr;
+  }
+  .ready-grid__streak,
+  .ready-grid__camera,
+  .ready-grid__duration,
+  .ready-grid__rounds,
+  .ready-grid__media {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  /* .ready-grid__camera .camera-preview is already width-driven and
+     responsive by default (see above) - no override needed here. */
+}
+
+/* ---- Calibration grid (camera left, mascot/status/ring/countdown
+   in line with it on the right) - same two-column shape as
+   .ready-grid above, just simpler: two stacked columns, not a named
+   4-area grid, since there's no stepper/chip content here. */
+.calibration-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.calibration-grid__camera {
+  min-width: 0;
+}
+
+.calibration-grid__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .calibration-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Hybrid stepper ([-][input][+] + presets) ---- */
+.stepper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stepper__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stepper__btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--cream-border);
+  background: var(--cream);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.stepper__btn:hover {
+  border-color: var(--amber);
+}
+
+.stepper__btn:active {
+  transform: scale(0.94);
+}
+
+.stepper__input {
+  width: 84px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1.5px solid var(--cream-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--cream);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+
+.stepper__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.preset-chip {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+  border: 1px dashed var(--cream-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  cursor: pointer;
+}
+
+.preset-chip:hover {
+  border-color: var(--amber);
+  color: var(--ink);
+}
+
+/* ---- Disclosure ("Pengaturan istirahat") ---- */
+.disclosure {
+  display: flex;
+  flex-direction: column;
+}
+
+.disclosure__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-muted);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.disclosure__chevron {
+  display: inline-block;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.disclosure__summary--open .disclosure__chevron {
+  transform: rotate(90deg);
+}
+
+.disclosure__panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--cream-border);
+}
+
+.disclosure__panel[hidden] {
+  display: none;
+}
+
+/* ---- Timeline preview (shown once, on "Mulai", before Calibration) ----
+   Purely informational - see buildTimelinePreview in sessionConfig.ts.
+   Work/break/long-break get distinct tints from the existing palette
+   only (amber = work, matching the app's one primary accent; sage =
+   break; amber-deep = long break, a deeper shade of the same accent
+   rather than a new hue). */
+.timeline-preview__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timeline-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.timeline-pill--work {
+  background: color-mix(in srgb, var(--amber) 16%, var(--cream));
+  color: var(--ink);
+}
+
+.timeline-pill--break {
+  background: color-mix(in srgb, var(--sage) 16%, var(--cream));
+  color: var(--ink);
+}
+
+.timeline-pill--long-break {
+  background: var(--amber-deep);
+  color: var(--cream);
+}
+
+.timeline-preview__arrow {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
 /* ---- Consent checkboxes ---- */
 .consent-item {
   display: flex;
@@ -352,6 +785,17 @@ input:focus-visible,
 
 .screen--night .note {
   color: color-mix(in srgb, var(--cream) 60%, transparent);
+}
+
+/* Calibration's ambient rotating hint - deliberately quiet (small,
+   muted, italic) so it reads as a passing thought, not an instruction
+   competing with the main body text above it. min-height keeps the
+   layout stable across the three hints' different lengths. */
+.calibration-hint {
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--ink-muted);
+  min-height: 1.5em;
 }
 
 /* ---- Camera preview + framing ---- */
@@ -485,8 +929,12 @@ input:focus-visible,
 
 .session__hachiko {
   position: relative;
-  width: 220px;
-  height: 220px;
+  /* Fixed 220px on any normal desktop width - min() only kicks in below
+     a ~400px viewport (a resized window, or an actual phone), scaling
+     down instead of sitting fixed-size with no fallback at all. The
+     ::before glow below is inset in %, so it follows automatically. */
+  width: min(220px, 55vw);
+  height: min(220px, 55vw);
 }
 
 /* A quiet pool of warmth under the mascot, like a nightlight - reinforces
@@ -615,6 +1063,9 @@ input:focus-visible,
 }
 
 .hachiko-pose {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   transition: transform var(--duration-slow) var(--ease-spring),
     opacity var(--duration-base) var(--ease-standard);
 }
@@ -719,14 +1170,17 @@ input:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.metric__value--big {
+  font-size: var(--text-2xl);
+}
+
+/* Only ever rendered inside the observation bento tile now (see
+   sessionCard.ts) - the tile itself provides the paper/background, so
+   this is text-only, not a second nested box. */
 .observation {
   font-size: var(--text-base);
   font-style: normal;
   color: var(--ink);
-  padding: var(--space-4);
-  background: var(--cream);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--cream-border);
 }
 
 .threshold-note {
@@ -734,18 +1188,60 @@ input:focus-visible,
   color: var(--amber-deep);
 }
 
-/* ---- Session history (previous sessions on the Session Card) ---- */
-.session-history {
+/* ---- Session Card grid (history dashboard left, current-session bento
+   right) - collapses to a single stacked column below 720px, same
+   breakpoint Ready/Calibration already use. --solo drops to one column
+   at any width when there's no history yet, so the (removed-from-flow,
+   display:none) empty dashboard slot never leaves a phantom grid gap
+   above the bento grid. */
+.session-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.session-card-grid--solo {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 720px) {
+  .session-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A compact, clickable summary of past sessions - opens the full list
+   in a wide confirmOverlay (see sessionCard.ts's openHistoryOverlay).
+   A real <button>, not a div with a click handler, so it's reachable
+   and activatable by keyboard like every other control in the app. */
+.session-history-dashboard {
+  appearance: none;
+  border: none;
+  cursor: pointer;
   text-align: left;
+  width: 100%;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
-.session-history__title {
-  font-size: var(--text-base);
-  font-weight: 700;
+.session-history-dashboard:hover {
+  transform: translateY(-2px);
+}
+
+.session-history-dashboard__count {
+  font-size: var(--text-sm);
   color: var(--ink-muted);
-  margin-bottom: var(--space-3);
 }
 
+.session-history-dashboard__cta {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--amber-deep);
+}
+
+/* ---- Session history (the expanded list, inside the wide overlay) ---- */
 .session-history__list {
   display: flex;
   flex-direction: column;
@@ -776,11 +1272,6 @@ input:focus-visible,
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-
-.history-card__confirm {
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
 }
 
 .session-history__delete-all {

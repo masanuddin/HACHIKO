@@ -293,7 +293,7 @@ Rules:
 Waktu fokus       14 dari 25
 Waktu balik       rata-rata 1m 40d
 Fokus pertama runtuh   menit ke-9
-Belum jelas       3 menit
+Waktu belum jelas       3 menit
 ```
 
 Showing "belum jelas" is not a weakness. It's the visible proof of the abstain principle, and it's the thing that makes the other numbers trustworthy.

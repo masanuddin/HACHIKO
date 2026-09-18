@@ -1,6 +1,8 @@
 import { strings } from '../strings'
-import { actions, body, button, el, screen, title } from '../components'
+import { actions, body, button, el, screen, titleWithDoodle } from '../components'
 import { cssVar } from '../theme'
+import { flipExpand } from '../transition'
+import { mascotPeek } from '../hachiko'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
 import type { FaceBox } from '../../perception/faceBox'
@@ -9,6 +11,12 @@ import { DEFAULT_CONFIG } from '../../engine/config'
 import type { Cone, Frame } from '../../engine/types'
 
 const CALIBRATION_MS = 15_000
+// The countdown is split into three equal windows, each showing one of
+// strings.calibration.hints - ambient/glanceable only, never something
+// the student has to stop and read (they still need to look at the
+// camera and sit naturally). Derived from CALIBRATION_MS rather than a
+// separate constant so the two can never drift out of sync.
+const HINT_WINDOW_MS = CALIBRATION_MS / 3
 const RING_RADIUS = 42
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 // Beyond this many ms since the last real detection, extrapolation stops
@@ -46,19 +54,41 @@ function progressRing(): { element: HTMLDivElement; setProgress: (ratio: number,
   }
 }
 
+export type CalibrationResult = { cancelled: true } | { cancelled: false; cone: Cone }
+
 export function renderCalibration(
   root: HTMLElement,
   video: HTMLVideoElement,
   bundle: PerceptionBundle,
-): Promise<{ cone: Cone }> {
+  fromRect: DOMRect,
+): Promise<CalibrationResult> {
   return new Promise((resolve) => {
     const s = strings.calibration
     const { root: screenEl, content } = screen()
+    // See the .screen__content--no-enter comment in base.css - the
+    // ancestor's own fade/slide-in would throw off flipExpand's rect
+    // math and layer a crossfade on top of the intended "box expands
+    // in place" read.
+    content.classList.add('screen__content--no-enter')
+    // Same reasoning as Ready's own fix: a 2-column layout (camera left,
+    // text right) needs more room than .screen__content's 720px default,
+    // or it strands as a narrow strip in the middle of a wide viewport.
+    content.classList.add('screen__content--wide')
+
+    // A calm, watching presence for the 15 seconds - the student still
+    // needs to sit naturally and look at the camera, so this stays
+    // peripheral: a gentle idle motion (reusing the existing breathing
+    // animation, not a new one) rather than anything that asks for
+    // attention. Swapped to 'celebrating' as a small payoff on completion.
+    let mascotEl = mascotPeek('waiting')
+    mascotEl.querySelector('img')?.classList.add('hachiko-sleep')
 
     const status = body(s.body)
     const ring = progressRing()
     ring.setProgress(0, '15')
     const countdown = el('p', { class: 'screen__body' }, [s.counting(15)])
+    const hint = el('p', { class: 'calibration-hint' }, [s.hints[0] ?? ''])
+    let lastHintIndex = 0
     const preview = el('div', { class: 'camera-preview' })
     const canvas = el('canvas', {})
     // The canvas draws the video frame itself (see the tick loop below) and
@@ -75,13 +105,37 @@ export function renderCalibration(
         if (!cone) return
         overlayLoop.stop()
         root.replaceChildren()
-        resolve({ cone })
+        resolve({ cancelled: false, cone })
       },
       { disabled: true },
     )
 
-    content.append(title(s.title), status, ring.element, countdown, preview, actions(continueBtn))
+    // Always enabled, unlike continueBtn - backs all the way out to
+    // Ready so the student can recheck framing/media/duration/rounds,
+    // reusing the same camera+bundle rather than re-requesting
+    // permission (see main.ts's loop and renderReady's `existing` param).
+    const cancelBtn = button(
+      strings.common.back,
+      () => {
+        overlayLoop.stop()
+        dataLoop.stop()
+        root.replaceChildren()
+        resolve({ cancelled: true })
+      },
+      { variant: 'secondary' },
+    )
+
+    // Camera on the left, the mascot/status/ring/countdown/hint stacked
+    // in line with it on the right - same two-column shape as Ready's
+    // own camera+controls grid, just with the info column narrower
+    // since there's no stepper/chip content here.
+    const infoColumn = el('div', { class: 'calibration-grid__info' }, [mascotEl, status, ring.element, countdown, hint])
+    const cameraColumn = el('div', { class: 'calibration-grid__camera' }, [preview])
+    const grid = el('div', { class: 'calibration-grid' }, [cameraColumn, infoColumn])
+
+    content.append(titleWithDoodle(s.title, 'sparkle'), grid, actions(cancelBtn, continueBtn))
     root.replaceChildren(screenEl)
+    flipExpand(preview, fromRect)
 
     const ctx = canvas.getContext('2d')
     const nightColor = cssVar('--night')
@@ -249,6 +303,12 @@ export function renderCalibration(
       countdown.textContent = s.counting(secondsLeft)
       ring.setProgress(elapsedMs / CALIBRATION_MS, String(secondsLeft))
 
+      const hintIndex = Math.min(s.hints.length - 1, Math.floor(elapsedMs / HINT_WINDOW_MS))
+      if (hintIndex !== lastHintIndex) {
+        lastHintIndex = hintIndex
+        hint.textContent = s.hints[hintIndex] ?? ''
+      }
+
       if (elapsedMs >= CALIBRATION_MS) {
         try {
           cone = calibrate(frames, DEFAULT_CONFIG)
@@ -257,12 +317,17 @@ export function renderCalibration(
           status.textContent = s.done
           ring.setProgress(1, '✓')
           continueBtn.disabled = false
+          const celebratingMascot = mascotPeek('celebrating')
+          mascotEl.replaceWith(celebratingMascot)
+          mascotEl = celebratingMascot
         } catch {
           // Face dropped out too much of the window - restart the clock
           // rather than hand back a cone built from too little data.
           frames = []
           startT = null
           ring.setProgress(0, '15')
+          lastHintIndex = 0
+          hint.textContent = s.hints[0] ?? ''
         }
       }
     }, 1000)

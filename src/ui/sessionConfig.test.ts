@@ -1,0 +1,92 @@
+import { describe, expect, it } from 'vitest'
+import {
+  clampDurationMs,
+  maxBreakMs,
+  buildTimelinePreview,
+  DURATION_MIN_MS,
+  DURATION_MAX_MS,
+  BREAK_MAX_RATIO,
+  LONG_BREAK_MAX_RATIO,
+} from './sessionConfig'
+
+describe('clampDurationMs', () => {
+  it('passes through a value already inside the range', () => {
+    expect(clampDurationMs(25 * 60_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(25 * 60_000)
+  })
+
+  it('clamps below the minimum up to the minimum', () => {
+    expect(clampDurationMs(0, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(DURATION_MIN_MS)
+  })
+
+  it('clamps above the maximum down to the maximum', () => {
+    expect(clampDurationMs(999 * 60_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(DURATION_MAX_MS)
+  })
+
+  it('does not round an in-range value to the nearest whole minute', () => {
+    expect(clampDurationMs(90_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(90_000)
+  })
+
+  it('clamps a below-minimum sub-minute value up to the minimum, same as any other too-low value - callers that want a preset like FAST_DEBUG_WORK_MS (30s) to bypass this floor must not route it through clampDurationMs at all', () => {
+    expect(clampDurationMs(30_000, DURATION_MIN_MS, DURATION_MAX_MS)).toBe(DURATION_MIN_MS)
+  })
+
+  it('respects a caller-supplied max lower than DURATION_MAX_MS', () => {
+    expect(clampDurationMs(20 * 60_000, DURATION_MIN_MS, 10 * 60_000)).toBe(10 * 60_000)
+  })
+
+  it('widens an inverted range (maxMs below minMs) up to minMs instead of returning the smaller, wrong bound - reachable in practice when a very short work duration drives maxBreakMs below DURATION_MIN_MS', () => {
+    expect(clampDurationMs(5 * 60_000, DURATION_MIN_MS, 30_000)).toBe(DURATION_MIN_MS)
+  })
+})
+
+describe('maxBreakMs', () => {
+  it('is a ratio of the work duration, floored to a whole minute', () => {
+    // 25min * 0.5 = 12.5min, which would render as a lying "12 menit"
+    // via formatDuration's floor if this weren't floored here too.
+    expect(maxBreakMs(25 * 60_000, BREAK_MAX_RATIO)).toBe(12 * 60_000)
+  })
+
+  it('never exceeds DURATION_MAX_MS even for a work duration whose ratio share would otherwise be larger', () => {
+    // In real usage the work-duration stepper itself never exceeds
+    // DURATION_MAX_MS (60 min), so this ceiling never actually engages
+    // in practice - but maxBreakMs is a pure function and must still be
+    // correct for any input on its own terms, independent of how its
+    // one current caller happens to use it.
+    expect(maxBreakMs(200 * 60_000, LONG_BREAK_MAX_RATIO)).toBe(DURATION_MAX_MS)
+  })
+
+  it('the default 5-minute short break and 15-minute long break both fit under a 25-minute work default', () => {
+    const workMs = 25 * 60_000
+    expect(5 * 60_000).toBeLessThanOrEqual(maxBreakMs(workMs, BREAK_MAX_RATIO))
+    expect(15 * 60_000).toBeLessThanOrEqual(maxBreakMs(workMs, LONG_BREAK_MAX_RATIO))
+  })
+})
+
+describe('buildTimelinePreview', () => {
+  const workMs = 25 * 60_000
+  const breakMs = 5 * 60_000
+  const longBreakMs = 15 * 60_000
+
+  it('a single round is just work followed by the long break - matches runSession, where roundsPerSet=1 makes cycleInSet>=roundsPerSet true after every round', () => {
+    expect(buildTimelinePreview(workMs, breakMs, longBreakMs, 1)).toEqual([
+      { kind: 'work', ms: workMs },
+      { kind: 'longBreak', ms: longBreakMs },
+    ])
+  })
+
+  it('the classic 4-round set is work/break x3 then work/longBreak', () => {
+    const items = buildTimelinePreview(workMs, breakMs, longBreakMs, 4)
+    expect(items).toHaveLength(8)
+    expect(items.filter((i) => i.kind === 'work')).toHaveLength(4)
+    expect(items.filter((i) => i.kind === 'break')).toHaveLength(3)
+    expect(items.filter((i) => i.kind === 'longBreak')).toHaveLength(1)
+    expect(items[items.length - 1]).toEqual({ kind: 'longBreak', ms: longBreakMs })
+  })
+
+  it('only the very last break is long - every other break in a longer set stays short', () => {
+    const items = buildTimelinePreview(workMs, breakMs, longBreakMs, 3)
+    const breaks = items.filter((i) => i.kind !== 'work')
+    expect(breaks.slice(0, -1).every((b) => b.kind === 'break')).toBe(true)
+    expect(breaks[breaks.length - 1]?.kind).toBe('longBreak')
+  })
+})

@@ -154,6 +154,21 @@ describe('FocusEngine', () => {
     expect(out.changedAt).toBe(0)
   })
 
+  it('does not attribute a large frame-timestamp gap (e.g. a pause) as continuous elapsed time', () => {
+    // Frame.t comes from performance.now() (see camera.ts), which keeps
+    // advancing during a real-world pause even though the UI stops
+    // calling step(). The first frame after resuming therefore arrives
+    // with a `t` far ahead of the engine's last-seen timestamp - step()
+    // must not credit that whole gap as continuously-elapsed UNCERTAIN
+    // time, the way a normal ~200ms inter-frame dt would be.
+    const frames = buildFrames([{ n: 5, yaw: OUT_OF_CONE_YAW, pitch: 0 }])
+    const engine = newEngine(['book'])
+    const before = runAll(engine, frames)
+    const lastT = frames[frames.length - 1]!.t
+    const afterGap = engine.step({ t: lastT + 30_000, faceFound: true, yaw: OUT_OF_CONE_YAW, pitch: 0, eyeBlink: 0, objects: [] })
+    expect(afterGap.uncertainMs - before.uncertainMs).toBeLessThan(1000)
+  })
+
   it('changing a threshold in config.ts flips a test (documents the ablation lever)', () => {
     const cfg: EngineConfig = { ...DEFAULT_CONFIG, phoneSustainMs: 100_000 }
     const frames = buildFrames([{ n: 76, yaw: OUT_OF_CONE_YAW, pitch: 0, objects: ['cell phone'] }])

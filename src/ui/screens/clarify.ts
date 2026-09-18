@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, el, screen, title } from '../components'
+import { actions, body, button, card, el, screen, titleWithDoodle } from '../components'
 import type { ClarificationAnswer } from '../../storage/sessions'
 
 // Retunable if the pace feels wrong in practice - not a structural
@@ -34,14 +34,16 @@ export function renderClarify(root: HTMLElement): Promise<ClarificationAnswer | 
     }
 
     content.append(
-      title(s.title),
+      titleWithDoodle(s.title, 'scribble-circle'),
       body(s.body),
-      actions(
-        button(s.optionBook, () => choose('book')),
-        button(s.optionPhone, () => choose('phone')),
-        button(s.optionMixed, () => choose('mixed')),
-        button(s.optionSkip, () => choose(null), { variant: 'secondary' }),
+      card(
+        actions(
+          button(s.optionBook, () => choose('book')),
+          button(s.optionPhone, () => choose('phone')),
+          button(s.optionMixed, () => choose('mixed')),
+        ),
       ),
+      actions(button(s.optionSkip, () => choose(null), { variant: 'secondary' })),
       autoNote,
     )
 

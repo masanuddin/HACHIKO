@@ -77,8 +77,8 @@
   --duration-breath: 4200ms; /* Hachiko's sleeping breath cycle */
 
   /* ---- Elevation (tinted to background hue, never pure black) ---- */
-  --shadow-card: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent),
-    0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent);
+  --shadow-card: 0 4px 8px color-mix(in srgb, var(--ink) 12%, transparent),
+    0 20px 48px color-mix(in srgb, var(--ink) 20%, transparent);
   --shadow-card-night: 0 8px 24px color-mix(in srgb, black 40%, transparent);
   --shadow-button: 0 1px 2px color-mix(in srgb, var(--amber-deep) 20%, transparent),
     0 6px 16px color-mix(in srgb, var(--amber-deep) 22%, transparent);
@@ -87,4 +87,12 @@
      edges, never a new hue, always mixed from the fixed palette. */
   --glow-amber: color-mix(in srgb, var(--amber) 26%, transparent);
   --glow-amber-soft: color-mix(in srgb, var(--amber) 10%, transparent);
+
+  /* ---- Bento tile colors (daylight screens only) ----
+     Clear, saturated tile tints instead of a faint wash - composed only
+     from the fixed palette above, never a new hue. Never applied to the
+     Session (night) screen: .screen--night's own background/.card rules
+     take precedence there. */
+  --tile-amber: color-mix(in srgb, var(--amber) 28%, var(--cream));
+  --tile-sage: color-mix(in srgb, var(--sage) 22%, var(--cream));
 }
