@@ -85,12 +85,8 @@ svg {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* .screen--night below fully replaces this `background` shorthand
-     (higher specificity), so --paper-grain never reaches the Session
-     view - it stays exactly as before. */
   background:
     radial-gradient(ellipse 900px 500px at 50% -10%, var(--glow-amber-soft), transparent 60%),
-    var(--paper-grain),
     var(--cream);
   padding: var(--space-8) var(--space-4);
 }
@@ -307,64 +303,6 @@ input:focus-visible,
   color: var(--ink);
 }
 
-/* ---- Scrapbook / bento treatment (daylight screens only) ----
-   Purely additive modifier classes - .card and .screen's base rules
-   above are untouched, so session.ts's night-screen cards (confirm
-   dialogs, nudges) render exactly as before. Rotation is a fixed set
-   of tokens, never Math.random(), same rule as the confetti pattern
-   further down this file. */
-.card--paper,
-.bento-tile {
-  position: relative;
-  clip-path: var(--torn-edge-a);
-}
-
-.card--paper::before {
-  /* Replaces .card's straight amber top bar - a torn top edge reads
-     oddly with a clean straight accent line sitting on top of it. */
-  display: none;
-}
-
-.torn-b {
-  clip-path: var(--torn-edge-b);
-}
-
-.tilt-a { transform: rotate(var(--tilt-a)); }
-.tilt-b { transform: rotate(var(--tilt-b)); }
-.tilt-c { transform: rotate(var(--tilt-c)); }
-.tilt-d { transform: rotate(var(--tilt-d)); }
-.tilt-e { transform: rotate(var(--tilt-e)); }
-
-/* A washi-tape strip pinning a card/tile in place. Positioned inside
-   the box (not above it) so .card's `overflow: hidden` and the torn
-   clip-path above never crop it. */
-.paper-tape::after {
-  content: '';
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  width: 52px;
-  height: 20px;
-  background: var(--tape-color);
-  border: 1px solid var(--tape-border);
-  box-shadow: 0 2px 3px color-mix(in srgb, var(--ink) 25%, transparent);
-  transform: translateX(-50%) rotate(-4deg);
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-/* Give tape'd cards enough top clearance that the tape (and its shadow)
-   sits above the content instead of painting over it - the tape spans
-   roughly y=10px to y=35px, which overlaps a card's own padding-driven
-   content start (24px for .card, 20px for .bento-tile). */
-.paper-tape {
-  padding-top: calc(var(--space-6) + var(--space-3));
-}
-
-.bento-tile.paper-tape {
-  padding-top: calc(var(--space-5) + var(--space-3));
-}
-
 /* Small hand-drawn-style decorative mark - see doodleMark() in
    components.ts. Purely decorative, always aria-hidden. */
 .doodle-mark {
@@ -411,8 +349,8 @@ input:focus-visible,
 }
 
 .bento-tile--sand { background: var(--sand); border-color: transparent; }
-.bento-tile--amber-tint { background: var(--paper-amber); border-color: transparent; }
-.bento-tile--sage-tint { background: var(--paper-sage); border-color: transparent; }
+.bento-tile--amber-tint { background: var(--tile-amber); border-color: transparent; }
+.bento-tile--sage-tint { background: var(--tile-sage); border-color: transparent; }
 
 .bento-tile--mascot {
   grid-column: 1 / 3;
@@ -448,12 +386,10 @@ input:focus-visible,
 /* ---- Ready screen merge (camera + streak + media + duration + rounds) ----
    A different grid shape from the Session Card's .bento (2 columns,
    not 4), sharing only the .bento-tile base look. The camera tile gets
-   .bento-tile--plain (no torn edge/tilt - it's a live functional
-   preview, not decoration) and a FIXED height, never aspect-ratio
-   derived from its spanned rows - that combination caused a real bug
-   during design (any relayout in the stepper tiles, even a text-width
-   change from clicking +/-, nudged the camera box's computed size on
-   every click). Fixed height sidesteps it entirely. */
+   a FIXED height, never aspect-ratio derived from its spanned rows - that
+   combination caused a real bug during design (any relayout in the stepper
+   tiles, even a text-width change from clicking +/-, nudged the camera
+   box's computed size on every click). Fixed height sidesteps it entirely. */
 
 /* Found during manual verification: .screen__content's default
    max-width (720px, tokens.css) is right for every other screen's
@@ -475,10 +411,6 @@ input:focus-visible,
   grid-column: 1 / 3;
   grid-row: 1;
   align-self: center;
-}
-
-.bento-tile--plain {
-  clip-path: none;
 }
 
 .ready-grid__camera {
