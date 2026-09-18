@@ -1,5 +1,5 @@
 import { strings } from '../strings'
-import { actions, body, button, cameraDot, card, el, screen, title } from '../components'
+import { actions, body, button, cameraDot, card, confirmOverlay, el, screen, title } from '../components'
 import { cssVar } from '../theme'
 import { HachikoView, mascotPeek } from '../hachiko'
 import {
@@ -298,29 +298,34 @@ function runWorkPhase(
       pausedBeforeSelesaiConfirm = paused
       paused = true
       nudgeVisible = 'selesaiConfirm'
-      const confirmBtn = button(s.selesaiConfirmYes, () => {
-        hideNudge()
-        finishNow(true)
-      })
-      const cancelBtn = button(
-        s.selesaiConfirmNo,
-        () => {
-          paused = pausedBeforeSelesaiConfirm
-          jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
-          hideNudge()
-        },
-        { variant: 'secondary' },
-      )
+
+      function cancel(): void {
+        paused = pausedBeforeSelesaiConfirm
+        jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
+        nudgeVisible = null
+        overlay.close()
+      }
+
       // Stopping well short of the committed time gets a neutral mascot
       // reaction (not a sad one - see hachiko.ts's note on why "crying"
       // is never used) instead of the plain text-only confirm.
       const elapsedMs = totalMs - remainingMs
       const stoppingEarly = elapsedMs < totalMs * EARLY_STOP_RATIO
-      const cardChildren: (Node | string)[] = []
-      if (stoppingEarly) cardChildren.push(mascotPeek('drowsy'))
-      cardChildren.push(el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]), actions(cancelBtn, confirmBtn))
+      const dialogChildren: (Node | string)[] = []
+      if (stoppingEarly) dialogChildren.push(mascotPeek('drowsy'))
+      dialogChildren.push(
+        el('h2', { class: 'card__title' }, [s.selesaiConfirmTitle]),
+        actions(
+          button(s.selesaiConfirmNo, cancel, { variant: 'secondary' }),
+          button(s.selesaiConfirmYes, () => {
+            nudgeVisible = null
+            overlay.close()
+            finishNow(true)
+          }),
+        ),
+      )
 
-      nudgeSlot.replaceChildren(card(...cardChildren))
+      const overlay = confirmOverlay(screenEl, dialogChildren, cancel)
     }
 
     function showEarlyBreakNudge(): void {
@@ -494,47 +499,49 @@ function renderBreak(
 
     // Both choices are one tap from a real commitment (another full cycle,
     // or ending the whole multi-cycle plan) - a misclick gets a confirm
-    // card in place of the two buttons, not an immediate action.
-    const slot = el('div')
-
-    function showMainActions(): void {
-      slot.replaceChildren(actions(continueBtn, stopBtn))
-    }
-
+    // overlay floating above the buttons, not an immediate action.
     function showContinueConfirm(): void {
-      slot.replaceChildren(
-        card(
+      const overlay = confirmOverlay(
+        screenEl,
+        [
           el('h2', { class: 'card__title' }, [s.breakContinueConfirmTitle]),
           actions(
-            button(s.breakConfirmCancel, showMainActions, { variant: 'secondary' }),
-            button(s.breakContinueConfirmYes, () => choose(true)),
+            button(s.breakConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+            button(s.breakContinueConfirmYes, () => {
+              overlay.close()
+              choose(true)
+            }),
           ),
-        ),
+        ],
+        () => overlay.close(),
       )
     }
 
     function showStopConfirm(): void {
-      slot.replaceChildren(
-        card(
+      const overlay = confirmOverlay(
+        screenEl,
+        [
           el('h2', { class: 'card__title' }, [s.breakStopConfirmTitle]),
           actions(
-            button(s.breakConfirmCancel, showMainActions, { variant: 'secondary' }),
-            button(s.breakStopConfirmYes, () => choose(false)),
+            button(s.breakConfirmCancel, () => overlay.close(), { variant: 'secondary' }),
+            button(s.breakStopConfirmYes, () => {
+              overlay.close()
+              choose(false)
+            }),
           ),
-        ),
+        ],
+        () => overlay.close(),
       )
     }
 
     const continueBtn = button(s.breakContinueLabel, showContinueConfirm)
     const stopBtn = button(s.breakStopLabel, showStopConfirm, { variant: 'secondary' })
 
-    showMainActions()
-
     content.append(
       title(isLongBreak ? s.breakLongTitle : s.breakTitle),
       body(isLongBreak ? s.breakLongBody : s.breakBody),
       countdown,
-      slot,
+      actions(continueBtn, stopBtn),
     )
     root.replaceChildren(screenEl)
 
