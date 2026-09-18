@@ -74,15 +74,15 @@ public/models/     face_landmarker.task, efficientdet_lite0.tflite
 ## Palette
 
 Refreshed 2026-09-18: amber/amber-deep/sage now source from a new
-accent ramp (Sandy Brown / Harvest Orange / Tropical Teal). Cream,
-sand, ink, ink-muted and night are the neutral canvas and are
+accent ramp (Harvest Orange / Tropical Teal), at full saturation.
+Cream, sand, ink, ink-muted and night are the neutral canvas and are
 unchanged - the refresh is accents only, never a wash over the page.
 See `src/styles/tokens.css` for the exact derivation (amber-deep is a
-darkened mix of Harvest Orange, not the raw hex, to keep its several
-text-color uses AA-compliant).
+75/25 mix of Harvest Orange and ink, not the raw hex, to keep its
+several text-color uses AA-compliant while still reading as bold).
 
 ```css
---cream:#FDF8F3     --sand:#F5EBE0       --amber:#F7A547   --amber-deep: derived, see tokens.css
+--cream:#FDF8F3     --sand:#F5EBE0       --amber:#FF7700   --amber-deep: derived, see tokens.css
 --ink:#2B2622       --ink-muted:#8A7F76  --sage:#00AFB5    --night:#14110F
 --accent-blue:#004777 (Yale Blue, bento tile tint only)
 --accent-peach:#EFD28D (Soft Peach, bento tile tint only)

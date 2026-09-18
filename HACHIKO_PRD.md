@@ -365,7 +365,7 @@ You're building a desktop web app now, so most One UI mobile guidance doesn't ap
 ```
 Cream       #FDF8F3   background
 Warm sand   #F5EBE0   cards
-Amber       #F7A547   Hachiko / primary       (Sandy Brown, refreshed 2026-09-18)
+Amber       #FF7700   Hachiko / primary       (Harvest Orange, refreshed 2026-09-18)
 Deep amber  derived   pressed                 (Harvest Orange x ink, see tokens.css)
 Ink         #2B2622   text
 Muted ink   #8A7F76   secondary
