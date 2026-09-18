@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  bestFocusTopic,
   computeMetrics,
   deleteAllSessions,
   deleteSession,
@@ -104,6 +105,35 @@ describe('computeMetrics', () => {
     const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
     const m = computeMetrics(merged)
     expect(m.notFocusedMs).toBe(900_000)
+  })
+})
+
+describe('bestFocusTopic', () => {
+  it('picks the topic with the most total focus time across all sessions, not just the latest', () => {
+    const math = record({ studyTopic: 'Matematika', durationsMs: { ...emptyDurations(), FOKUS: 10 * 60_000 } })
+    const english = record({ studyTopic: 'Bahasa Inggris', durationsMs: { ...emptyDurations(), FOKUS: 60_000 } })
+    // The latest session (english) has only 1 minute of focus - math has
+    // 10x the accumulated focus time across sessions, so it should win
+    // even though it isn't the most recent session.
+    expect(bestFocusTopic([math, english])).toBe('Matematika')
+  })
+
+  it('sums focus time across multiple sessions on the same topic', () => {
+    const a = record({ studyTopic: 'Fisika', durationsMs: { ...emptyDurations(), FOKUS: 5 * 60_000 } })
+    const b = record({ studyTopic: 'Fisika', durationsMs: { ...emptyDurations(), FOKUS: 4 * 60_000 } })
+    const c = record({ studyTopic: 'Kimia', durationsMs: { ...emptyDurations(), FOKUS: 8 * 60_000 } })
+    // Fisika: 5+4=9 accumulated minutes beats Kimia's single 8-minute session.
+    expect(bestFocusTopic([a, b, c])).toBe('Fisika')
+  })
+
+  it('ignores sessions with no declared topic', () => {
+    const withTopic = record({ studyTopic: 'Matematika', durationsMs: { ...emptyDurations(), FOKUS: 60_000 } })
+    const withoutTopic = record({ durationsMs: { ...emptyDurations(), FOKUS: 10 * 60_000 } })
+    expect(bestFocusTopic([withTopic, withoutTopic])).toBe('Matematika')
+  })
+
+  it('returns null when no session has a topic', () => {
+    expect(bestFocusTopic([record(), record()])).toBeNull()
   })
 })
 

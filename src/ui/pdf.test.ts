@@ -57,6 +57,11 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('Matematika - Integral')
   })
 
+  it('includes the student name in the title when provided', () => {
+    const pdf = new TextDecoder().decode(buildSessionReportPdf(record(), 'Budi'))
+    expect(pdf).toContain('Kartu Sesi Budi')
+  })
+
   it('omits the study topic for old records without one (still valid)', () => {
     const pdf = pdfText(record())
     expect(pdf.startsWith('%PDF-1.4')).toBe(true)

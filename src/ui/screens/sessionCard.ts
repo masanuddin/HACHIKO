@@ -1,6 +1,6 @@
 import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from '../strings'
 import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
-import { computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
+import { bestFocusTopic, computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { loadProfile } from '../../storage/profile'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
 import { mascotPeek } from '../hachiko'
@@ -79,12 +79,13 @@ function topicLine(record: SessionRecord): (Node | string)[] {
   return record.studyTopic ? [el('p', { class: 'session-topic' }, [record.studyTopic])] : []
 }
 
-/** The study-topic insight sentence, or nothing when the record has no
- *  topic (old sessions stay clean rather than showing a broken sentence). */
-function topicInsight(record: SessionRecord): (Node | string)[] {
-  return record.studyTopic
-    ? [el('p', { class: 'observation' }, [strings.sessionCard.topicInsight(record.studyTopic)])]
-    : []
+/** The study-topic insight sentence: whichever topic has accumulated the
+ *  most total focus time across every saved session (see bestFocusTopic),
+ *  not just this one - shown only when at least one session anywhere has
+ *  a declared topic. */
+function topicInsight(): (Node | string)[] {
+  const best = bestFocusTopic(listSessions())
+  return best ? [el('p', { class: 'observation' }, [strings.sessionCard.topicInsight(best)])] : []
 }
 
 /**
@@ -279,7 +280,7 @@ export function renderSessionCard(
 
     const downloadBtn = button(s.downloadLabel, () => {
       try {
-        const bytes = buildSessionReportPdf(record)
+        const bytes = buildSessionReportPdf(record, loadProfile()?.name)
         downloadPdf(pdfFilename(record.startedAt), bytes)
         errorNote.style.display = 'none'
       } catch (err) {
@@ -337,7 +338,7 @@ export function renderSessionCard(
       ...celebration,
       ...topicLine(record),
       grid,
-      ...topicInsight(record),
+      ...topicInsight(),
       ...(thresholdNote ? [thresholdNote] : []),
       body(s.downloadNote),
       reportActions,
