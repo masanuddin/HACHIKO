@@ -35,6 +35,18 @@ const PHONE_LABEL = 'cell phone'
  * declaration exists, "out of cone" becomes something the system must
  * abstain on rather than guess at, unless a sustained phone resolves it.
  */
+// Beyond this many ms since the previous step(), a gap is treated as a
+// stall (the caller paused, the tab was backgrounded, a GC pause, etc.)
+// rather than continuously-elapsed time in whatever state was last
+// measured - see the "does not attribute a large frame-timestamp gap"
+// test. Frame.t comes from performance.now() (camera.ts), which keeps
+// advancing through any such stall even though step() itself may not be
+// called again until it ends, so a real gap and a single slow frame are
+// indistinguishable except by magnitude: normal inter-frame dt is at
+// most tens of ms, so this cap has wide margin without needing to be
+// tuned to any particular frame rate.
+const MAX_PLAUSIBLE_DT_MS = 1000
+
 export class FocusEngine {
   private lastT: number | null = null
 
@@ -85,7 +97,8 @@ export class FocusEngine {
   }
 
   step(f: Frame): EngineOutput {
-    const dt = this.lastT === null ? 0 : Math.max(0, f.t - this.lastT)
+    const rawDt = this.lastT === null ? 0 : Math.max(0, f.t - this.lastT)
+    const dt = rawDt > MAX_PLAUSIBLE_DT_MS ? 0 : rawDt
     this.lastT = f.t
 
     let state: FocusState

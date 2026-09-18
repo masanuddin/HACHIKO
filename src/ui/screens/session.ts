@@ -8,6 +8,7 @@ import {
   EXTENSION_MS,
   FAST_DEBUG_BREAK_MS,
   FAST_DEBUG_LONG_BREAK_MS,
+  MAX_PLAUSIBLE_DT_MS,
   NUDGE_AUTO_DISMISS_MS,
   STIRRING_RATIO,
   isFastDebugMode,
@@ -381,7 +382,8 @@ function runWorkPhase(
 
       telemetry.record(frame)
 
-      const dt = lastFrameT === null ? 0 : Math.max(0, frame.t - lastFrameT)
+      const rawDt = lastFrameT === null ? 0 : Math.max(0, frame.t - lastFrameT)
+      const dt = rawDt > MAX_PLAUSIBLE_DT_MS ? 0 : rawDt
       lastFrameT = frame.t
 
       const out = engine.step(frame)

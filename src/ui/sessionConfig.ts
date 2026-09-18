@@ -155,3 +155,15 @@ export const STIRRING_RATIO = 0.5
 // defaults to its declined outcome instead of blocking the session at
 // 0:00 forever. Same "silent safety net" style as BREAK_ABANDON_MS.
 export const NUDGE_AUTO_DISMISS_MS = 25 * 1000
+
+// Beyond this many ms since the last processed frame, session.ts treats
+// the gap as a stall (Jeda held, the Selesai confirm left open, a
+// backgrounded tab) rather than continuously-elapsed time - otherwise
+// the frame that arrives right after resuming would credit the whole
+// real-world paused duration to remainingMs/durationsMs in one step,
+// since Frame.t (performance.now(), see camera.ts) keeps advancing
+// through the pause even though ticks are ignored while `paused` is
+// true. Same value and reasoning as focusEngine.ts's own
+// MAX_PLAUSIBLE_DT_MS - kept as a separate constant rather than a
+// shared import since src/engine/ must stay independent of src/ui/.
+export const MAX_PLAUSIBLE_DT_MS = 1000
