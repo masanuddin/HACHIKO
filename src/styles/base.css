@@ -691,7 +691,9 @@ input:focus-visible,
    Work/break/long-break get distinct tints from the existing palette
    only (amber = work, matching the app's one primary accent; sage =
    break; amber-deep = long break, a deeper shade of the same accent
-   rather than a new hue). */
+   rather than a new hue) - PLUS a distinct shape per category (full
+   pill for work, a squarer tag for break/long-break) so the two read
+   apart even before the color registers. */
 .timeline-preview__row {
   display: flex;
   flex-wrap: wrap;
@@ -713,6 +715,11 @@ input:focus-visible,
 .timeline-pill--work {
   background: color-mix(in srgb, var(--amber) 16%, var(--cream));
   color: var(--ink);
+}
+
+.timeline-pill--break,
+.timeline-pill--long-break {
+  border-radius: var(--radius-sm);
 }
 
 .timeline-pill--break {

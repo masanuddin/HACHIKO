@@ -89,6 +89,14 @@ function streakChip(sessionCount: number, streakDays: number): HTMLDivElement {
  * unchanged. Returns plain content (not a pre-built card) since
  * confirmOverlay wraps its children in one card itself.
  */
+/** Whole-minute shorthand ("25m") for the timeline pills - the full
+ * HHh:MMm:SSs shape used everywhere else is too verbose for a small
+ * pill. Falls back to the full shape for a genuine sub-minute value
+ * (the fastdebug 30s presets) rather than lying with "0m". */
+function formatMinutesLabel(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000}m` : formatDuration(ms)
+}
+
 function timelinePreviewContent(
   workMs: number,
   breakMs: number,
@@ -108,7 +116,7 @@ function timelinePreviewContent(
           ? s.ready.timelineLongBreakLabel
           : s.ready.timelineBreakLabel
     const tone = item.kind === 'work' ? 'work' : item.kind === 'longBreak' ? 'long-break' : 'break'
-    row.append(el('span', { class: `timeline-pill timeline-pill--${tone}` }, [`${label} ${formatDuration(item.ms)}`]))
+    row.append(el('span', { class: `timeline-pill timeline-pill--${tone}` }, [`${label} ${formatMinutesLabel(item.ms)}`]))
     if (i < items.length - 1) {
       row.append(el('span', { class: 'timeline-preview__arrow', 'aria-hidden': 'true' }, ['→']))
     }
