@@ -43,6 +43,20 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
   ]
 }
 
+/** Decorative seal overlapping the bento grid's top-right corner, same
+ *  placement language as the PDF report's stamp (pdf.ts's STAMP_X/Y) -
+ *  the two surfaces read as the same "report", stamped the same way.
+ *  `aria-hidden` since it carries no information beyond what the grid's
+ *  own labeled tiles already say. */
+function reportStamp(): HTMLImageElement {
+  return el('img', {
+    class: 'session-card-stamp',
+    src: '/stamp.png',
+    alt: '',
+    'aria-hidden': 'true',
+  }) as HTMLImageElement
+}
+
 /**
  * The current session's numbers as a bento grid, achievement-style: the
  * Fokus number is the headline, alone on its own full-width row at the
@@ -64,6 +78,7 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
       el('p', { class: 'observation' }, [observationText]),
       doodleMark('paw', { size: '36px' }),
     ]),
+    reportStamp(),
   ])
 }
 

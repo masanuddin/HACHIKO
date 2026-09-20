@@ -21,6 +21,21 @@ function pdfText(rec: SessionRecord): string {
   return new TextDecoder().decode(buildSessionReportPdf(rec))
 }
 
+/** Exact byte<->char mapping (unlike UTF-8 decoding), for tests that need
+ *  to validate byte offsets - the PDF now embeds a raw binary image
+ *  stream, so a UTF-8 decode would corrupt any offset arithmetic done on
+ *  the resulting string (invalid byte sequences collapse into a single
+ *  U+FFFD, shifting every later character's index relative to its true
+ *  byte offset). Chunked to avoid a call-stack blowout on large buffers. */
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let s = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    s += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return s
+}
+
 describe('buildSessionReportPdf', () => {
   it('emits a structurally valid PDF with the report content', () => {
     const pdf = pdfText(record())
@@ -73,13 +88,17 @@ describe('buildSessionReportPdf', () => {
   })
 
   it('has a self-consistent cross-reference table', () => {
-    const pdf = pdfText(record())
-    const header = 'xref\n0 7\n'
+    // 8 objects now (6 text/font objects + the stamp's SMask and RGB
+    // image XObjects) - byte offsets, so this walks the raw buffer via
+    // an exact byte<->char mapping, not a UTF-8 decode (see
+    // bytesToBinaryString's doc comment).
+    const pdf = bytesToBinaryString(buildSessionReportPdf(record()))
+    const header = 'xref\n0 9\n'
     const tableStart = pdf.indexOf(header) + header.length
 
     const offsets: number[] = []
     let pos = tableStart + 20 // skip the free entry
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       offsets.push(Number(pdf.slice(pos, pos + 10)))
       pos += 20
     }
@@ -93,6 +112,16 @@ describe('buildSessionReportPdf', () => {
     expect(startxref).not.toBeNull()
     const sx = Number(startxref![1])
     expect(pdf.slice(sx, sx + 5)).toBe('xref\n')
+  })
+
+  it('embeds the stamp as an image XObject with an alpha SMask', () => {
+    const pdf = pdfText(record())
+    expect(pdf).toContain('/Subtype /Image')
+    expect(pdf).toContain('/ColorSpace /DeviceRGB')
+    expect(pdf).toContain('/ColorSpace /DeviceGray')
+    expect(pdf).toContain('/SMask 7 0 R')
+    expect(pdf).toContain('/XObject << /Im0 8 0 R >>')
+    expect(pdf).toContain('/Im0 Do')
   })
 })
 

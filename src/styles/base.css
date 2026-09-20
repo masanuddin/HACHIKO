@@ -387,10 +387,35 @@ input:focus-visible,
    cards below it stay in the plain .metrics list, just with the same
    card look - see sessionCard.ts) ---- */
 .bento {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   grid-auto-rows: minmax(84px, auto);
   gap: var(--space-4);
+}
+
+/* The report stamp, overlapping the grid's top-right corner like a seal
+ * on a paper document - same placement language as the PDF report's
+ * stamp (pdf.ts's STAMP_X/Y), so the two surfaces read as the same
+ * "report". Sits above everything (z-index) since it's meant to look
+ * stamped ON TOP, not tucked behind a tile. */
+.session-card-stamp {
+  position: absolute;
+  top: -18px;
+  right: -18px;
+  width: 64px;
+  height: auto;
+  transform: rotate(8deg);
+  pointer-events: none;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .session-card-stamp {
+    width: 48px;
+    top: -12px;
+    right: -8px;
+  }
 }
 
 .bento-tile {

@@ -1,5 +1,6 @@
 import { strings, formatDuration, sessionObservation, sessionTitle } from './strings'
 import { computeMetrics, type SessionRecord } from '../storage/sessions'
+import { STAMP_ALPHA_BASE64, STAMP_HEIGHT, STAMP_RGB_BASE64, STAMP_WIDTH } from './stampData'
 
 /**
  * A tiny, dependency-free PDF writer (CLAUDE.md: no new dependencies).
@@ -16,6 +17,45 @@ import { computeMetrics, type SessionRecord } from '../storage/sessions'
 const PAGE_W = 595
 const PAGE_H = 842
 
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+/** Plain base64 decoder - no Buffer (Node-only), no atob (browser-only),
+ *  so this stays a pure function usable identically in both, same as the
+ *  rest of this module's "no DOM, testable under Node" contract. */
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const bytes: number[] = []
+  let buffer = 0
+  let bits = 0
+  for (const ch of b64) {
+    const value = BASE64_CHARS.indexOf(ch)
+    if (value === -1) continue // '=' padding or whitespace
+    buffer = (buffer << 6) | value
+    bits += 6
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((buffer >> bits) & 0xff)
+    }
+  }
+  const out = new Uint8Array(bytes.length)
+  out.set(bytes)
+  return out
+}
+
+function toBytes(s: string): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(s)
+}
+
+function concatBytes(parts: Uint8Array<ArrayBuffer>[]): Uint8Array<ArrayBuffer> {
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const p of parts) {
+    out.set(p, offset)
+    offset += p.length
+  }
+  return out
+}
+
 // RGB fill colors (0..1 triplets), from the fixed palette in tokens.css.
 const C = {
   cream: '0.992 0.973 0.953',
@@ -24,6 +64,14 @@ const C = {
   ink: '0.169 0.149 0.133',
   muted: '0.541 0.498 0.463',
 }
+
+// The stamp's placement on the page - sized to keep its 96:87 source
+// aspect ratio, straddling the summary card's top-right corner (48+499,
+// 560+150) = (547, 710).
+const STAMP_DRAW_W = 64
+const STAMP_DRAW_H = Math.round((STAMP_DRAW_W * STAMP_HEIGHT) / STAMP_WIDTH)
+const STAMP_X = 495
+const STAMP_Y = 685
 
 const MONTHS_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -105,6 +153,14 @@ function buildContent(record: SessionRecord, name?: string): string {
   out.push('48 560 499 150 re')
   out.push('f')
 
+  // The stamp, overlapping the card's top-right corner (547, 710) like a
+  // seal on a paper document - drawn AFTER the card fill so it sits on
+  // top of it, not underneath.
+  out.push('q')
+  out.push(`${STAMP_DRAW_W} 0 0 ${STAMP_DRAW_H} ${STAMP_X} ${STAMP_Y} cm`)
+  out.push('/Im0 Do')
+  out.push('Q')
+
   // Fokus is the headline number - alone, large, no "dari" comparison -
   // same hierarchy as the Session Card's hero bento tile. The remaining
   // three metrics sit below it in a row, same as they always have.
@@ -137,37 +193,65 @@ function buildContent(record: SessionRecord, name?: string): string {
 function buildPdfDocument(content: string): Uint8Array<ArrayBuffer> {
   const obj1 = '<< /Type /Catalog /Pages 2 0 R >>'
   const obj2 = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>'
-  const obj3 = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`
+  const obj3 = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> /XObject << /Im0 8 0 R >> >> /Contents 4 0 R >>`
   const obj4 = `<< /Length ${content.length} >>\nstream\n${content}endstream`
   const obj5 = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
   const obj6 = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'
 
+  // Object 7: the stamp's alpha channel, a DeviceGray SMask. Object 8:
+  // the stamp's RGB pixels, referencing object 7 via /SMask. Both are
+  // raw, uncompressed 8-bit samples (no /Filter) - consistent with this
+  // writer's content stream (also uncompressed) and avoiding any need
+  // for a deflate implementation in the shipped app. Built as raw bytes,
+  // not strings, since TextEncoder (used for every other object here)
+  // would UTF-8-mangle arbitrary pixel byte values >= 0x80.
+  const stampRgb = base64ToBytes(STAMP_RGB_BASE64)
+  const stampAlpha = base64ToBytes(STAMP_ALPHA_BASE64)
+
+  const obj7 = concatBytes([
+    toBytes(
+      `7 0 obj\n<< /Type /XObject /Subtype /Image /Width ${STAMP_WIDTH} /Height ${STAMP_HEIGHT} /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${stampAlpha.length} >>\nstream\n`,
+    ),
+    stampAlpha,
+    toBytes('\nendstream\nendobj\n'),
+  ])
+
+  const obj8 = concatBytes([
+    toBytes(
+      `8 0 obj\n<< /Type /XObject /Subtype /Image /Width ${STAMP_WIDTH} /Height ${STAMP_HEIGHT} /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 7 0 R /Length ${stampRgb.length} >>\nstream\n`,
+    ),
+    stampRgb,
+    toBytes('\nendstream\nendobj\n'),
+  ])
+
   const bodyParts = [
-    `1 0 obj\n${obj1}\nendobj\n`,
-    `2 0 obj\n${obj2}\nendobj\n`,
-    `3 0 obj\n${obj3}\nendobj\n`,
-    `4 0 obj\n${obj4}\nendobj\n`,
-    `5 0 obj\n${obj5}\nendobj\n`,
-    `6 0 obj\n${obj6}\nendobj\n`,
+    toBytes(`1 0 obj\n${obj1}\nendobj\n`),
+    toBytes(`2 0 obj\n${obj2}\nendobj\n`),
+    toBytes(`3 0 obj\n${obj3}\nendobj\n`),
+    toBytes(`4 0 obj\n${obj4}\nendobj\n`),
+    toBytes(`5 0 obj\n${obj5}\nendobj\n`),
+    toBytes(`6 0 obj\n${obj6}\nendobj\n`),
+    obj7,
+    obj8,
   ]
 
-  const header = '%PDF-1.4\n'
-  let body = ''
+  const header = toBytes('%PDF-1.4\n')
   const offsets: number[] = []
+  let cursor = header.length
   for (const part of bodyParts) {
-    offsets.push(header.length + body.length)
-    body += part
+    offsets.push(cursor)
+    cursor += part.length
   }
-  const xrefOffset = header.length + body.length
+  const xrefOffset = cursor
 
-  let xref = 'xref\n0 7\n'
+  let xref = `xref\n0 ${bodyParts.length + 1}\n`
   xref += '0000000000 65535 f\r\n'
   for (const off of offsets) {
     xref += `${off.toString().padStart(10, '0')} 00000 n\r\n`
   }
-  const trailer = `trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
+  const trailer = `trailer\n<< /Size ${bodyParts.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
 
-  return new TextEncoder().encode(header + body + xref + trailer)
+  return concatBytes([header, ...bodyParts, toBytes(xref), toBytes(trailer)])
 }
 
 /** Generates a human-readable PDF for the current session. Pure - no DOM.
