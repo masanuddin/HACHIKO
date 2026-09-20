@@ -2,39 +2,50 @@ import { describe, expect, it } from 'vitest'
 import { formatDuration, formatFocusLine, sessionTitle, strings } from './strings'
 
 describe('formatDuration', () => {
-  it('renders a genuine zero as "0 detik", not "0 menit"', () => {
-    expect(formatDuration(0)).toBe('0 detik')
+  it('renders a genuine zero as "0s"', () => {
+    expect(formatDuration(0)).toBe('0s')
   })
 
   it('renders sub-minute durations in seconds', () => {
-    expect(formatDuration(5_000)).toBe('5 detik')
-    expect(formatDuration(37_000)).toBe('37 detik')
-    expect(formatDuration(59_000)).toBe('59 detik')
-    expect(formatDuration(59_900)).toBe('59 detik')
+    expect(formatDuration(5_000)).toBe('5s')
+    expect(formatDuration(37_000)).toBe('37s')
+    expect(formatDuration(59_000)).toBe('59s')
+    expect(formatDuration(59_900)).toBe('59s')
   })
 
-  it('renders exact whole minutes as "N menit"', () => {
-    expect(formatDuration(60_000)).toBe('1 menit')
-    expect(formatDuration(120_000)).toBe('2 menit')
+  it('renders exact whole minutes as "Nm 00s"', () => {
+    expect(formatDuration(60_000)).toBe('1m 00s')
+    expect(formatDuration(120_000)).toBe('2m 00s')
   })
 
-  it('renders a minute with remaining seconds as "N+ menit"', () => {
-    expect(formatDuration(84_000)).toBe('1+ menit')
-    expect(formatDuration(119_000)).toBe('1+ menit')
-    expect(formatDuration(121_000)).toBe('2+ menit')
+  it('renders a minute with remaining seconds exactly, zero-padded', () => {
+    expect(formatDuration(84_000)).toBe('1m 24s')
+    expect(formatDuration(119_000)).toBe('1m 59s')
+    expect(formatDuration(121_000)).toBe('2m 01s')
+  })
+
+  it('renders exact whole hours as "Nh 00m 00s"', () => {
+    expect(formatDuration(3_600_000)).toBe('1h 00m 00s')
+  })
+
+  it('renders hours with remaining minutes/seconds, zero-padded', () => {
+    expect(formatDuration(3_800_000)).toBe('1h 03m 20s')
   })
 })
 
 describe('formatDuration boundaries', () => {
-  it('covers the full second/minute boundary ladder', () => {
-    expect(formatDuration(2_000)).toBe('2 detik')
-    expect(formatDuration(36_000)).toBe('36 detik')
-    expect(formatDuration(59_000)).toBe('59 detik')
-    expect(formatDuration(60_000)).toBe('1 menit')
-    expect(formatDuration(84_000)).toBe('1+ menit')
-    expect(formatDuration(119_000)).toBe('1+ menit')
-    expect(formatDuration(120_000)).toBe('2 menit')
-    expect(formatDuration(121_000)).toBe('2+ menit')
+  it('covers the full second/minute/hour boundary ladder', () => {
+    expect(formatDuration(2_000)).toBe('2s')
+    expect(formatDuration(36_000)).toBe('36s')
+    expect(formatDuration(59_000)).toBe('59s')
+    expect(formatDuration(60_000)).toBe('1m 00s')
+    expect(formatDuration(84_000)).toBe('1m 24s')
+    expect(formatDuration(119_000)).toBe('1m 59s')
+    expect(formatDuration(120_000)).toBe('2m 00s')
+    expect(formatDuration(121_000)).toBe('2m 01s')
+    expect(formatDuration(3_599_000)).toBe('59m 59s')
+    expect(formatDuration(3_600_000)).toBe('1h 00m 00s')
+    expect(formatDuration(3_661_000)).toBe('1h 01m 01s')
   })
 })
 
@@ -61,20 +72,20 @@ describe('session card study-topic insight', () => {
 })
 
 describe('formatFocusLine', () => {
-  it('renders an instantly-finished session as "0 detik dari 0 detik"', () => {
-    expect(formatFocusLine(0, 0)).toBe('0 detik dari 0 detik')
+  it('renders an instantly-finished session as "0s dari 0s"', () => {
+    expect(formatFocusLine(0, 0)).toBe('0s dari 0s')
   })
 
   it('renders sub-minute focus and total in seconds', () => {
-    expect(formatFocusLine(5_000, 10_000)).toBe('5 detik dari 10 detik')
+    expect(formatFocusLine(5_000, 10_000)).toBe('5s dari 10s')
   })
 
   it('renders 59s in seconds', () => {
-    expect(formatFocusLine(59_000, 59_000)).toBe('59 detik dari 59 detik')
+    expect(formatFocusLine(59_000, 59_000)).toBe('59s dari 59s')
   })
 
   it('renders 60s and above in minutes', () => {
-    expect(formatFocusLine(60_000, 60_000)).toBe('1 menit dari 1 menit')
+    expect(formatFocusLine(60_000, 60_000)).toBe('1m 00s dari 1m 00s')
   })
 })
 

@@ -38,18 +38,18 @@ describe('buildSessionReportPdf', () => {
 
   it('shows sub-minute durations in seconds', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 30_000 } }))
-    expect(pdf).toContain('30 detik')
-    expect(pdf).not.toContain('30 menit')
+    expect(pdf).toContain('30s')
+    expect(pdf).not.toContain('30m')
   })
 
   it('shows whole-minute durations in minutes', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000 } }))
-    expect(pdf).toContain('1 menit')
+    expect(pdf).toContain('1m 00s')
   })
 
   it('reports "Waktu tidak fokus" as the present-but-not-focused total', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000, TERALIH: 120_000 } }))
-    expect(pdf).toContain('2 menit')
+    expect(pdf).toContain('2m 00s')
   })
 
   it('includes the study topic when present', () => {

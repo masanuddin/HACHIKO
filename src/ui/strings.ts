@@ -189,21 +189,24 @@ export const strings = {
 } as const
 
 /**
- * Unit-aware duration formatter shared across screens. Sub-minute values
- * render in seconds; whole minutes render as "N menit"; and a minute that
- * has remaining seconds renders as "N+ menit" (84s -> "1+ menit", never a
- * misleading "1 menit"). Raw milliseconds are preserved - this is
- * presentation only.
+ * Unit-aware duration formatter shared across screens. Renders the exact
+ * elapsed time with explicit h/m/s unit suffixes instead of rounding -
+ * leading zero-units are dropped (84s -> "1m 24s", not "0h 01m 24s"), and
+ * every unit below the leading one is zero-padded to two digits. Raw
+ * milliseconds are preserved - this is presentation only.
  */
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
-  if (totalSeconds < 60) return `${totalSeconds} detik`
-  const minutes = Math.floor(totalSeconds / 60)
-  if (totalSeconds % 60 === 0) return `${minutes} menit`
-  return `${minutes}+ menit`
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`
+  return `${seconds}s`
 }
 
-/** "14 menit dari 25 menit" (or seconds when sub-minute) - shared by the
+/** "14m 00s dari 25m 00s" (or just seconds when sub-minute) - shared by the
  * Session Card grid and the PDF report so the two never disagree.
  * `totalMs` is the session's active (present) time. */
 export function formatFocusLine(focusMs: number, totalMs: number): string {
