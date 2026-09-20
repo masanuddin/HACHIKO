@@ -65,13 +65,15 @@ const C = {
   muted: '0.541 0.498 0.463',
 }
 
-// The stamp's placement on the page - sized to keep its 96:87 source
-// aspect ratio, straddling the summary card's top-right corner (48+499,
-// 560+150) = (547, 710).
-const STAMP_DRAW_W = 64
+// The stamp's placement on the page - sized to keep its source aspect
+// ratio, positioned under the tail end ("...SSs") of the hero Fokus
+// value (drawn at colLeft=76, y=655, size 34 - see buildContent). Clear
+// of the detail-metrics row below it (label/value text tops out around
+// y=620) and the card's own top edge (y=710) with margin either side.
+const STAMP_DRAW_W = 92
 const STAMP_DRAW_H = Math.round((STAMP_DRAW_W * STAMP_HEIGHT) / STAMP_WIDTH)
-const STAMP_X = 495
-const STAMP_Y = 685
+const STAMP_X = 250
+const STAMP_Y = 618
 
 const MONTHS_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',

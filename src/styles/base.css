@@ -387,23 +387,29 @@ input:focus-visible,
    cards below it stay in the plain .metrics list, just with the same
    card look - see sessionCard.ts) ---- */
 .bento {
-  position: relative;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   grid-auto-rows: minmax(84px, auto);
   gap: var(--space-4);
 }
 
-/* The report stamp, overlapping the grid's top-right corner like a seal
- * on a paper document - same placement language as the PDF report's
- * stamp (pdf.ts's STAMP_X/Y), so the two surfaces read as the same
- * "report". Sits above everything (z-index) since it's meant to look
- * stamped ON TOP, not tucked behind a tile. */
+/* Hugs just the hero number's own rendered width/height (not the much
+ * wider tile), so the stamp anchored to its corner tracks the text
+ * itself - see heroValue()'s doc comment in sessionCard.ts. */
+.hero-value-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+/* The report stamp, overlapping the hero number's bottom-right corner -
+ * i.e. under its ":SSs" tail - like a seal on a paper document. Same
+ * placement language as the PDF report's stamp (pdf.ts's STAMP_X/Y), so
+ * the two surfaces read as the same "report". */
 .session-card-stamp {
   position: absolute;
-  top: -18px;
-  right: -18px;
-  width: 64px;
+  bottom: -34px;
+  right: -46px;
+  width: 190px;
   height: auto;
   transform: rotate(8deg);
   pointer-events: none;
@@ -412,9 +418,9 @@ input:focus-visible,
 
 @media (max-width: 640px) {
   .session-card-stamp {
-    width: 48px;
-    top: -12px;
-    right: -8px;
+    width: 110px;
+    bottom: -20px;
+    right: -24px;
   }
 }
 
@@ -439,7 +445,9 @@ input:focus-visible,
 /* The hero (Fokus) tile gets its own full-width row, achievement-style
    - see bentoMetrics' doc comment in sessionCard.ts. Everything else
    (mascot included) is supporting detail one row below it. */
-.bento-tile--hero { grid-column: 1 / 5; grid-row: 1; }
+/* overflow: visible overrides .bento-tile's default hidden - the stamp
+ * is meant to hang past the number's own tight wrapper, seal-style. */
+.bento-tile--hero { grid-column: 1 / 5; grid-row: 1; overflow: visible; }
 
 .bento-tile--mascot {
   grid-column: 1 / 3;

@@ -43,11 +43,11 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
   ]
 }
 
-/** Decorative seal overlapping the bento grid's top-right corner, same
- *  placement language as the PDF report's stamp (pdf.ts's STAMP_X/Y) -
- *  the two surfaces read as the same "report", stamped the same way.
- *  `aria-hidden` since it carries no information beyond what the grid's
- *  own labeled tiles already say. */
+/** Decorative seal under the hero tile's Fokus value, same placement
+ *  language as the PDF report's stamp (pdf.ts's STAMP_X/Y) - the two
+ *  surfaces read as the same "report", stamped the same way. `aria-hidden`
+ *  since it carries no information beyond what the tile's own label
+ *  already says. */
 function reportStamp(): HTMLImageElement {
   return el('img', {
     class: 'session-card-stamp',
@@ -55,6 +55,18 @@ function reportStamp(): HTMLImageElement {
     alt: '',
     'aria-hidden': 'true',
   }) as HTMLImageElement
+}
+
+/** The hero value plus its stamp, wrapped tightly around just the number
+ *  text (not the whole tile) - so the stamp, anchored to this wrapper's
+ *  bottom-right corner, always lands under wherever the ":SSs" tail of
+ *  the fixed-width HHh:MMm:SSs string actually ends, regardless of font
+ *  metrics or the tile's own (much wider) box. */
+function heroValue(value: string): HTMLDivElement {
+  return el('div', { class: 'hero-value-wrap' }, [
+    el('span', { class: 'metric__value metric__value--big' }, [value]),
+    reportStamp(),
+  ])
 }
 
 /**
@@ -69,7 +81,10 @@ function reportStamp(): HTMLImageElement {
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'bento' }, [
-    bentoTile('hero', 'amber-tint', tileMetric(s.focusMinutesLabel, formatDuration(m.focusMs), true)),
+    bentoTile('hero', 'amber-tint', [
+      el('span', { class: 'metric__label' }, [s.focusMinutesLabel]),
+      heroValue(formatDuration(m.focusMs)),
+    ]),
     bentoTile('mascot', 'peach-tint', [mascotPeek()]),
     bentoTile('duduk', 'blue-tint', tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
     bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
@@ -78,7 +93,6 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
       el('p', { class: 'observation' }, [observationText]),
       doodleMark('paw', { size: '36px' }),
     ]),
-    reportStamp(),
   ])
 }
 
