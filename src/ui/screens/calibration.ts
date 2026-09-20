@@ -9,7 +9,7 @@ import type { FaceBox } from '../../perception/faceBox'
 import { calibrate, DEFAULT_CONFIG } from '../../engine/focusEngine'
 import type { Cone, Frame } from '../../engine/focusEngine'
 
-const CALIBRATION_MS = 15_000
+const CALIBRATION_MS = 10_000
 // The countdown is split into three equal windows, each showing one of
 // strings.calibration.hints - ambient/glanceable only, never something
 // the student has to stop and read (they still need to look at the
@@ -74,7 +74,7 @@ export function renderCalibration(
     // or it strands as a narrow strip in the middle of a wide viewport.
     content.classList.add('screen__content--wide')
 
-    // A calm, watching presence for the 15 seconds - the student still
+    // A calm, watching presence for the CALIBRATION_MS window - the student still
     // needs to sit naturally and look at the camera, so this stays
     // peripheral: a gentle idle motion (reusing the existing breathing
     // animation, not a new one) rather than anything that asks for

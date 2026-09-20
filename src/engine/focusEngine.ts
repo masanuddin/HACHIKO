@@ -75,9 +75,10 @@ export const DEFAULT_CONFIG: EngineConfig = {
 }
 
 /**
- * Turn 15 seconds of "sit like you normally study" frames into a cone the
- * student's head is allowed to move within before it counts as "out of
- * cone." PRD §5:
+ * Turn the calibration screen's "sit like you normally study" frames
+ * (CALIBRATION_MS in calibration.ts, 10s by default - PRD §5 originally
+ * specified 15s) into a cone the student's head is allowed to move
+ * within before it counts as "out of cone":
  *   1. Discard the first 3000ms (settling).
  *   2. Mean and stddev of yaw and pitch over what's left.
  *   3. Tolerance = max(coneSigmaMult * stddev, coneFloorRad) per axis.

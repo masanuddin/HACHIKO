@@ -58,7 +58,7 @@ export const strings = {
   },
 
   calibration: {
-    title: 'Kalibrasi 15 detik',
+    title: 'Kalibrasi 10 detik',
     body: 'Duduk kayak biasa kamu belajar ya. Aku lagi ngapalin posisi dudukmu yang normal.',
     counting: (secondsLeft: number) => `${secondsLeft} detik lagi`,
     done: 'Beres! Yuk lanjut.',
