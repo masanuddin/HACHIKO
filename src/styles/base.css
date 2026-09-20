@@ -1002,6 +1002,7 @@ input:focus-visible,
 
 .session__controls {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

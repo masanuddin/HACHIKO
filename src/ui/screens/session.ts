@@ -377,6 +377,7 @@ function runWorkPhase(
       },
       { variant: 'secondary' },
     )
+    const lewatiBtn = button(strings.common.skip, showLewatiConfirm, { variant: 'secondary' })
     const selesaiBtn = button(s.selesai, showSelesaiConfirm, { variant: 'secondary' })
     const nudgeSlot = el('div', { class: 'session__nudge' })
 
@@ -455,7 +456,7 @@ function runWorkPhase(
       hachiko.element,
       stateLabel,
       nudgeSlot,
-      el('div', { class: 'session__controls' }, [jedaBtn, selesaiBtn]),
+      el('div', { class: 'session__controls' }, [jedaBtn, lewatiBtn, selesaiBtn]),
       dot,
       ...(mentor ? [] : [hiddenVideo]),
     ])
@@ -500,8 +501,9 @@ function runWorkPhase(
     let rawOutAccumMs = 0
     let offeredEarlyBreak = false
     let extensionOffered = false
-    let nudgeVisible: 'earlyBreak' | 'extension' | 'selesaiConfirm' | null = null
+    let nudgeVisible: 'earlyBreak' | 'extension' | 'selesaiConfirm' | 'lewatiConfirm' | null = null
     let pausedBeforeSelesaiConfirm = false
+    let pausedBeforeLewatiConfirm = false
 
     function hideNudge(): void {
       nudgeVisible = null
@@ -543,6 +545,51 @@ function runWorkPhase(
             hideNudge()
             overlay.close()
             finishNow(true)
+          }),
+        ),
+      )
+
+      const overlay = confirmOverlay(screenEl, dialogChildren, cancel)
+    }
+
+    /**
+     * "Lewati" ends only THIS work block early and moves straight to
+     * Break - the same outcome as accepting the adaptive early-break
+     * nudge (finishNow(false)), just manually triggered instead of
+     * offered. Deliberately its own button rather than folded into the
+     * Selesai confirm (see the 2026-09-20 brainstorm: student explicitly
+     * chose two separate buttons over one button with two choices), so
+     * this mirrors showSelesaiConfirm's structure closely on purpose -
+     * same pause/confirm/neutral-mascot treatment, different finishNow
+     * argument and copy.
+     */
+    function showLewatiConfirm(): void {
+      pausedBeforeLewatiConfirm = paused
+      paused = true
+      nudgeVisible = 'lewatiConfirm'
+
+      function cancel(): void {
+        paused = pausedBeforeLewatiConfirm
+        jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
+        hideNudge()
+        overlay.close()
+      }
+
+      // Same "stopping early gets a neutral reaction" treatment as
+      // Selesai - skipping to break is, by definition, almost always
+      // early relative to the full block.
+      const elapsedMs = totalMs - remainingMs
+      const stoppingEarly = elapsedMs < totalMs * EARLY_STOP_RATIO
+      const dialogChildren: (Node | string)[] = []
+      if (stoppingEarly) dialogChildren.push(mascotPeek('drowsy'))
+      dialogChildren.push(
+        el('h2', { class: 'card__title' }, [s.lewatiConfirmTitle]),
+        actions(
+          button(s.selesaiConfirmNo, cancel, { variant: 'secondary' }),
+          button(s.goToBreak, () => {
+            hideNudge()
+            overlay.close()
+            finishNow(false)
           }),
         ),
       )

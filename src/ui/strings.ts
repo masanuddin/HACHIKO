@@ -104,6 +104,7 @@ export const strings = {
     selesaiConfirmTitle: 'Selesai untuk hari ini?',
     selesaiConfirmYes: 'Ya, selesai',
     selesaiConfirmNo: 'Lanjut fokus',
+    lewatiConfirmTitle: 'Istirahat sekarang?',
     stateLabels: {
       FOKUS: 'Fokus',
       TERALIH: 'Teralih',
