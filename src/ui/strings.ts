@@ -14,6 +14,7 @@ export const strings = {
     back: 'Kembali',
     skip: 'Lewati',
     cameraActive: 'Kamera aktif',
+    minutesUnit: 'menit',
   },
 
   welcome: {
@@ -203,13 +204,6 @@ export function formatDuration(ms: number): string {
   const seconds = totalSeconds % 60
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(hours)}h:${pad(minutes)}m:${pad(seconds)}s`
-}
-
-/** "00h:14m:00s dari 00h:25m:00s" - shared by the Session Card grid and
- * the PDF report so the two never disagree. `totalMs` is the session's
- * active (present) time. */
-export function formatFocusLine(focusMs: number, totalMs: number): string {
-  return `${formatDuration(focusMs)} dari ${formatDuration(totalMs)}`
 }
 
 /**

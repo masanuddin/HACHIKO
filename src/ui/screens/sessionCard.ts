@@ -1,4 +1,4 @@
-import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from '../strings'
+import { strings, formatDuration, sessionObservation, sessionTitle } from '../strings'
 import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
 import { bestFocusTopic, computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { loadProfile } from '../../storage/profile'
@@ -13,12 +13,13 @@ function metric(label: string, value: string): HTMLDivElement {
 /** The Session Card numbers (PRD §8), used by the read-only history
  * cards below the current session (the current session gets the bento
  * layout instead - see `bentoMetrics` below, which reads the same
- * `SessionMetrics` shape). `dari` total is the session's actual active
- * time (focus + sitting + uncertain) - no new timing here. */
+ * `SessionMetrics` shape). Each value stands alone - no "X dari Y"
+ * comparison; that composition read as redundant noise on a card this
+ * compact. */
 function metricGrid(m: SessionMetrics): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'metrics' }, [
-    metric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs)),
+    metric(s.focusMinutesLabel, formatDuration(m.focusMs)),
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
@@ -43,17 +44,19 @@ function tileMetric(label: string, value: string, big = false): HTMLElement[] {
 }
 
 /**
- * The current session's numbers as a bento grid (mascot tile,
- * a bigger Fokus tile since it's the headline number, the remaining
- * three metrics, and a wide observation tile) instead of the flat 2x2
- * grid `metricGrid` still renders for history. Same six pieces of
- * content as before - no metric added or dropped, just recomposed.
+ * The current session's numbers as a bento grid, achievement-style: the
+ * Fokus number is the headline, alone on its own full-width row at the
+ * same size as the live session timer (--text-timer) - not compared
+ * against anything, just "how long you made it". The remaining three
+ * metrics, the mascot, and the observation sit below it as supporting
+ * detail. Same six pieces of content as before - no metric added or
+ * dropped, just recomposed.
  */
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'bento' }, [
+    bentoTile('hero', 'amber-tint', tileMetric(s.focusMinutesLabel, formatDuration(m.focusMs), true)),
     bentoTile('mascot', 'peach-tint', [mascotPeek()]),
-    bentoTile('focus', 'amber-tint', tileMetric(s.focusMinutesLabel, formatFocusLine(m.focusMs, m.sittingMs), true)),
     bentoTile('duduk', 'blue-tint', tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
     bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
     bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),

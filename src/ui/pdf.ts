@@ -1,4 +1,4 @@
-import { strings, formatDuration, formatFocusLine, sessionObservation, sessionTitle } from './strings'
+import { strings, formatDuration, sessionObservation, sessionTitle } from './strings'
 import { computeMetrics, type SessionRecord } from '../storage/sessions'
 
 /**
@@ -81,7 +81,7 @@ function buildContent(record: SessionRecord, name?: string): string {
   const m = computeMetrics(record)
   const title = isLatin1Safe(name ?? '') ? sessionTitle(name) : s.title
 
-  const focusValue = formatFocusLine(m.focusMs, m.sittingMs)
+  const focusValue = formatDuration(m.focusMs)
   const sittingValue = formatDuration(m.sittingMs)
   const awayValue = formatDuration(m.awayMs)
   const uncertainValue = formatDuration(m.notFocusedMs)
@@ -105,17 +105,21 @@ function buildContent(record: SessionRecord, name?: string): string {
   out.push('48 560 499 150 re')
   out.push('f')
 
-  // 2x2 metric grid inside the card
+  // Fokus is the headline number - alone, large, no "dari" comparison -
+  // same hierarchy as the Session Card's hero bento tile. The remaining
+  // three metrics sit below it in a row, same as they always have.
   const colLeft = 76
-  const colRight = 300
-  out.push(drawText('F1', 11, colLeft, 674, C.muted, s.focusMinutesLabel))
-  out.push(drawText('F2', 15, colLeft, 652, C.ink, focusValue))
-  out.push(drawText('F1', 11, colRight, 674, C.muted, s.sittingMinutesLabel))
-  out.push(drawText('F2', 15, colRight, 652, C.ink, sittingValue))
-  out.push(drawText('F1', 11, colLeft, 622, C.muted, s.awayLabel))
-  out.push(drawText('F2', 15, colLeft, 600, C.ink, awayValue))
-  out.push(drawText('F1', 11, colRight, 622, C.muted, s.notFocusedLabel))
-  out.push(drawText('F2', 15, colRight, 600, C.ink, uncertainValue))
+  const colMid = 226
+  const colRight = 376
+  out.push(drawText('F1', 11, colLeft, 692, C.muted, s.focusMinutesLabel))
+  out.push(drawText('F2', 34, colLeft, 655, C.ink, focusValue))
+
+  out.push(drawText('F1', 11, colLeft, 612, C.muted, s.sittingMinutesLabel))
+  out.push(drawText('F2', 13, colLeft, 594, C.ink, sittingValue))
+  out.push(drawText('F1', 11, colMid, 612, C.muted, s.awayLabel))
+  out.push(drawText('F2', 13, colMid, 594, C.ink, awayValue))
+  out.push(drawText('F1', 11, colRight, 612, C.muted, s.notFocusedLabel))
+  out.push(drawText('F2', 13, colRight, 594, C.ink, uncertainValue))
 
   // Summary message, wrapped to the content width.
   let obsY = 520

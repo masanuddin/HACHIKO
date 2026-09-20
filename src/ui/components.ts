@@ -5,7 +5,7 @@
  */
 
 import { clampDurationMs } from './sessionConfig'
-import { formatDuration } from './strings'
+import { formatDuration, strings } from './strings'
 
 type Attrs = Record<string, string | undefined>
 
@@ -270,6 +270,15 @@ export function stepper(opts: {
     class: 'stepper__input',
   }) as HTMLInputElement
 
+  // The field shows a bare whole-minute number - "menit" is a single
+  // static label after the row (see `unitLabel` below), not repeated
+  // per digit or per preset. Typed input is always interpreted as whole
+  // minutes too (see the blur handler below), so both sides of the
+  // round trip are already the same unit.
+  function displayValue(ms: number): string {
+    return String(Math.round(ms / 60_000))
+  }
+
   // Trusted values (presets, the initial value) are set exactly as
   // given, bypassing the min/max clamp entirely - a preset like
   // FAST_DEBUG_WORK_MS (30s) is deliberately below DURATION_MIN_MS
@@ -279,7 +288,7 @@ export function stepper(opts: {
   // steppers via setMax) goes through applyClamped.
   function setRaw(ms: number): void {
     valueMs = ms
-    input.value = formatDuration(valueMs)
+    input.value = displayValue(valueMs)
     opts.onChange(valueMs)
   }
 
@@ -323,17 +332,14 @@ export function stepper(opts: {
   holdRepeat(plusBtn, 1)
 
   input.addEventListener('blur', () => {
-    // If the field wasn't actually edited, leave it alone. formatDuration()
-    // renders the fastdebug preset's 30 SECONDS as "00h:00m:30s", but typed
-    // input is always interpreted as whole MINUTES below - without this
-    // early return, merely focusing and blurring the field without
-    // retyping anything would reparse "00h:00m:30s" as the leading 0 and
-    // reinterpret it as 0 minutes, silently destroying the exact
-    // sub-minute value setRaw/applyClamped exists to protect.
-    if (input.value === formatDuration(valueMs)) return
+    // If the field wasn't actually edited, leave it alone - this protects
+    // the fastdebug 30s preset (0 whole minutes, rounded to "1" for
+    // display) from being silently promoted to a full clamped minute
+    // merely by focusing and blurring without retyping anything.
+    if (input.value === displayValue(valueMs)) return
     const parsed = Number.parseInt(input.value, 10)
     if (Number.isNaN(parsed)) {
-      input.value = formatDuration(valueMs)
+      input.value = displayValue(valueMs)
       return
     }
     applyClamped(parsed * 60_000)
@@ -343,14 +349,21 @@ export function stepper(opts: {
   })
 
   const presetButtons = opts.presetsMs.map((presetMs) => {
-    const btn = el('button', { class: 'preset-chip', type: 'button' }, [formatDuration(presetMs)])
+    // Whole-minute presets show the bare number, same as the input field.
+    // The one exception is FAST_DEBUG_WORK_MS/BREAK_MS (30s, dev-only) -
+    // a sub-minute value has no honest whole-minute label, so it keeps
+    // the full formatDuration() fallback instead of lying with "0".
+    const label = presetMs % 60_000 === 0 ? displayValue(presetMs) : formatDuration(presetMs)
+    const btn = el('button', { class: 'preset-chip', type: 'button' }, [label])
     btn.addEventListener('click', () => setRaw(presetMs))
     return btn
   })
 
+  const unitLabel = el('span', { class: 'stepper__unit' }, [strings.common.minutesUnit])
+
   const element = el('div', { class: 'stepper' }, [
     el('span', { class: 'metric__label' }, [opts.label]),
-    el('div', { class: 'stepper__row' }, [minusBtn, input, plusBtn]),
+    el('div', { class: 'stepper__row' }, [minusBtn, input, plusBtn, unitLabel]),
     el('div', { class: 'stepper__presets' }, presetButtons),
   ])
 

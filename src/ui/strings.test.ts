@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatFocusLine, sessionTitle, strings } from './strings'
+import { formatDuration, sessionTitle, strings } from './strings'
 
 describe('formatDuration', () => {
   it('renders a genuine zero as "00h:00m:00s"', () => {
@@ -68,24 +68,6 @@ describe('sessionTitle', () => {
 describe('session card study-topic insight', () => {
   it('names the topic when one exists', () => {
     expect(strings.sessionCard.topicInsight('Matematika')).toBe('Kamu paling fokus pas belajar Matematika')
-  })
-})
-
-describe('formatFocusLine', () => {
-  it('renders an instantly-finished session as "00h:00m:00s dari 00h:00m:00s"', () => {
-    expect(formatFocusLine(0, 0)).toBe('00h:00m:00s dari 00h:00m:00s')
-  })
-
-  it('renders sub-minute focus and total, zero-padded', () => {
-    expect(formatFocusLine(5_000, 10_000)).toBe('00h:00m:05s dari 00h:00m:10s')
-  })
-
-  it('renders 59s, zero-padded', () => {
-    expect(formatFocusLine(59_000, 59_000)).toBe('00h:00m:59s dari 00h:00m:59s')
-  })
-
-  it('renders 60s and above with minutes', () => {
-    expect(formatFocusLine(60_000, 60_000)).toBe('00h:01m:00s dari 00h:01m:00s')
   })
 })
 
