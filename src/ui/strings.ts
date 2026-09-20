@@ -189,11 +189,12 @@ export const strings = {
 } as const
 
 /**
- * Unit-aware duration formatter shared across screens. Renders the exact
- * elapsed time with explicit h/m/s unit suffixes instead of rounding -
- * leading zero-units are dropped (84s -> "1m 24s", not "0h 01m 24s"), and
- * every unit below the leading one is zero-padded to two digits. Raw
- * milliseconds are preserved - this is presentation only.
+ * Unit-aware duration formatter shared across screens. Always renders the
+ * full "HHh:MMm:SSs" shape, every unit zero-padded to two digits - never
+ * rounds and never drops a leading zero-unit (84s -> "00h:01m:24s"), so
+ * the same shape reads the same way whether a student glances at a
+ * 20-second gap or a 90-minute sitting. Raw milliseconds are preserved -
+ * this is presentation only.
  */
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
@@ -201,14 +202,12 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`
-  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`
-  return `${seconds}s`
+  return `${pad(hours)}h:${pad(minutes)}m:${pad(seconds)}s`
 }
 
-/** "14m 00s dari 25m 00s" (or just seconds when sub-minute) - shared by the
- * Session Card grid and the PDF report so the two never disagree.
- * `totalMs` is the session's active (present) time. */
+/** "00h:14m:00s dari 00h:25m:00s" - shared by the Session Card grid and
+ * the PDF report so the two never disagree. `totalMs` is the session's
+ * active (present) time. */
 export function formatFocusLine(focusMs: number, totalMs: number): string {
   return `${formatDuration(focusMs)} dari ${formatDuration(totalMs)}`
 }

@@ -324,12 +324,12 @@ export function stepper(opts: {
 
   input.addEventListener('blur', () => {
     // If the field wasn't actually edited, leave it alone. formatDuration()
-    // renders sub-minute values in SECONDS ("30s" for the fastdebug preset)
-    // but typed input is always interpreted as whole MINUTES below -
-    // without this early return, merely focusing and blurring the field
-    // without retyping anything would reparse "30s" as 30 and reinterpret
-    // it as 30 minutes, silently destroying the exact sub-minute value
-    // setRaw/applyClamped exists to protect.
+    // renders the fastdebug preset's 30 SECONDS as "00h:00m:30s", but typed
+    // input is always interpreted as whole MINUTES below - without this
+    // early return, merely focusing and blurring the field without
+    // retyping anything would reparse "00h:00m:30s" as the leading 0 and
+    // reinterpret it as 0 minutes, silently destroying the exact
+    // sub-minute value setRaw/applyClamped exists to protect.
     if (input.value === formatDuration(valueMs)) return
     const parsed = Number.parseInt(input.value, 10)
     if (Number.isNaN(parsed)) {

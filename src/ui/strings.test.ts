@@ -2,50 +2,50 @@ import { describe, expect, it } from 'vitest'
 import { formatDuration, formatFocusLine, sessionTitle, strings } from './strings'
 
 describe('formatDuration', () => {
-  it('renders a genuine zero as "0s"', () => {
-    expect(formatDuration(0)).toBe('0s')
+  it('renders a genuine zero as "00h:00m:00s"', () => {
+    expect(formatDuration(0)).toBe('00h:00m:00s')
   })
 
-  it('renders sub-minute durations in seconds', () => {
-    expect(formatDuration(5_000)).toBe('5s')
-    expect(formatDuration(37_000)).toBe('37s')
-    expect(formatDuration(59_000)).toBe('59s')
-    expect(formatDuration(59_900)).toBe('59s')
+  it('renders sub-minute durations with zero-padded hours/minutes', () => {
+    expect(formatDuration(5_000)).toBe('00h:00m:05s')
+    expect(formatDuration(37_000)).toBe('00h:00m:37s')
+    expect(formatDuration(59_000)).toBe('00h:00m:59s')
+    expect(formatDuration(59_900)).toBe('00h:00m:59s')
   })
 
-  it('renders exact whole minutes as "Nm 00s"', () => {
-    expect(formatDuration(60_000)).toBe('1m 00s')
-    expect(formatDuration(120_000)).toBe('2m 00s')
+  it('renders exact whole minutes with zero seconds', () => {
+    expect(formatDuration(60_000)).toBe('00h:01m:00s')
+    expect(formatDuration(120_000)).toBe('00h:02m:00s')
   })
 
   it('renders a minute with remaining seconds exactly, zero-padded', () => {
-    expect(formatDuration(84_000)).toBe('1m 24s')
-    expect(formatDuration(119_000)).toBe('1m 59s')
-    expect(formatDuration(121_000)).toBe('2m 01s')
+    expect(formatDuration(84_000)).toBe('00h:01m:24s')
+    expect(formatDuration(119_000)).toBe('00h:01m:59s')
+    expect(formatDuration(121_000)).toBe('00h:02m:01s')
   })
 
-  it('renders exact whole hours as "Nh 00m 00s"', () => {
-    expect(formatDuration(3_600_000)).toBe('1h 00m 00s')
+  it('renders exact whole hours with zero minutes/seconds', () => {
+    expect(formatDuration(3_600_000)).toBe('01h:00m:00s')
   })
 
   it('renders hours with remaining minutes/seconds, zero-padded', () => {
-    expect(formatDuration(3_800_000)).toBe('1h 03m 20s')
+    expect(formatDuration(3_800_000)).toBe('01h:03m:20s')
   })
 })
 
 describe('formatDuration boundaries', () => {
   it('covers the full second/minute/hour boundary ladder', () => {
-    expect(formatDuration(2_000)).toBe('2s')
-    expect(formatDuration(36_000)).toBe('36s')
-    expect(formatDuration(59_000)).toBe('59s')
-    expect(formatDuration(60_000)).toBe('1m 00s')
-    expect(formatDuration(84_000)).toBe('1m 24s')
-    expect(formatDuration(119_000)).toBe('1m 59s')
-    expect(formatDuration(120_000)).toBe('2m 00s')
-    expect(formatDuration(121_000)).toBe('2m 01s')
-    expect(formatDuration(3_599_000)).toBe('59m 59s')
-    expect(formatDuration(3_600_000)).toBe('1h 00m 00s')
-    expect(formatDuration(3_661_000)).toBe('1h 01m 01s')
+    expect(formatDuration(2_000)).toBe('00h:00m:02s')
+    expect(formatDuration(36_000)).toBe('00h:00m:36s')
+    expect(formatDuration(59_000)).toBe('00h:00m:59s')
+    expect(formatDuration(60_000)).toBe('00h:01m:00s')
+    expect(formatDuration(84_000)).toBe('00h:01m:24s')
+    expect(formatDuration(119_000)).toBe('00h:01m:59s')
+    expect(formatDuration(120_000)).toBe('00h:02m:00s')
+    expect(formatDuration(121_000)).toBe('00h:02m:01s')
+    expect(formatDuration(3_599_000)).toBe('00h:59m:59s')
+    expect(formatDuration(3_600_000)).toBe('01h:00m:00s')
+    expect(formatDuration(3_661_000)).toBe('01h:01m:01s')
   })
 })
 
@@ -72,20 +72,20 @@ describe('session card study-topic insight', () => {
 })
 
 describe('formatFocusLine', () => {
-  it('renders an instantly-finished session as "0s dari 0s"', () => {
-    expect(formatFocusLine(0, 0)).toBe('0s dari 0s')
+  it('renders an instantly-finished session as "00h:00m:00s dari 00h:00m:00s"', () => {
+    expect(formatFocusLine(0, 0)).toBe('00h:00m:00s dari 00h:00m:00s')
   })
 
-  it('renders sub-minute focus and total in seconds', () => {
-    expect(formatFocusLine(5_000, 10_000)).toBe('5s dari 10s')
+  it('renders sub-minute focus and total, zero-padded', () => {
+    expect(formatFocusLine(5_000, 10_000)).toBe('00h:00m:05s dari 00h:00m:10s')
   })
 
-  it('renders 59s in seconds', () => {
-    expect(formatFocusLine(59_000, 59_000)).toBe('59s dari 59s')
+  it('renders 59s, zero-padded', () => {
+    expect(formatFocusLine(59_000, 59_000)).toBe('00h:00m:59s dari 00h:00m:59s')
   })
 
-  it('renders 60s and above in minutes', () => {
-    expect(formatFocusLine(60_000, 60_000)).toBe('1m 00s dari 1m 00s')
+  it('renders 60s and above with minutes', () => {
+    expect(formatFocusLine(60_000, 60_000)).toBe('00h:01m:00s dari 00h:01m:00s')
   })
 })
 
