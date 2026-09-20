@@ -56,6 +56,18 @@ interface WorkPhaseResult {
   record: SessionRecord
   telemetryJsonl: string
   endedManually: boolean
+  /** Wall-clock time between this phase starting (record.startedAt) and
+   *  the first tick actually arriving (camera/detection warmup, plus
+   *  re-attaching the video element - see the note on video.play() a
+   *  few lines below) - real elapsed time no metric attributes anywhere
+   *  (not fokus/teralih/absen: nothing is tracked before the first tick;
+   *  not jeda: the student didn't choose this gap). runSession
+   *  subtracts the sum of these, across every cycle, from
+   *  totalSessionMs, so Waktu duduk + Waktu absen + Waktu istirahat +
+   *  Waktu jeda fully reconciles against Total lama sesi instead of
+   *  leaving a small residual gap per cycle (2026-09-21).
+   */
+  startupLagMs: number
 }
 
 // The mentoring panel's preview box uses the same 4:3 that base.css's
@@ -509,6 +521,9 @@ function runWorkPhase(
     let totalMs = workMs
     let lastFrameT: number | null = null
     let sessionStartT: number | null = null
+    // Set alongside sessionStartT, in the same real (Date.now()) clock
+    // record.startedAt already uses - see WorkPhaseResult.startupLagMs.
+    let firstTickAtMs: number | null = null
     let previousState: FocusState | null = null
     let stateEnteredAt = 0
     let openTeralihSpan: DistractionSpan | null = null
@@ -701,7 +716,10 @@ function runWorkPhase(
 
       if (paused || finished) return
 
-      if (sessionStartT === null) sessionStartT = frame.t
+      if (sessionStartT === null) {
+        sessionStartT = frame.t
+        firstTickAtMs = Date.now()
+      }
       const relativeT = frame.t - sessionStartT
 
       telemetry.record(frame)
@@ -797,7 +815,11 @@ function runWorkPhase(
       // cycle's JSONL is joined into one file - not per cycle here.
       const telemetryJsonl = telemetry.toJsonl()
       root.replaceChildren()
-      resolve({ record, telemetryJsonl, endedManually })
+      // Falls back to "now" if not a single tick ever arrived (e.g.
+      // Selesai clicked before the camera produced anything) - the
+      // whole phase was startup lag in that case.
+      const startupLagMs = (firstTickAtMs ?? Date.now()) - record.startedAt
+      resolve({ record, telemetryJsonl, endedManually, startupLagMs })
     }
   })
 }
@@ -922,14 +944,28 @@ export async function runSession(
   // SessionRecord.restMs's doc comment for why this is measured
   // directly rather than derived from the work-phase durations.
   let restMs = 0
+  // Summed camera/detection startup lag across every Work cycle - see
+  // WorkPhaseResult.startupLagMs's doc comment. Subtracted from
+  // totalSessionMs below so it fully reconciles against durationsMs +
+  // restMs + pausedMs instead of leaving a small residual gap per cycle.
+  let startupLagMs = 0
 
   // Work -> Break -> Work -> Break -> ... for as long as the student
   // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
   // the whole plan immediately, skipping Break for that final cycle.
   while (keepGoing) {
-    const { record, telemetryJsonl, endedManually } = await runWorkPhase(root, video, bundle, cone, declaredMedia, studyTopic, workMs)
+    const { record, telemetryJsonl, endedManually, startupLagMs: cycleStartupLagMs } = await runWorkPhase(
+      root,
+      video,
+      bundle,
+      cone,
+      declaredMedia,
+      studyTopic,
+      workMs,
+    )
     records.push(record)
     telemetryParts.push(telemetryJsonl)
+    startupLagMs += cycleStartupLagMs
 
     if (endedManually) {
       keepGoing = false
@@ -953,7 +989,7 @@ export async function runSession(
   // Measured here, before the trailing Clarify screen below - that's
   // end-of-sitting paperwork, not part of "how long the session was".
   merged.restMs = restMs
-  merged.totalSessionMs = Date.now() - merged.startedAt
+  merged.totalSessionMs = Date.now() - merged.startedAt - startupLagMs
   // Empty parts (a cycle ended via Selesai before any frame was ever
   // recorded) would otherwise leave a blank line in the joined file -
   // harmless to this app, but a real problem for anything that parses
