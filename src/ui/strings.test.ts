@@ -2,50 +2,50 @@ import { describe, expect, it } from 'vitest'
 import { formatDuration, sessionTitle, strings } from './strings'
 
 describe('formatDuration', () => {
-  it('renders a genuine zero as "00h:00m:00s"', () => {
-    expect(formatDuration(0)).toBe('00h:00m:00s')
+  it('renders a genuine zero as "00:00:00"', () => {
+    expect(formatDuration(0)).toBe('00:00:00')
   })
 
   it('renders sub-minute durations with zero-padded hours/minutes', () => {
-    expect(formatDuration(5_000)).toBe('00h:00m:05s')
-    expect(formatDuration(37_000)).toBe('00h:00m:37s')
-    expect(formatDuration(59_000)).toBe('00h:00m:59s')
-    expect(formatDuration(59_900)).toBe('00h:00m:59s')
+    expect(formatDuration(5_000)).toBe('00:00:05')
+    expect(formatDuration(37_000)).toBe('00:00:37')
+    expect(formatDuration(59_000)).toBe('00:00:59')
+    expect(formatDuration(59_900)).toBe('00:00:59')
   })
 
   it('renders exact whole minutes with zero seconds', () => {
-    expect(formatDuration(60_000)).toBe('00h:01m:00s')
-    expect(formatDuration(120_000)).toBe('00h:02m:00s')
+    expect(formatDuration(60_000)).toBe('00:01:00')
+    expect(formatDuration(120_000)).toBe('00:02:00')
   })
 
   it('renders a minute with remaining seconds exactly, zero-padded', () => {
-    expect(formatDuration(84_000)).toBe('00h:01m:24s')
-    expect(formatDuration(119_000)).toBe('00h:01m:59s')
-    expect(formatDuration(121_000)).toBe('00h:02m:01s')
+    expect(formatDuration(84_000)).toBe('00:01:24')
+    expect(formatDuration(119_000)).toBe('00:01:59')
+    expect(formatDuration(121_000)).toBe('00:02:01')
   })
 
   it('renders exact whole hours with zero minutes/seconds', () => {
-    expect(formatDuration(3_600_000)).toBe('01h:00m:00s')
+    expect(formatDuration(3_600_000)).toBe('01:00:00')
   })
 
   it('renders hours with remaining minutes/seconds, zero-padded', () => {
-    expect(formatDuration(3_800_000)).toBe('01h:03m:20s')
+    expect(formatDuration(3_800_000)).toBe('01:03:20')
   })
 })
 
 describe('formatDuration boundaries', () => {
   it('covers the full second/minute/hour boundary ladder', () => {
-    expect(formatDuration(2_000)).toBe('00h:00m:02s')
-    expect(formatDuration(36_000)).toBe('00h:00m:36s')
-    expect(formatDuration(59_000)).toBe('00h:00m:59s')
-    expect(formatDuration(60_000)).toBe('00h:01m:00s')
-    expect(formatDuration(84_000)).toBe('00h:01m:24s')
-    expect(formatDuration(119_000)).toBe('00h:01m:59s')
-    expect(formatDuration(120_000)).toBe('00h:02m:00s')
-    expect(formatDuration(121_000)).toBe('00h:02m:01s')
-    expect(formatDuration(3_599_000)).toBe('00h:59m:59s')
-    expect(formatDuration(3_600_000)).toBe('01h:00m:00s')
-    expect(formatDuration(3_661_000)).toBe('01h:01m:01s')
+    expect(formatDuration(2_000)).toBe('00:00:02')
+    expect(formatDuration(36_000)).toBe('00:00:36')
+    expect(formatDuration(59_000)).toBe('00:00:59')
+    expect(formatDuration(60_000)).toBe('00:01:00')
+    expect(formatDuration(84_000)).toBe('00:01:24')
+    expect(formatDuration(119_000)).toBe('00:01:59')
+    expect(formatDuration(120_000)).toBe('00:02:00')
+    expect(formatDuration(121_000)).toBe('00:02:01')
+    expect(formatDuration(3_599_000)).toBe('00:59:59')
+    expect(formatDuration(3_600_000)).toBe('01:00:00')
+    expect(formatDuration(3_661_000)).toBe('01:01:01')
   })
 })
 

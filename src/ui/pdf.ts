@@ -66,8 +66,9 @@ const C = {
 }
 
 // The stamp's placement on the page - sized to keep its source aspect
-// ratio, positioned under the tail end ("...SSs") of the hero Fokus
-// value (drawn at colLeft=76, y=655, size 34 - see buildContent). Clear
+// ratio, positioned under the tail end (the trailing seconds) of the
+// hero Fokus value (drawn at colLeft=76, y=655, size 34 - see
+// buildContent). Clear
 // of the detail-metrics row below it (label/value text tops out around
 // y=620) and the card's own top edge (y=710) with margin either side.
 const STAMP_DRAW_W = 92

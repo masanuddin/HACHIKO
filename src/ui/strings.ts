@@ -191,11 +191,11 @@ export const strings = {
 
 /**
  * Unit-aware duration formatter shared across screens. Always renders the
- * full "HHh:MMm:SSs" shape, every unit zero-padded to two digits - never
- * rounds and never drops a leading zero-unit (84s -> "00h:01m:24s"), so
- * the same shape reads the same way whether a student glances at a
- * 20-second gap or a 90-minute sitting. Raw milliseconds are preserved -
- * this is presentation only.
+ * full "HH:MM:SS" shape, every unit zero-padded to two digits - never
+ * rounds and never drops a leading zero-unit (84s -> "00:01:24"), so the
+ * same shape reads the same way whether a student glances at a 20-second
+ * gap or a 90-minute sitting. Raw milliseconds are preserved - this is
+ * presentation only.
  */
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
@@ -203,7 +203,7 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(hours)}h:${pad(minutes)}m:${pad(seconds)}s`
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
 }
 
 /**

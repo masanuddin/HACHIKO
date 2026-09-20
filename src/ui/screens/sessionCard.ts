@@ -59,8 +59,8 @@ function reportStamp(): HTMLImageElement {
 
 /** The hero value plus its stamp, wrapped tightly around just the number
  *  text (not the whole tile) - so the stamp, anchored to this wrapper's
- *  bottom-right corner, always lands under wherever the ":SSs" tail of
- *  the fixed-width HHh:MMm:SSs string actually ends, regardless of font
+ *  bottom-right corner, always lands under wherever the trailing seconds
+ *  of the fixed-width HH:MM:SS string actually end, regardless of font
  *  metrics or the tile's own (much wider) box. */
 function heroValue(value: string): HTMLDivElement {
   return el('div', { class: 'hero-value-wrap' }, [

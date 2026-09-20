@@ -90,7 +90,7 @@ function streakChip(sessionCount: number, streakDays: number): HTMLDivElement {
  * confirmOverlay wraps its children in one card itself.
  */
 /** Whole-minute shorthand ("25m") for the timeline pills - the full
- * HHh:MMm:SSs shape used everywhere else is too verbose for a small
+ * HH:MM:SS shape used everywhere else is too verbose for a small
  * pill. Falls back to the full shape for a genuine sub-minute value
  * (the fastdebug 30s presets) rather than lying with "0m". */
 function formatMinutesLabel(ms: number): string {
