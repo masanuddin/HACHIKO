@@ -135,7 +135,7 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
   const totalActiveMs = sittingMs
   const uncertainPercent = totalActiveMs > 0 ? uncertainMs / totalActiveMs : 0
 
-  // "Waktu tidak fokus" = every present moment that wasn't focus: TERALIH +
+  // "Waktu teralih" = every present moment that wasn't focus: TERALIH +
   // MENGANTUK + whatever UNCERTAIN the clarification did not fold into focus.
   const notFocusedMs = sittingMs - focusMs
   const notFocusedPercent = totalActiveMs > 0 ? notFocusedMs / totalActiveMs : 0

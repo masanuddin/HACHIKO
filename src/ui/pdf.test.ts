@@ -48,7 +48,7 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('Waktu fokus')
     expect(pdf).toContain('Waktu duduk')
     expect(pdf).toContain('Waktu absen')
-    expect(pdf).toContain('Waktu tidak fokus')
+    expect(pdf).toContain('Waktu teralih')
   })
 
   it('shows sub-minute durations zero-padded within the full HH:MM:SS shape', () => {
@@ -61,7 +61,7 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('00:01:00')
   })
 
-  it('reports "Waktu tidak fokus" as the present-but-not-focused total', () => {
+  it('reports "Waktu teralih" as the present-but-not-focused total', () => {
     const pdf = pdfText(record({ durationsMs: { ...emptyDurations(), FOKUS: 60_000, TERALIH: 120_000 } }))
     expect(pdf).toContain('00:02:00')
   })

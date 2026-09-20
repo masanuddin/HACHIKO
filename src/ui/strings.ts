@@ -154,7 +154,7 @@ export const strings = {
     firstCollapseLabel: 'Fokus pertama bertahan sampai',
     firstCollapseUnknown: 'bertahan sepanjang sesi',
     uncertainLabel: 'Waktu belum jelas',
-    notFocusedLabel: 'Waktu tidak fokus',
+    notFocusedLabel: 'Waktu teralih',
     totalSessionLabel: 'Total lama sesi',
     restLabel: 'Waktu istirahat',
     topicInsight: (topic: string) => `Kamu paling fokus pas belajar ${topic}`,

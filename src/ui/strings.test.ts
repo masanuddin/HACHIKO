@@ -107,13 +107,13 @@ describe('session state labels', () => {
     ])
   })
 
-  it('never render the live UNCERTAIN label as "Waktu tidak fokus"', () => {
-    expect(strings.session.stateLabels.UNCERTAIN).not.toBe('Waktu tidak fokus')
+  it('never render the live UNCERTAIN label as the report\'s "Waktu teralih" metric label', () => {
+    expect(strings.session.stateLabels.UNCERTAIN).not.toBe('Waktu teralih')
   })
 })
 
 describe('analytical uncertain terminology', () => {
-  it('keeps the Session Card / PDF "Waktu tidak fokus" metric label', () => {
-    expect(strings.sessionCard.notFocusedLabel).toBe('Waktu tidak fokus')
+  it('keeps the Session Card / PDF "Waktu teralih" metric label', () => {
+    expect(strings.sessionCard.notFocusedLabel).toBe('Waktu teralih')
   })
 })

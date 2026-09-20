@@ -99,7 +99,7 @@ describe('computeMetrics', () => {
     expect(m.notFocusedMs).toBe(5_000)
   })
 
-  it('accumulates "Waktu tidak fokus" across merged multi-cycle records', () => {
+  it('accumulates "Waktu teralih" across merged multi-cycle records', () => {
     const cycle1 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 600_000 } })
     const cycle2 = record({ durationsMs: { ...emptyDurations(), FOKUS: 0, TERALIH: 300_000 } })
     const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
