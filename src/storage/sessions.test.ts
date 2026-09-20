@@ -107,9 +107,24 @@ describe('computeMetrics', () => {
     expect(m.notFocusedMs).toBe(900_000)
   })
 
-  it('passes totalSessionMs/restMs/pausedMs through when the record has them', () => {
-    const m = computeMetrics(record({ totalSessionMs: 1_800_000, restMs: 300_000, pausedMs: 15_000 }))
-    expect(m.totalSessionMs).toBe(1_800_000)
+  it('passes restMs/pausedMs through, and derives totalSessionMs as their sum with duduk+absen', () => {
+    // totalSessionMs is deliberately NOT a passthrough of the raw
+    // record.totalSessionMs - it's floor(sittingMs/1000) +
+    // floor(awayMs/1000) + floor(restMs/1000) + floor(pausedMs/1000),
+    // so it reconciles exactly against the other four displayed metrics
+    // by construction, regardless of what the raw independently-measured
+    // wall-clock value says (2026-09-21). The raw value here (1_800_000)
+    // is deliberately inconsistent with the other fields, to prove it's
+    // ignored for display purposes.
+    const m = computeMetrics(
+      record({
+        durationsMs: { ...emptyDurations(), FOKUS: 600_000, TIDAK_HADIR: 60_000 },
+        totalSessionMs: 1_800_000,
+        restMs: 300_000,
+        pausedMs: 15_000,
+      }),
+    )
+    expect(m.totalSessionMs).toBe(600_000 + 60_000 + 300_000 + 15_000)
     expect(m.restMs).toBe(300_000)
     expect(m.pausedMs).toBe(15_000)
   })
@@ -119,6 +134,20 @@ describe('computeMetrics', () => {
     expect(m.totalSessionMs).toBeNull()
     expect(m.restMs).toBeNull()
     expect(m.pausedMs).toBeNull()
+  })
+
+  it('floors each part to whole seconds before summing, so totalSessionMs always equals the sum of the other four displayed values', () => {
+    const m = computeMetrics(
+      record({
+        durationsMs: { ...emptyDurations(), FOKUS: 11_900, TIDAK_HADIR: 0 }, // displays as 11s
+        totalSessionMs: 999_999, // irrelevant - ignored for display
+        restMs: 2_900, // displays as 2s
+        pausedMs: 3_900, // displays as 3s
+      }),
+    )
+    // 11 + 0 + 2 + 3 = 16 whole seconds, not a value derived from the
+    // unfloored 11_900 + 0 + 2_900 + 3_900 = 18_700ms.
+    expect(m.totalSessionMs).toBe(16_000)
   })
 
   it('sums pausedMs across merged multi-cycle records', () => {

@@ -149,6 +149,27 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
   const notFocusedMs = sittingMs - focusMs
   const notFocusedPercent = totalActiveMs > 0 ? notFocusedMs / totalActiveMs : 0
 
+  const restMs = record.restMs ?? null
+  const pausedMs = record.pausedMs ?? null
+
+  // "Total lama sesi" is deliberately NOT the raw independently-measured
+  // record.totalSessionMs for display purposes - floor(a) + floor(b) +
+  // floor(c) + floor(d) is not guaranteed to equal floor(a+b+c+d), so
+  // four independently-rounded whole-second metrics (Waktu duduk/absen/
+  // istirahat/jeda) can visibly fail to sum to an independently-rounded
+  // total, especially on a short session where a rounding second is a
+  // large fraction of the whole (2026-09-21). Instead, the displayed
+  // total IS the sum of the same floored-to-seconds values the other
+  // four tiles already show, so it reconciles by construction, not by
+  // hoping four separate clocks agree to the millisecond. This costs
+  // at most a few hundred ms of precision against the true wall clock -
+  // acceptable, since every other number on this report is already
+  // floored to whole seconds too.
+  const totalSessionMs =
+    record.totalSessionMs === undefined || restMs === null || pausedMs === null
+      ? null
+      : (Math.floor(sittingMs / 1000) + Math.floor(awayMs / 1000) + Math.floor(restMs / 1000) + Math.floor(pausedMs / 1000)) * 1000
+
   return {
     focusMs,
     sittingMs,
@@ -159,9 +180,9 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
     uncertainPercent,
     notFocusedPercent,
     exceedsUncertainThreshold: uncertainPercent > UNCERTAIN_THRESHOLD,
-    totalSessionMs: record.totalSessionMs ?? null,
-    restMs: record.restMs ?? null,
-    pausedMs: record.pausedMs ?? null,
+    totalSessionMs,
+    restMs,
+    pausedMs,
   }
 }
 

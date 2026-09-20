@@ -66,14 +66,24 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('00:02:00')
   })
 
-  it('shows Total lama sesi, Waktu istirahat and Waktu jeda when the record has them', () => {
-    const pdf = pdfText(record({ totalSessionMs: 27 * 60_000, restMs: 5 * 60_000, pausedMs: 90_000 }))
+  it('shows Total lama sesi, Waktu istirahat and Waktu jeda when the record has them, and Total reconciles against duduk+absen+istirahat+jeda', () => {
+    // Total lama sesi is derived from these four (see computeMetrics'
+    // doc comment), not a passthrough of the raw record.totalSessionMs -
+    // 999_999 here is deliberately inconsistent, to prove it's ignored.
+    const pdf = pdfText(
+      record({
+        durationsMs: { ...emptyDurations(), FOKUS: 20 * 60_000 },
+        totalSessionMs: 999_999,
+        restMs: 5 * 60_000,
+        pausedMs: 2 * 60_000,
+      }),
+    )
     expect(pdf).toContain('Total lama sesi')
     expect(pdf).toContain('00:27:00')
     expect(pdf).toContain('Waktu istirahat')
     expect(pdf).toContain('00:05:00')
     expect(pdf).toContain('Waktu jeda')
-    expect(pdf).toContain('00:01:30')
+    expect(pdf).toContain('00:02:00')
   })
 
   it('omits Total lama sesi, Waktu istirahat and Waktu jeda for a record predating those fields', () => {
