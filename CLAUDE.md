@@ -44,10 +44,11 @@ Full spec: `HACHIKO_PRD.md`. **The PRD is the source of truth. If this file and 
 ```
 src/
   engine/          PURE. No browser APIs.
-    types.ts       Frame, FocusState, Media, Cone, EngineConfig
-    config.ts      DEFAULT_CONFIG constants
-    calibrate.ts   frames[] -> Cone
-    focusEngine.ts the state machine
+    focusEngine.ts types (Frame, FocusState, Media, Cone, EngineConfig),
+                   DEFAULT_CONFIG, calibrate() (frames[] -> Cone), and
+                   the FocusEngine state machine - one file by request
+                   (2026-09-20), previously split across types.ts/
+                   config.ts/calibrate.ts/focusEngine.ts.
     *.test.ts      vitest, synthetic frame sequences
   perception/      Browser-facing. Camera + MediaPipe.
     camera.ts      getUserMedia, requestVideoFrameCallback loop

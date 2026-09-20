@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FocusEngine } from './focusEngine'
-import { DEFAULT_CONFIG } from './config'
-import type { Cone, EngineConfig, Frame, Media } from './types'
+import { FocusEngine, DEFAULT_CONFIG } from './focusEngine'
+import type { Cone, EngineConfig, Frame, Media } from './focusEngine'
 
 const STEP_MS = 200 // 5fps
 

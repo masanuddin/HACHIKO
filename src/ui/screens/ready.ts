@@ -19,7 +19,7 @@ import { createFaceDetector } from '../../perception/faceBox'
 import type { PerceptionBundle } from '../../perception/bundle'
 import { deriveCompanionState } from '../../storage/companion'
 import { listSessions } from '../../storage/sessions'
-import type { Media } from '../../engine/types'
+import type { Media } from '../../engine/focusEngine'
 import {
   WORK_MS,
   WORK_DURATION_OPTIONS_MIN,

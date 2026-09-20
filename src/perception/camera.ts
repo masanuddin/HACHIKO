@@ -1,6 +1,6 @@
 import type { FaceDetector } from '@mediapipe/tasks-vision'
 import type { FaceLandmarkerEngine, HachikoAI, ObjectDetectorEngine } from '../ai/index.js'
-import type { Frame } from '../engine/types'
+import type { Frame } from '../engine/focusEngine'
 import { toFrame, type AiTelemetryFrame } from './aiAdapter'
 import { readFaceBox, type FaceBox } from './faceBox'
 

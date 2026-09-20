@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HachikoAI, LearningTool } from '../ai/index.js'
-import { FocusEngine } from '../engine/focusEngine'
-import { DEFAULT_CONFIG } from '../engine/config'
-import type { FocusState, Media } from '../engine/types'
+import { FocusEngine, DEFAULT_CONFIG } from '../engine/focusEngine'
+import type { FocusState, Media } from '../engine/focusEngine'
 import { toFrame, type AiTelemetryFrame } from './aiAdapter'
 
 /**

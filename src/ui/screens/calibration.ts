@@ -6,9 +6,8 @@ import { mascotPeek, walkingMascot } from '../hachiko'
 import { startPerceptionLoop, startFaceBoxLoop } from '../../perception/camera'
 import type { PerceptionBundle } from '../../perception/bundle'
 import type { FaceBox } from '../../perception/faceBox'
-import { calibrate } from '../../engine/calibrate'
-import { DEFAULT_CONFIG } from '../../engine/config'
-import type { Cone, Frame } from '../../engine/types'
+import { calibrate, DEFAULT_CONFIG } from '../../engine/focusEngine'
+import type { Cone, Frame } from '../../engine/focusEngine'
 
 const CALIBRATION_MS = 15_000
 // The countdown is split into three equal windows, each showing one of

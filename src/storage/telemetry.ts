@@ -1,4 +1,4 @@
-import type { Frame } from '../engine/types'
+import type { Frame } from '../engine/focusEngine'
 
 const KEY = 'hachiko.telemetry.v1'
 // One recording now spans a whole multi-cycle sitting (several Work

@@ -1,4 +1,123 @@
-import type { Cone, EngineConfig, EngineOutput, Frame, FocusState, Media } from './types'
+/*
+ * Engine contract. These signatures are fixed by CLAUDE.md - do not
+ * change them; P5's replay ablation and the perception adapter both
+ * depend on this exact shape.
+ *
+ * This file (and everything else in src/engine/) is PURE TypeScript:
+ * no DOM, no `window`, no `document`, no browser APIs, no `Date.now()`.
+ * Timestamps always arrive as arguments.
+ *
+ * Single-file by request: types, default config, calibration, and the
+ * FocusEngine state machine used to live in types.ts/config.ts/
+ * calibrate.ts/focusEngine.ts respectively - merged here, in that same
+ * order, with nothing else changed. Every import elsewhere in the repo
+ * (and tools/replay.ts, which runs this file directly under Node's
+ * native type-stripping) now points at this one file.
+ */
+
+export type Media = 'laptop' | 'phone' | 'book' | 'paper' | 'other'
+
+export type FocusState = 'FOKUS' | 'TERALIH' | 'TIDAK_HADIR' | 'UNCERTAIN' | 'MENGANTUK'
+
+export interface Frame {
+  t: number // ms
+  faceFound: boolean
+  yaw: number | null // radians
+  pitch: number | null // radians
+  eyeBlink: number | null // 0..1
+  objects: string[] // COCO labels seen within the last 1s
+}
+
+export interface Cone {
+  yawMid: number
+  yawTol: number
+  pitchMid: number
+  pitchTol: number
+}
+
+export interface EngineOutput {
+  state: FocusState
+  changedAt: number
+  uncertainMs: number
+}
+
+export interface EngineConfig {
+  emaAlpha: number
+  toDistractedMs: number
+  toFocusedMs: number
+  absentMs: number
+  phoneSustainMs: number
+  drowsyThreshold: number
+  drowsyMs: number
+  coneSigmaMult: number
+  coneFloorRad: number
+  useDeclaredMedia: boolean
+  useObjects: boolean
+}
+
+/**
+ * Default engine tuning, from BUILD_PROMPTS.md P2 and PRD §5-§7.
+ * `useDeclaredMedia` / `useObjects` toggling off is what powers the
+ * A/B/C ablation in tools/replay.ts - see FocusEngine below.
+ */
+export const DEFAULT_CONFIG: EngineConfig = {
+  emaAlpha: 0.25,
+  toDistractedMs: 3000,
+  toFocusedMs: 1500,
+  absentMs: 5000,
+  phoneSustainMs: 15000,
+  drowsyThreshold: 0.6,
+  drowsyMs: 4000,
+  coneSigmaMult: 2.5,
+  coneFloorRad: 0.209, // 12 degrees
+  useDeclaredMedia: true,
+  useObjects: true,
+}
+
+/**
+ * Turn 15 seconds of "sit like you normally study" frames into a cone the
+ * student's head is allowed to move within before it counts as "out of
+ * cone." PRD §5:
+ *   1. Discard the first 3000ms (settling).
+ *   2. Mean and stddev of yaw and pitch over what's left.
+ *   3. Tolerance = max(coneSigmaMult * stddev, coneFloorRad) per axis.
+ *
+ * The floor matters: a very still student would otherwise get an
+ * impossibly tight cone and be flagged for breathing.
+ */
+export function calibrate(frames: Frame[], config: EngineConfig = DEFAULT_CONFIG): Cone {
+  if (frames.length === 0) {
+    throw new Error('calibrate: no frames provided')
+  }
+
+  const startT = frames[0]!.t
+  const settled = frames.filter(
+    (f) => f.t - startT >= 3000 && f.faceFound && f.yaw !== null && f.pitch !== null,
+  )
+
+  if (settled.length === 0) {
+    throw new Error('calibrate: no usable frames after discarding the first 3000ms')
+  }
+
+  const yaws = settled.map((f) => f.yaw as number)
+  const pitches = settled.map((f) => f.pitch as number)
+
+  const yawMid = mean(yaws)
+  const pitchMid = mean(pitches)
+  const yawTol = Math.max(config.coneSigmaMult * stddev(yaws, yawMid), config.coneFloorRad)
+  const pitchTol = Math.max(config.coneSigmaMult * stddev(pitches, pitchMid), config.coneFloorRad)
+
+  return { yawMid, yawTol, pitchMid, pitchTol }
+}
+
+function mean(values: number[]): number {
+  return values.reduce((sum, v) => sum + v, 0) / values.length
+}
+
+function stddev(values: number[], m: number): number {
+  const variance = values.reduce((sum, v) => sum + (v - m) ** 2, 0) / values.length
+  return Math.sqrt(variance)
+}
 
 const PHONE_LABEL = 'cell phone'
 

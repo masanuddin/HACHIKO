@@ -1,4 +1,4 @@
-import type { FocusState, Media } from '../engine/types'
+import type { FocusState, Media } from '../engine/focusEngine'
 
 const KEY = 'hachiko.sessions.v1'
 

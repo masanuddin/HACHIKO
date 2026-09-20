@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { calibrate } from './calibrate'
-import { DEFAULT_CONFIG } from './config'
-import type { Frame } from './types'
+import { calibrate, DEFAULT_CONFIG } from './focusEngine'
+import type { Frame } from './focusEngine'
 
 const STEP_MS = 200 // 5fps
 

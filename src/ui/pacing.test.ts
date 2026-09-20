@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isRawOutOfCone, shouldOfferEarlyBreak, shouldOfferExtension } from './pacing'
-import type { Cone, Frame } from '../engine/types'
+import type { Cone, Frame } from '../engine/focusEngine'
 import { emptyDurations } from '../storage/sessions'
 
 const CONE: Cone = { yawMid: 0, yawTol: 0.15, pitchMid: 0, pitchTol: 0.15 }

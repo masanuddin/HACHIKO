@@ -19,10 +19,8 @@
  * no build step and no dependency beyond the repo's own engine code.
  */
 import { readFileSync } from 'node:fs'
-import { FocusEngine } from '../src/engine/focusEngine.ts'
-import { calibrate } from '../src/engine/calibrate.ts'
-import { DEFAULT_CONFIG } from '../src/engine/config.ts'
-import type { EngineConfig, Frame, FocusState, Media } from '../src/engine/types.ts'
+import { FocusEngine, calibrate, DEFAULT_CONFIG } from '../src/engine/focusEngine.ts'
+import type { EngineConfig, Frame, FocusState, Media } from '../src/engine/focusEngine.ts'
 
 interface TelemetryRow {
   t: number

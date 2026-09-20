@@ -1,4 +1,4 @@
-import type { FocusState } from '../engine/types'
+import type { FocusState } from '../engine/focusEngine'
 
 /**
  * Hachiko, six illustrated poses (PRD §4, §9; BUILD_PROMPTS P3), sourced

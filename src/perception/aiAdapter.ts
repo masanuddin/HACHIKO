@@ -1,4 +1,4 @@
-import type { Frame } from '../engine/types'
+import type { Frame } from '../engine/focusEngine'
 
 /**
  * Thin bridge between the vendored AI-Engine TelemetryFrame and the HACHIKO

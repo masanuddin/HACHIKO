@@ -1,4 +1,4 @@
-import type { Cone, Frame, FocusState } from '../engine/types'
+import type { Cone, Frame, FocusState } from '../engine/focusEngine'
 import { EARLY_BREAK_MIN_ELAPSED_RATIO, EARLY_BREAK_STRUGGLE_RATIO, EXTENSION_WINDOW_MS } from './sessionConfig'
 
 /**
