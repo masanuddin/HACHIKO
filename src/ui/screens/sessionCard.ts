@@ -23,6 +23,10 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
+    // null (not 0) on sessions saved before totalSessionMs/restMs
+    // existed - omit the row entirely rather than show a misleading 0.
+    ...(m.totalSessionMs !== null ? [metric(s.totalSessionLabel, formatDuration(m.totalSessionMs))] : []),
+    ...(m.restMs !== null ? [metric(s.restLabel, formatDuration(m.restMs))] : []),
   ])
 }
 
@@ -73,10 +77,12 @@ function heroValue(value: string): HTMLDivElement {
  * The current session's numbers as a bento grid, achievement-style: the
  * Fokus number is the headline, alone on its own full-width row at the
  * same size as the live session timer (--text-timer) - not compared
- * against anything, just "how long you made it". The remaining three
- * metrics, the mascot, and the observation sit below it as supporting
- * detail. Same six pieces of content as before - no metric added or
- * dropped, just recomposed.
+ * against anything, just "how long you made it". The remaining metrics,
+ * the mascot, and the observation sit below it as supporting detail.
+ * totalSessionMs/restMs are only ever null for a record predating those
+ * fields (see SessionRecord's doc comments) - a freshly-finished current
+ * session (the only thing this function renders) always has them, but
+ * the check stays for type-correctness/future reuse.
  */
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
@@ -89,6 +95,12 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
     bentoTile('duduk', 'blue-tint', tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
     bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
     bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),
+    ...(m.totalSessionMs !== null && m.restMs !== null
+      ? [
+          bentoTile('total', 'blue-tint', tileMetric(s.totalSessionLabel, formatDuration(m.totalSessionMs))),
+          bentoTile('rest', 'sage-tint', tileMetric(s.restLabel, formatDuration(m.restMs))),
+        ]
+      : []),
     bentoTile('observation', 'sand', [
       el('p', { class: 'observation' }, [observationText]),
       doodleMark('paw', { size: '36px' }),

@@ -136,6 +136,10 @@ function buildContent(record: SessionRecord, name?: string): string {
   const sittingValue = formatDuration(m.sittingMs)
   const awayValue = formatDuration(m.awayMs)
   const uncertainValue = formatDuration(m.notFocusedMs)
+  // null (not 0) on records saved before these fields existed - see
+  // SessionRecord's own doc comments.
+  const totalSessionValue = m.totalSessionMs !== null ? formatDuration(m.totalSessionMs) : null
+  const restValue = m.restMs !== null ? formatDuration(m.restMs) : null
 
   const out: string[] = []
 
@@ -151,9 +155,17 @@ function buildContent(record: SessionRecord, name?: string): string {
     out.push(drawText('F1', 12, 64, 720, C.ink, record.studyTopic))
   }
 
-  // Summary card (sand background)
+  // Summary card (sand background) - taller by CARD_EXTRA_ROW_H when the
+  // record has totalSessionMs/restMs to show (every record saved after
+  // that field shipped), same height as before for an older one, so an
+  // old report never grows an empty gap.
+  const hasTotals = totalSessionValue !== null && restValue !== null
+  const CARD_BASE_H = 150
+  const CARD_EXTRA_ROW_H = 60
+  const cardH = hasTotals ? CARD_BASE_H + CARD_EXTRA_ROW_H : CARD_BASE_H
+  const cardBottomY = 710 - cardH
   out.push(`${C.sand} rg`)
-  out.push('48 560 499 150 re')
+  out.push(`48 ${cardBottomY} 499 ${cardH} re`)
   out.push('f')
 
   // The stamp, overlapping the card's top-right corner (547, 710) like a
@@ -180,8 +192,16 @@ function buildContent(record: SessionRecord, name?: string): string {
   out.push(drawText('F1', 11, colRight, 612, C.muted, s.notFocusedLabel))
   out.push(drawText('F2', 13, colRight, 594, C.ink, uncertainValue))
 
-  // Summary message, wrapped to the content width.
-  let obsY = 520
+  if (hasTotals) {
+    out.push(drawText('F1', 11, colLeft, 572, C.muted, s.totalSessionLabel))
+    out.push(drawText('F2', 13, colLeft, 554, C.ink, totalSessionValue))
+    out.push(drawText('F1', 11, colMid, 572, C.muted, s.restLabel))
+    out.push(drawText('F2', 13, colMid, 554, C.ink, restValue))
+  }
+
+  // Summary message, wrapped to the content width - starts 40pt below
+  // whichever card bottom edge is actually in play above.
+  let obsY = cardBottomY - 40
   for (const line of wrap(sessionObservation(m.firstCollapseAtMs), 70)) {
     out.push(drawText('F1', 12, 64, obsY, C.ink, line))
     obsY -= 17

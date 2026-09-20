@@ -66,6 +66,20 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('00:02:00')
   })
 
+  it('shows Total lama sesi and Waktu istirahat when the record has them', () => {
+    const pdf = pdfText(record({ totalSessionMs: 27 * 60_000, restMs: 5 * 60_000 }))
+    expect(pdf).toContain('Total lama sesi')
+    expect(pdf).toContain('00:27:00')
+    expect(pdf).toContain('Waktu istirahat')
+    expect(pdf).toContain('00:05:00')
+  })
+
+  it('omits Total lama sesi and Waktu istirahat for a record predating those fields', () => {
+    const pdf = pdfText(record())
+    expect(pdf).not.toContain('Total lama sesi')
+    expect(pdf).not.toContain('Waktu istirahat')
+  })
+
   it('includes the study topic when present', () => {
     const pdf = pdfText(record({ studyTopic: 'Matematika - Integral' }))
     expect(pdf).toContain('Matematika - Integral')

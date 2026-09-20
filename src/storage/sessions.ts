@@ -24,6 +24,22 @@ export interface SessionRecord {
   firstCollapseAtMs: number | null
   /** null when there was nothing ambiguous to ask about at the break. */
   clarification: { answer: ClarificationAnswer | null } | null
+  /** Wall-clock start-to-finish of the whole multi-cycle sitting (every
+   *  Work block plus every Break between them), set once by runSession
+   *  after its loop ends. Optional so sessions saved before this field
+   *  existed stay valid (same reason `studyTopic` is optional) - their
+   *  report simply omits this line rather than showing a misleading 0.
+   *  Deliberately NOT derived from durationsMs: Break time is never
+   *  observed by the camera at all, so there is no other way to account
+   *  for it. Excludes the trailing Clarify screen, if shown - that's
+   *  end-of-sitting paperwork, not part of "how long the session was". */
+  totalSessionMs?: number
+  /** Total real time spent on Break screens across the whole sitting -
+   *  measured directly (wall-clock around each renderBreak call), not
+   *  derived by subtraction, so it stays accurate even if a break ends
+   *  early ("Fokus lagi") or auto-abandons (BREAK_ABANDON_MS). Optional
+   *  for the same pre-existing-record reason as totalSessionMs above. */
+  restMs?: number
 }
 
 export function saveSession(record: SessionRecord): void {
@@ -72,6 +88,11 @@ export interface SessionMetrics {
   uncertainPercent: number
   notFocusedPercent: number
   exceedsUncertainThreshold: boolean
+  /** null, not 0, when the record predates totalSessionMs/restMs - see
+   *  SessionRecord's own doc comments. Report screens must check for
+   *  null and omit the line rather than render a misleading zero. */
+  totalSessionMs: number | null
+  restMs: number | null
 }
 
 /**
@@ -129,6 +150,8 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
     uncertainPercent,
     notFocusedPercent,
     exceedsUncertainThreshold: uncertainPercent > UNCERTAIN_THRESHOLD,
+    totalSessionMs: record.totalSessionMs ?? null,
+    restMs: record.restMs ?? null,
   }
 }
 

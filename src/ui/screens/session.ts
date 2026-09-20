@@ -892,6 +892,10 @@ export async function runSession(
   // Counts completed rounds since the last long break; reset to 0 once
   // it reaches roundsPerSet, so the next set starts counting fresh.
   let cycleInSet = 0
+  // Wall-clock total across every Break screen this sitting - see
+  // SessionRecord.restMs's doc comment for why this is measured
+  // directly rather than derived from the work-phase durations.
+  let restMs = 0
 
   // Work -> Break -> Work -> Break -> ... for as long as the student
   // keeps choosing "Fokus lagi." "Selesai" during any Work block ends
@@ -906,7 +910,9 @@ export async function runSession(
     } else {
       cycleInSet += 1
       const isLongBreak = cycleInSet >= roundsPerSet
+      const breakStartedAt = Date.now()
       const { continueSession } = await renderBreak(root, isLongBreak, breakMs, longBreakMs)
+      restMs += Date.now() - breakStartedAt
       if (isLongBreak) cycleInSet = 0
       keepGoing = continueSession
     }
@@ -918,6 +924,10 @@ export async function runSession(
 
   const mergedId = newSessionId()
   const merged = mergeSessionRecords(mergedId, records)
+  // Measured here, before the trailing Clarify screen below - that's
+  // end-of-sitting paperwork, not part of "how long the session was".
+  merged.restMs = restMs
+  merged.totalSessionMs = Date.now() - merged.startedAt
   // Empty parts (a cycle ended via Selesai before any frame was ever
   // recorded) would otherwise leave a blank line in the joined file -
   // harmless to this app, but a real problem for anything that parses

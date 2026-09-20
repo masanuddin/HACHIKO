@@ -106,6 +106,18 @@ describe('computeMetrics', () => {
     const m = computeMetrics(merged)
     expect(m.notFocusedMs).toBe(900_000)
   })
+
+  it('passes totalSessionMs/restMs through when the record has them', () => {
+    const m = computeMetrics(record({ totalSessionMs: 1_800_000, restMs: 300_000 }))
+    expect(m.totalSessionMs).toBe(1_800_000)
+    expect(m.restMs).toBe(300_000)
+  })
+
+  it('reports totalSessionMs/restMs as null, not 0, for a record predating those fields', () => {
+    const m = computeMetrics(record())
+    expect(m.totalSessionMs).toBeNull()
+    expect(m.restMs).toBeNull()
+  })
 })
 
 describe('bestFocusTopic', () => {
