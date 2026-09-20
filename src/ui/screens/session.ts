@@ -621,17 +621,27 @@ function runWorkPhase(
           bundle.objectEngine.getDiagnostics() as unknown as AiObjectDiagnostics,
         )
       }
-      if (paused || finished) return
       const frame = tick.frame
+
+      // Tracked unconditionally - even while paused/finished - so a
+      // manual "Jeda" pause never shows up as a large gap once ticks
+      // resume (frames keep arriving normally while paused; only the
+      // business logic below is skipped). Only a REAL perception stall
+      // (see remainingMs below) should ever look large.
+      const rawDt = lastFrameT === null ? 0 : Math.max(0, frame.t - lastFrameT)
+      lastFrameT = frame.t
+
+      if (paused || finished) return
 
       if (sessionStartT === null) sessionStartT = frame.t
       const relativeT = frame.t - sessionStartT
 
       telemetry.record(frame)
 
-      const rawDt = lastFrameT === null ? 0 : Math.max(0, frame.t - lastFrameT)
+      // Clamped: a single implausible gap (GC pause, a slow inference
+      // tick) must never get attributed wholesale to whatever FocusState
+      // was last reported - see MAX_PLAUSIBLE_DT_MS's own comment.
       const dt = rawDt > MAX_PLAUSIBLE_DT_MS ? 0 : rawDt
-      lastFrameT = frame.t
 
       const out = engine.step(frame)
       lastOut = out
@@ -658,8 +668,17 @@ function runWorkPhase(
       record.durationsMs[out.state] += dt
       record.uncertainMs = out.uncertainMs
 
+      // Deliberately the UNCLAMPED rawDt, not the engine's own clamped dt
+      // above - a genuine perception stall (this tab backgrounded; see
+      // startPerceptionLoop's doc comment on why requestVideoFrameCallback
+      // was chosen specifically so this keeps running then) must not
+      // leave the visible countdown looking permanently frozen. It
+      // catches up to the real elapsed time the moment ticks resume,
+      // rather than silently losing that time forever. `lastFrameT` is
+      // tracked above regardless of pause, so a manual Jeda pause can
+      // never inflate rawDt the same way.
       if (out.state !== 'TIDAK_HADIR') {
-        remainingMs = Math.max(0, remainingMs - dt)
+        remainingMs = Math.max(0, remainingMs - rawDt)
       }
 
       // Independent of the engine's own hysteresis (see pacing.ts) - a
