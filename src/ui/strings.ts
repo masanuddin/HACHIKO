@@ -157,6 +157,7 @@ export const strings = {
     notFocusedLabel: 'Waktu teralih',
     totalSessionLabel: 'Total lama sesi',
     restLabel: 'Waktu istirahat',
+    pausedLabel: 'Waktu jeda',
     topicInsight: (topic: string) => `Kamu paling fokus pas belajar ${topic}`,
     uncertainThresholdNote:
       'Bagian "belum jelas" sesi ini agak besar. HACHIKO lebih baik mengaku belum tahu daripada menebak asal.',

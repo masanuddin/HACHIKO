@@ -23,10 +23,12 @@ function metricGrid(m: SessionMetrics): HTMLDivElement {
     metric(s.sittingMinutesLabel, formatDuration(m.sittingMs)),
     metric(s.awayLabel, formatDuration(m.awayMs)),
     metric(s.notFocusedLabel, formatDuration(m.notFocusedMs)),
-    // null (not 0) on sessions saved before totalSessionMs/restMs
-    // existed - omit the row entirely rather than show a misleading 0.
+    // null (not 0) on sessions saved before totalSessionMs/restMs/
+    // pausedMs existed - omit the row entirely rather than show a
+    // misleading 0.
     ...(m.totalSessionMs !== null ? [metric(s.totalSessionLabel, formatDuration(m.totalSessionMs))] : []),
     ...(m.restMs !== null ? [metric(s.restLabel, formatDuration(m.restMs))] : []),
+    ...(m.pausedMs !== null ? [metric(s.pausedLabel, formatDuration(m.pausedMs))] : []),
   ])
 }
 
@@ -82,11 +84,15 @@ function heroValue(value: string): HTMLDivElement {
  * caption, not its own tile - the standalone "observation" tile with a
  * paw doodle was dropped by request, 2026-09-20: the sentence moved up
  * onto the hero block, the paw just went away). The remaining metrics
- * and the mascot sit below as supporting detail. totalSessionMs/restMs
- * are only ever null for a record predating those fields (see
+ * and the mascot sit below as supporting detail. totalSessionMs/restMs/
+ * pausedMs are only ever null for a record predating those fields (see
  * SessionRecord's doc comments) - a freshly-finished current session
  * (the only thing this function renders) always has them, but the check
- * stays for type-correctness/future reuse.
+ * stays for type-correctness/future reuse. uncertain/total/rest/paused
+ * are four even single-column tiles in one row (2026-09-21) - together
+ * with duduk/away/absen above, `Waktu duduk + Waktu absen + Waktu
+ * istirahat + Waktu jeda` should now reconcile against `Total lama
+ * sesi` with nothing left unaccounted for.
  */
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
@@ -100,12 +106,9 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
     bentoTile('duduk', 'blue-tint', tileMetric(s.sittingMinutesLabel, formatDuration(m.sittingMs))),
     bentoTile('away', 'sage-tint', tileMetric(s.awayLabel, formatDuration(m.awayMs))),
     bentoTile('uncertain', null, tileMetric(s.uncertainLabel, formatDuration(m.uncertainMs))),
-    ...(m.totalSessionMs !== null && m.restMs !== null
-      ? [
-          bentoTile('total', 'blue-tint', tileMetric(s.totalSessionLabel, formatDuration(m.totalSessionMs))),
-          bentoTile('rest', 'sage-tint', tileMetric(s.restLabel, formatDuration(m.restMs))),
-        ]
-      : []),
+    ...(m.totalSessionMs !== null ? [bentoTile('total', 'blue-tint', tileMetric(s.totalSessionLabel, formatDuration(m.totalSessionMs)))] : []),
+    ...(m.restMs !== null ? [bentoTile('rest', 'sage-tint', tileMetric(s.restLabel, formatDuration(m.restMs)))] : []),
+    ...(m.pausedMs !== null ? [bentoTile('paused', null, tileMetric(s.pausedLabel, formatDuration(m.pausedMs)))] : []),
   ])
 }
 

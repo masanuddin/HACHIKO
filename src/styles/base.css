@@ -458,24 +458,30 @@ input:focus-visible,
 
 .bento-tile--duduk { grid-column: 3; grid-row: 2; }
 .bento-tile--away { grid-column: 4; grid-row: 2; }
-.bento-tile--uncertain { grid-column: 1 / 3; grid-row: 3; }
-.bento-tile--total { grid-column: 3; grid-row: 3; }
-.bento-tile--rest { grid-column: 4; grid-row: 3; }
+/* Four even single-column tiles - uncertain/total/rest/paused are all
+   the same "small single value" style now (2026-09-21), so they pair
+   with duduk/away's treatment above instead of uncertain standing out
+   at double width. */
+.bento-tile--uncertain { grid-column: 1; grid-row: 3; }
+.bento-tile--total { grid-column: 2; grid-row: 3; }
+.bento-tile--rest { grid-column: 3; grid-row: 3; }
+.bento-tile--paused { grid-column: 4; grid-row: 3; }
 
 @media (max-width: 640px) {
   .bento {
     grid-template-columns: repeat(2, 1fr);
   }
   .bento-tile--hero,
-  .bento-tile--mascot,
-  .bento-tile--uncertain {
+  .bento-tile--mascot {
     grid-column: 1 / 3;
     grid-row: auto;
   }
   .bento-tile--duduk,
   .bento-tile--away,
+  .bento-tile--uncertain,
   .bento-tile--total,
-  .bento-tile--rest {
+  .bento-tile--rest,
+  .bento-tile--paused {
     grid-column: span 1;
     grid-row: auto;
   }

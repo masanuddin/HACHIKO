@@ -66,16 +66,30 @@ describe('buildSessionReportPdf', () => {
     expect(pdf).toContain('00:02:00')
   })
 
-  it('shows Total lama sesi and Waktu istirahat when the record has them', () => {
-    const pdf = pdfText(record({ totalSessionMs: 27 * 60_000, restMs: 5 * 60_000 }))
+  it('shows Total lama sesi, Waktu istirahat and Waktu jeda when the record has them', () => {
+    const pdf = pdfText(record({ totalSessionMs: 27 * 60_000, restMs: 5 * 60_000, pausedMs: 90_000 }))
     expect(pdf).toContain('Total lama sesi')
     expect(pdf).toContain('00:27:00')
     expect(pdf).toContain('Waktu istirahat')
     expect(pdf).toContain('00:05:00')
+    expect(pdf).toContain('Waktu jeda')
+    expect(pdf).toContain('00:01:30')
   })
 
-  it('omits Total lama sesi and Waktu istirahat for a record predating those fields', () => {
+  it('omits Total lama sesi, Waktu istirahat and Waktu jeda for a record predating those fields', () => {
     const pdf = pdfText(record())
+    expect(pdf).not.toContain('Total lama sesi')
+    expect(pdf).not.toContain('Waktu istirahat')
+    expect(pdf).not.toContain('Waktu jeda')
+  })
+
+  it('still shows the extra row with just Waktu jeda when only pausedMs is present', () => {
+    // The narrow migration window: a record saved between totalSessionMs/
+    // restMs shipping and pausedMs shipping would have the first two but
+    // not the third - this covers the opposite gap (only the third).
+    const pdf = pdfText(record({ pausedMs: 20_000 }))
+    expect(pdf).toContain('Waktu jeda')
+    expect(pdf).toContain('00:00:20')
     expect(pdf).not.toContain('Total lama sesi')
     expect(pdf).not.toContain('Waktu istirahat')
   })

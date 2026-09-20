@@ -124,6 +124,7 @@ function buildContent(record: SessionRecord, name?: string): string {
   // SessionRecord's own doc comments.
   const totalSessionValue = m.totalSessionMs !== null ? formatDuration(m.totalSessionMs) : null
   const restValue = m.restMs !== null ? formatDuration(m.restMs) : null
+  const pausedValue = m.pausedMs !== null ? formatDuration(m.pausedMs) : null
 
   const out: string[] = []
 
@@ -140,18 +141,23 @@ function buildContent(record: SessionRecord, name?: string): string {
   }
 
   // Summary card (sand background) - taller by CARD_EXTRA_ROW_H when the
-  // record has totalSessionMs/restMs to show (every record saved after
-  // that field shipped), same height as before that field for an older
-  // one, so an old report never grows an empty gap. CAPTION_SHIFT makes
-  // room at the top for the observation sentence, now living inside the
-  // card above the hero number (moved up from its own paragraph below
-  // the card, by request 2026-09-20) - every position below it shifts
-  // down by the same amount so all the margins tuned earlier stay exact.
-  const hasTotals = totalSessionValue !== null && restValue !== null
+  // record has any of totalSessionMs/restMs/pausedMs to show (every
+  // record saved after those fields shipped), same height as before
+  // those fields for an older one, so an old report never grows an
+  // empty gap. Each of the three renders independently within that row
+  // (not all-or-nothing) so the narrow window of records saved between
+  // totalSessionMs/restMs shipping and pausedMs shipping still degrades
+  // gracefully - a row with a blank third column, not no row at all.
+  // CAPTION_SHIFT makes room at the top for the observation sentence,
+  // now living inside the card above the hero number (moved up from its
+  // own paragraph below the card, by request 2026-09-20) - every
+  // position below it shifts down by the same amount so all the margins
+  // tuned earlier stay exact.
+  const hasExtraRow = totalSessionValue !== null || restValue !== null || pausedValue !== null
   const CAPTION_SHIFT = 22
   const CARD_BASE_H = 150 + CAPTION_SHIFT
   const CARD_EXTRA_ROW_H = 60
-  const cardH = hasTotals ? CARD_BASE_H + CARD_EXTRA_ROW_H : CARD_BASE_H
+  const cardH = hasExtraRow ? CARD_BASE_H + CARD_EXTRA_ROW_H : CARD_BASE_H
   const cardBottomY = 710 - cardH
   out.push(`${C.sand} rg`)
   out.push(`48 ${cardBottomY} 499 ${cardH} re`)
@@ -187,11 +193,17 @@ function buildContent(record: SessionRecord, name?: string): string {
   out.push(drawText('F1', 11, colRight, 590, C.ink, s.notFocusedLabel))
   out.push(drawText('F2', 13, colRight, 572, C.ink, uncertainValue))
 
-  if (hasTotals) {
+  if (totalSessionValue !== null) {
     out.push(drawText('F1', 11, colLeft, 550, C.ink, s.totalSessionLabel))
     out.push(drawText('F2', 13, colLeft, 532, C.ink, totalSessionValue))
+  }
+  if (restValue !== null) {
     out.push(drawText('F1', 11, colMid, 550, C.ink, s.restLabel))
     out.push(drawText('F2', 13, colMid, 532, C.ink, restValue))
+  }
+  if (pausedValue !== null) {
+    out.push(drawText('F1', 11, colRight, 550, C.ink, s.pausedLabel))
+    out.push(drawText('F2', 13, colRight, 532, C.ink, pausedValue))
   }
 
   // Footer

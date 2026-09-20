@@ -107,16 +107,32 @@ describe('computeMetrics', () => {
     expect(m.notFocusedMs).toBe(900_000)
   })
 
-  it('passes totalSessionMs/restMs through when the record has them', () => {
-    const m = computeMetrics(record({ totalSessionMs: 1_800_000, restMs: 300_000 }))
+  it('passes totalSessionMs/restMs/pausedMs through when the record has them', () => {
+    const m = computeMetrics(record({ totalSessionMs: 1_800_000, restMs: 300_000, pausedMs: 15_000 }))
     expect(m.totalSessionMs).toBe(1_800_000)
     expect(m.restMs).toBe(300_000)
+    expect(m.pausedMs).toBe(15_000)
   })
 
-  it('reports totalSessionMs/restMs as null, not 0, for a record predating those fields', () => {
+  it('reports totalSessionMs/restMs/pausedMs as null, not 0, for a record predating those fields', () => {
     const m = computeMetrics(record())
     expect(m.totalSessionMs).toBeNull()
     expect(m.restMs).toBeNull()
+    expect(m.pausedMs).toBeNull()
+  })
+
+  it('sums pausedMs across merged multi-cycle records', () => {
+    const cycle1 = record({ pausedMs: 5_000 })
+    const cycle2 = record({ pausedMs: 12_000 })
+    const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
+    expect(computeMetrics(merged).pausedMs).toBe(17_000)
+  })
+
+  it('treats a missing pausedMs as 0 when merging (not NaN)', () => {
+    const cycle1 = record({ pausedMs: 5_000 })
+    const cycle2 = record() // predates pausedMs
+    const merged = mergeSessionRecords('s-merged', [cycle1, cycle2])
+    expect(computeMetrics(merged).pausedMs).toBe(5_000)
   })
 })
 

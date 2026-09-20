@@ -369,10 +369,31 @@ function runWorkPhase(
     const dot = cameraDot(strings.common.cameraActive)
 
     let paused = false
+    // Wall-clock time this cycle spent paused - Jeda, or either
+    // confirm dialog (Selesai/Lewati) while it's open. Real elapsed
+    // time no tick ever touches (the handler returns early while
+    // paused), so it would otherwise vanish from every metric while
+    // still counting toward totalSessionMs - see the 2026-09-21
+    // reconciliation discussion. `setPaused` is the only thing allowed
+    // to write `paused` from here on, so this stays accurate no matter
+    // which of the three call sites toggles it.
+    let pausedSinceMs: number | null = null
+    let pausedMs = 0
+    function setPaused(next: boolean): void {
+      if (next === paused) return
+      if (next) {
+        pausedSinceMs = Date.now()
+      } else if (pausedSinceMs !== null) {
+        pausedMs += Date.now() - pausedSinceMs
+        pausedSinceMs = null
+      }
+      paused = next
+    }
+
     const jedaBtn = button(
       s.jeda,
       () => {
-        paused = !paused
+        setPaused(!paused)
         jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
       },
       { variant: 'secondary' },
@@ -520,11 +541,11 @@ function runWorkPhase(
      */
     function showSelesaiConfirm(): void {
       pausedBeforeSelesaiConfirm = paused
-      paused = true
+      setPaused(true)
       nudgeVisible = 'selesaiConfirm'
 
       function cancel(): void {
-        paused = pausedBeforeSelesaiConfirm
+        setPaused(pausedBeforeSelesaiConfirm)
         jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
         hideNudge()
         overlay.close()
@@ -565,11 +586,11 @@ function runWorkPhase(
      */
     function showLewatiConfirm(): void {
       pausedBeforeLewatiConfirm = paused
-      paused = true
+      setPaused(true)
       nudgeVisible = 'lewatiConfirm'
 
       function cancel(): void {
-        paused = pausedBeforeLewatiConfirm
+        setPaused(pausedBeforeLewatiConfirm)
         jedaBtn.textContent = paused ? strings.common.continueLabel : s.jeda
         hideNudge()
         overlay.close()
@@ -763,6 +784,11 @@ function runWorkPhase(
       finished = true
       loop.stop()
       mentorBoxLoop?.stop()
+      // Flush a still-open pause span (e.g. Selesai confirmed while its
+      // own confirm dialog counts as "paused") so its final seconds
+      // aren't lost.
+      setPaused(false)
+      record.pausedMs = pausedMs
       // The camera stream and the perception bundle deliberately stay
       // alive here: runSession's loop reuses them for the next cycle
       // without re-prompting permission or re-calibrating, and stops

@@ -40,6 +40,14 @@ export interface SessionRecord {
    *  early ("Fokus lagi") or auto-abandons (BREAK_ABANDON_MS). Optional
    *  for the same pre-existing-record reason as totalSessionMs above. */
   restMs?: number
+  /** Wall-clock time this cycle spent paused mid-Work-block - Jeda, or
+   *  either confirm dialog (Selesai/Lewati) while open - measured
+   *  directly in runWorkPhase (see its `setPaused` helper), summed
+   *  across cycles by mergeSessionRecords same as durationsMs. Exists so
+   *  totalSessionMs fully reconciles against durationsMs + restMs +
+   *  pausedMs instead of leaving an unexplained gap (2026-09-21). Optional
+   *  for the same pre-existing-record reason as totalSessionMs above. */
+  pausedMs?: number
 }
 
 export function saveSession(record: SessionRecord): void {
@@ -88,11 +96,12 @@ export interface SessionMetrics {
   uncertainPercent: number
   notFocusedPercent: number
   exceedsUncertainThreshold: boolean
-  /** null, not 0, when the record predates totalSessionMs/restMs - see
-   *  SessionRecord's own doc comments. Report screens must check for
-   *  null and omit the line rather than render a misleading zero. */
+  /** null, not 0, when the record predates totalSessionMs/restMs/pausedMs
+   *  - see SessionRecord's own doc comments. Report screens must check
+   *  for null and omit the line rather than render a misleading zero. */
   totalSessionMs: number | null
   restMs: number | null
+  pausedMs: number | null
 }
 
 /**
@@ -152,6 +161,7 @@ export function computeMetrics(record: SessionRecord): SessionMetrics {
     exceedsUncertainThreshold: uncertainPercent > UNCERTAIN_THRESHOLD,
     totalSessionMs: record.totalSessionMs ?? null,
     restMs: record.restMs ?? null,
+    pausedMs: record.pausedMs ?? null,
   }
 }
 
@@ -205,6 +215,11 @@ export function mergeSessionRecords(id: string, records: SessionRecord[]): Sessi
   let uncertainMs = 0
   let firstCollapseAtMs: number | null = null
   let elapsedOffset = 0
+  // Summed per-cycle same as durationsMs/uncertainMs - each cycle's own
+  // pausedMs is always a real number (runWorkPhase sets it before
+  // resolving), so `?? 0` here is just belt-and-braces, not a
+  // backward-compat path like the `?? null` in computeMetrics.
+  let pausedMs = 0
 
   for (const record of records) {
     for (const key of Object.keys(durationsMs) as FocusState[]) {
@@ -215,6 +230,7 @@ export function mergeSessionRecords(id: string, records: SessionRecord[]): Sessi
     }
     recoveryTimesMs.push(...record.recoveryTimesMs)
     uncertainMs += record.uncertainMs
+    pausedMs += record.pausedMs ?? 0
     if (record.firstCollapseAtMs !== null && firstCollapseAtMs === null) {
       firstCollapseAtMs = record.firstCollapseAtMs + elapsedOffset
     }
@@ -236,5 +252,6 @@ export function mergeSessionRecords(id: string, records: SessionRecord[]): Sessi
     uncertainMs,
     firstCollapseAtMs,
     clarification: null,
+    pausedMs,
   }
 }
