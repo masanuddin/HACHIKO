@@ -1,5 +1,5 @@
 import { strings, formatDuration, sessionObservation, sessionTitle } from '../strings'
-import { actions, body, button, card, confirmOverlay, doodleMark, el, screen, titleWithDoodle } from '../components'
+import { actions, body, button, card, confirmOverlay, el, screen, titleWithDoodle } from '../components'
 import { bestFocusTopic, computeMetrics, deleteAllSessions, deleteSession, listSessions, type SessionMetrics, type SessionRecord } from '../../storage/sessions'
 import { loadProfile } from '../../storage/profile'
 import { buildSessionReportPdf, downloadPdf, pdfFilename } from '../pdf'
@@ -77,17 +77,22 @@ function heroValue(value: string): HTMLDivElement {
  * The current session's numbers as a bento grid, achievement-style: the
  * Fokus number is the headline, alone on its own full-width row at the
  * same size as the live session timer (--text-timer) - not compared
- * against anything, just "how long you made it". The remaining metrics,
- * the mascot, and the observation sit below it as supporting detail.
- * totalSessionMs/restMs are only ever null for a record predating those
- * fields (see SessionRecord's doc comments) - a freshly-finished current
- * session (the only thing this function renders) always has them, but
- * the check stays for type-correctness/future reuse.
+ * against anything, just "how long you made it". The observation
+ * sentence sits right above it, inside the same hero tile (a lead-in
+ * caption, not its own tile - the standalone "observation" tile with a
+ * paw doodle was dropped by request, 2026-09-20: the sentence moved up
+ * onto the hero block, the paw just went away). The remaining metrics
+ * and the mascot sit below as supporting detail. totalSessionMs/restMs
+ * are only ever null for a record predating those fields (see
+ * SessionRecord's doc comments) - a freshly-finished current session
+ * (the only thing this function renders) always has them, but the check
+ * stays for type-correctness/future reuse.
  */
 function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElement {
   const s = strings.sessionCard
   return el('div', { class: 'bento' }, [
     bentoTile('hero', 'amber-tint', [
+      el('p', { class: 'observation observation--hero' }, [observationText]),
       el('span', { class: 'metric__label' }, [s.focusMinutesLabel]),
       heroValue(formatDuration(m.focusMs)),
     ]),
@@ -101,10 +106,6 @@ function bentoMetrics(m: SessionMetrics, observationText: string): HTMLDivElemen
           bentoTile('rest', 'sage-tint', tileMetric(s.restLabel, formatDuration(m.restMs))),
         ]
       : []),
-    bentoTile('observation', 'sand', [
-      el('p', { class: 'observation' }, [observationText]),
-      doodleMark('paw', { size: '36px' }),
-    ]),
   ])
 }
 

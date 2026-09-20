@@ -461,9 +461,6 @@ input:focus-visible,
 .bento-tile--uncertain { grid-column: 1 / 3; grid-row: 3; }
 .bento-tile--total { grid-column: 3; grid-row: 3; }
 .bento-tile--rest { grid-column: 4; grid-row: 3; }
-/* Its own full-width row (4) now that uncertain/total/rest fill row 3 -
-   a paragraph reads better with the extra room than sharing a row. */
-.bento-tile--observation { grid-column: 1 / 5; grid-row: 4; }
 
 @media (max-width: 640px) {
   .bento {
@@ -471,8 +468,7 @@ input:focus-visible,
   }
   .bento-tile--hero,
   .bento-tile--mascot,
-  .bento-tile--uncertain,
-  .bento-tile--observation {
+  .bento-tile--uncertain {
     grid-column: 1 / 3;
     grid-row: auto;
   }
@@ -1220,6 +1216,16 @@ input:focus-visible,
   color: var(--ink-muted);
 }
 
+/* Bolder, near-black label text specifically on the report's own metric
+   grids (the Session Card bento + the compact history list) - by
+   request, 2026-09-20 ("choose black"). Scoped to these two containers
+   rather than the shared .metric__label class itself, so the Ready
+   screen's steppers/rounds tile keep their deliberately muted labels. */
+.bento .metric__label,
+.metrics .metric__label {
+  color: var(--ink);
+}
+
 .metric__value {
   font-family: var(--font-display);
   font-size: var(--text-lg);
@@ -1235,13 +1241,21 @@ input:focus-visible,
   font-size: var(--text-timer);
 }
 
-/* Only ever rendered inside the observation bento tile now (see
-   sessionCard.ts) - the tile itself provides the paper/background, so
-   this is text-only, not a second nested box. */
+/* No box of its own - just text, sitting directly on whichever tile
+   hosts it (the hero tile now - see sessionCard.ts's bentoMetrics). */
 .observation {
   font-size: var(--text-base);
   font-style: normal;
   color: var(--ink);
+}
+
+/* The lead-in caption above the hero number (was its own "observation"
+   tile with a paw doodle beside it; moved up, paw dropped, by request
+   2026-09-20). Slightly smaller than the base size so it reads as a
+   caption introducing the label+number below it, not a competing line. */
+.observation--hero {
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-1) 0;
 }
 
 .threshold-note {

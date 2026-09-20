@@ -93,22 +93,6 @@ function drawText(font: 'F1' | 'F2', size: number, x: number, y: number, color: 
   return `BT\n/${font} ${size} Tf\n${color} rg\n1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm\n(${escapePdf(str)}) Tj\nET`
 }
 
-function wrap(str: string, maxChars: number): string[] {
-  const words = str.split(' ')
-  const lines: string[] = []
-  let cur = ''
-  for (const w of words) {
-    if (cur === '') cur = w
-    else if (`${cur} ${w}`.length <= maxChars) cur = `${cur} ${w}`
-    else {
-      lines.push(cur)
-      cur = w
-    }
-  }
-  if (cur !== '') lines.push(cur)
-  return lines
-}
-
 function sessionTimestamp(startedAt: number): string {
   const d = new Date(startedAt)
   return `${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()} - ${pad2(d.getHours())}.${pad2(d.getMinutes())}`
@@ -157,10 +141,15 @@ function buildContent(record: SessionRecord, name?: string): string {
 
   // Summary card (sand background) - taller by CARD_EXTRA_ROW_H when the
   // record has totalSessionMs/restMs to show (every record saved after
-  // that field shipped), same height as before for an older one, so an
-  // old report never grows an empty gap.
+  // that field shipped), same height as before that field for an older
+  // one, so an old report never grows an empty gap. CAPTION_SHIFT makes
+  // room at the top for the observation sentence, now living inside the
+  // card above the hero number (moved up from its own paragraph below
+  // the card, by request 2026-09-20) - every position below it shifts
+  // down by the same amount so all the margins tuned earlier stay exact.
   const hasTotals = totalSessionValue !== null && restValue !== null
-  const CARD_BASE_H = 150
+  const CAPTION_SHIFT = 22
+  const CARD_BASE_H = 150 + CAPTION_SHIFT
   const CARD_EXTRA_ROW_H = 60
   const cardH = hasTotals ? CARD_BASE_H + CARD_EXTRA_ROW_H : CARD_BASE_H
   const cardBottomY = 710 - cardH
@@ -172,39 +161,37 @@ function buildContent(record: SessionRecord, name?: string): string {
   // seal on a paper document - drawn AFTER the card fill so it sits on
   // top of it, not underneath.
   out.push('q')
-  out.push(`${STAMP_DRAW_W} 0 0 ${STAMP_DRAW_H} ${STAMP_X} ${STAMP_Y} cm`)
+  out.push(`${STAMP_DRAW_W} 0 0 ${STAMP_DRAW_H} ${STAMP_X} ${STAMP_Y - CAPTION_SHIFT} cm`)
   out.push('/Im0 Do')
   out.push('Q')
+
+  // The observation sentence - a single short line always (see
+  // sessionObservation's two fixed shapes), so no wrap() needed here.
+  out.push(drawText('F1', 12, 64, 694, C.ink, sessionObservation(m.firstCollapseAtMs)))
 
   // Fokus is the headline number - alone, large, no "dari" comparison -
   // same hierarchy as the Session Card's hero bento tile. The remaining
   // three metrics sit below it in a row, same as they always have.
+  // Labels are C.ink now, not C.muted, by request 2026-09-20 ("choose
+  // black").
   const colLeft = 76
   const colMid = 226
   const colRight = 376
-  out.push(drawText('F1', 11, colLeft, 692, C.muted, s.focusMinutesLabel))
-  out.push(drawText('F2', 34, colLeft, 655, C.ink, focusValue))
+  out.push(drawText('F1', 11, colLeft, 670, C.ink, s.focusMinutesLabel))
+  out.push(drawText('F2', 34, colLeft, 633, C.ink, focusValue))
 
-  out.push(drawText('F1', 11, colLeft, 612, C.muted, s.sittingMinutesLabel))
-  out.push(drawText('F2', 13, colLeft, 594, C.ink, sittingValue))
-  out.push(drawText('F1', 11, colMid, 612, C.muted, s.awayLabel))
-  out.push(drawText('F2', 13, colMid, 594, C.ink, awayValue))
-  out.push(drawText('F1', 11, colRight, 612, C.muted, s.notFocusedLabel))
-  out.push(drawText('F2', 13, colRight, 594, C.ink, uncertainValue))
+  out.push(drawText('F1', 11, colLeft, 590, C.ink, s.sittingMinutesLabel))
+  out.push(drawText('F2', 13, colLeft, 572, C.ink, sittingValue))
+  out.push(drawText('F1', 11, colMid, 590, C.ink, s.awayLabel))
+  out.push(drawText('F2', 13, colMid, 572, C.ink, awayValue))
+  out.push(drawText('F1', 11, colRight, 590, C.ink, s.notFocusedLabel))
+  out.push(drawText('F2', 13, colRight, 572, C.ink, uncertainValue))
 
   if (hasTotals) {
-    out.push(drawText('F1', 11, colLeft, 572, C.muted, s.totalSessionLabel))
-    out.push(drawText('F2', 13, colLeft, 554, C.ink, totalSessionValue))
-    out.push(drawText('F1', 11, colMid, 572, C.muted, s.restLabel))
-    out.push(drawText('F2', 13, colMid, 554, C.ink, restValue))
-  }
-
-  // Summary message, wrapped to the content width - starts 40pt below
-  // whichever card bottom edge is actually in play above.
-  let obsY = cardBottomY - 40
-  for (const line of wrap(sessionObservation(m.firstCollapseAtMs), 70)) {
-    out.push(drawText('F1', 12, 64, obsY, C.ink, line))
-    obsY -= 17
+    out.push(drawText('F1', 11, colLeft, 550, C.ink, s.totalSessionLabel))
+    out.push(drawText('F2', 13, colLeft, 532, C.ink, totalSessionValue))
+    out.push(drawText('F1', 11, colMid, 550, C.ink, s.restLabel))
+    out.push(drawText('F2', 13, colMid, 532, C.ink, restValue))
   }
 
   // Footer
