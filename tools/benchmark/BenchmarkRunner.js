@@ -78,8 +78,8 @@ export class BenchmarkRunner {
     this.activeId = null;
     /** Recorded VALID trials, appended by `recordTrial`. */
     this.trials = [];
-    /** Aborted attempts — never committed, so nothing is deleted here. */
-    this.abortedCount = 0;
+    /** Invalid/error attempts are exported for audit, never scored. */
+    this.invalidAttempts = [];
     this.lastObservation = null;
     this.sessionId = `bench_${new Date().toISOString().replace(/[:.]/g, '-')}`;
     this.sessionStartedIso = new Date().toISOString();
@@ -418,6 +418,36 @@ export class BenchmarkRunner {
 
   /** Every stored trial is valid — invalid ones are removed on the spot. */
   getValidTrials() { return this.trials; }
+
+  recordInvalidAttempt({ task = null, scenarioId = null, modelId = null,
+                         repetition = null, reason = 'invalid attempt',
+                         phase = null, sampleCount = 0 } = {}) {
+    const attempt = {
+      attemptId: `invalid_${this.invalidAttempts.length + 1}`,
+      sessionId: this.sessionId,
+      modelId: modelId ?? this.activeId ?? null,
+      task,
+      scenarioId,
+      repetition,
+      valid: false,
+      reason,
+      phase,
+      sampleCount,
+      recordedAtIso: new Date().toISOString(),
+    };
+    this.invalidAttempts.push(attempt);
+    return attempt;
+  }
+
+  getInvalidAttempts() { return [...this.invalidAttempts]; }
+
+  getAttemptSummary() {
+    return {
+      evaluableTrials: this.trials.length,
+      invalidAttempts: this.invalidAttempts.length,
+      totalAttempts: this.trials.length + this.invalidAttempts.length,
+    };
+  }
 
   /**
    * Peak-hold across a sampling window, so a scenario is judged on the model's

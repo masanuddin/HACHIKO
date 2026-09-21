@@ -782,9 +782,14 @@ test('T43. Signal Inspector links measurement to rule without duplication', () =
   const feat = html.slice(html.indexOf('id="paneFeat"'), html.indexOf('id="paneRun"'));
   assert.match(feat, /table class="vals"/, 'values use a real table');
   assert.match(feat, /<th>Raw<\/th><th>&Delta; base<\/th><th>Smoothed<\/th>/);
-  assert.match(feat, /<th>Role<\/th><th>Persistence<\/th><th>Status<\/th>/,
-    'role, persistence and status sit beside the measurement');
-  for (const cell of ['yawRaw', 'yawDelta', 'yawSm', 'yawRule', 'yawPers', 'yawStat']) {
+  // Rule, instantaneous cue, persistence and persisted evidence are four
+  // distinct concepts and must each get their own column: collapsing them
+  // is what let a raw movement read as a “trigger”.
+  assert.match(feat,
+    /<th>Rule<\/th><th>Instant cue<\/th><th>Persistence<\/th><th>Evidence<\/th>/,
+    'rule, instant cue, persistence and evidence sit beside the measurement');
+  for (const cell of ['yawRaw', 'yawDelta', 'yawSm', 'yawRule', 'yawInst',
+                      'yawPers', 'yawStat']) {
     assert.ok(feat.includes(`id="${cell}"`), `missing cell #${cell}`);
   }
   // One pitch MEASUREMENT, two interpretations read off it.

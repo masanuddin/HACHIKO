@@ -59,11 +59,13 @@ export class TrialController {
    * @param {number} [options.requiredRepetitions=3]
    * @param {(info:Object)=>void} [options.onStateChange]
    * @param {(trial:Object)=>void} [options.onTrialComplete]
+   * @param {(info:Object)=>void} [options.onRecordingStart]
    */
   constructor(options = {}) {
     this.requiredRepetitions = options.requiredRepetitions ?? 3;
     this.onStateChange = options.onStateChange ?? (() => {});
     this.onTrialComplete = options.onTrialComplete ?? (() => {});
+    this.onRecordingStart = options.onRecordingStart ?? (() => {});
     this.reset();
   }
 
@@ -147,6 +149,13 @@ export class TrialController {
       if (elapsed >= this.scenario.countdownMs) {
         // GO. This timestamp is the hard lower bound of the trial window.
         this.recordingStartedAt = nowMs;
+        this.onRecordingStart({
+          state: TrialState.RECORDING,
+          scenario: this.scenario,
+          recordingStartedAt: nowMs,
+          trialId: this.currentTrialId,
+          repetition: this.currentRepetition,
+        });
         this._set(TrialState.RECORDING);
       }
     } else if (this.state === TrialState.RECORDING) {

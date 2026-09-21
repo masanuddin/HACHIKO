@@ -38,7 +38,7 @@ const triggerText = (flag, observed) => {
 };
 
 const TRIAL_HEADERS = [
-  'Subject', 'Scenario', 'Rep', 'Validity', 'Valid Signal %',
+  'Scenario', 'Rep', 'Validity', 'Valid Signal %',
   'Expected', 'Observed',
   'Match', 'Why It Failed', 'Final State', 'Primary Reason',
   'Yaw Max Δ (°)', 'Pitch Up Max Δ (°)', 'Pitch Down Max Δ (°)',
@@ -47,7 +47,7 @@ const TRIAL_HEADERS = [
   'Duration (s)',
 ];
 const TRIAL_WIDTHS = [
-  9, 30, 6, 11, 13, 24, 34, 11, 38, 13, 18,
+  30, 6, 11, 13, 24, 34, 11, 38, 13, 18,
   13, 15, 16, 16, 12, 15, 9, 11, 16, 16, 12,
 ];
 
@@ -98,9 +98,6 @@ function trialSummarySheet(doc) {
       : { v: 'INVALID', s: S.WARN };
 
     rows.push([
-      // The trial's OWN snapshot, never the session's current selection: one
-      // session may legitimately contain several subjects.
-      t.subjectId ?? null,
       scenarioLabel(t),
       t.repetition ?? null,
       { v: sm.trialValidity ?? null, s: isValid ? S.DEFAULT : S.WARN },
@@ -140,13 +137,15 @@ function trialSummarySheet(doc) {
 }
 
 const TELEMETRY_HEADERS = [
-  'Trial', 'Subject', 'Scenario', 'Rep', 'Elapsed (ms)',
+  'Trial', 'Scenario', 'Rep', 'Elapsed (ms)',
   'Face', 'Head Pose Valid', 'Eye Eligible', 'Eye Ineligible Reason',
   'State Signal Valid',
   'Yaw Raw', 'Yaw Δ', 'Yaw Smoothed',
   'Pitch Raw', 'Pitch Δ', 'Pitch Smoothed',
   'Head Tilt Raw', 'Head Tilt Δ', 'Head Tilt Smoothed',
   'EAR Left', 'EAR Right', 'EAR Mean', 'EAR Relative', 'EAR Smoothed',
+  'Yaw Instant Cue', 'Pitch-Up Instant Cue', 'Eye-Closure Instant Cue',
+  'Pitch-Down Instant Cue', 'Head-Tilt Instant Cue',
   'Yaw Evidence', 'Pitch-Up Evidence', 'Eye-Closure Evidence',
   'Pitch-Down Support', 'Head-Tilt Support',
   'Yaw Persistence (ms)', 'Pitch-Up Persistence (ms)', 'Eye Persistence (ms)',
@@ -164,7 +163,7 @@ function telemetrySheet(doc) {
     const label = scenarioLabel(t);
     for (const x of t.samples ?? []) {
       rows.push([
-        t.trialId, t.subjectId ?? null, label, t.repetition ?? null,
+        t.trialId, label, t.repetition ?? null,
         num(x.relativeTimeMs, S.NUM1),
 
         yn(x.faceDetected),
@@ -178,6 +177,12 @@ function telemetrySheet(doc) {
 
         num(x.earLeft, S.NUM2), num(x.earRight, S.NUM2), num(x.earMean, S.NUM2),
         num(x.earRelative, S.NUM2), num(x.earSmoothed, S.NUM2),
+
+        { v: yn(x.yawInstantaneous), s: x.yawInstantaneous ? S.WARN : S.DEFAULT },
+        { v: yn(x.pitchUpInstantaneous), s: x.pitchUpInstantaneous ? S.WARN : S.DEFAULT },
+        { v: yn(x.eyeClosureInstantaneous), s: x.eyeClosureInstantaneous ? S.WARN : S.DEFAULT },
+        { v: yn(x.pitchDownInstantaneous), s: x.pitchDownInstantaneous ? S.WARN : S.DEFAULT },
+        { v: yn(x.rollInstantaneous), s: x.rollInstantaneous ? S.WARN : S.DEFAULT },
 
         // Active evidence is what a reader scans for, so only that is tinted.
         { v: yn(x.yawEvidence), s: x.yawEvidence ? S.FAIL : S.DEFAULT },
@@ -200,16 +205,17 @@ function telemetrySheet(doc) {
     name: 'Telemetry',
     rows,
     widths: [
-      26, 9, 28, 6, 13,
+      26, 28, 6, 13,
       8, 16, 13, 24, 18,
       10, 10, 13, 10, 10, 13, 13, 12, 17,
       10, 10, 10, 12, 13,
+      16, 20, 24, 22, 20,
       13, 17, 20, 18, 17,
       19, 23, 20,
       13, 18, 18, 8,
     ],
     // Identity and time stay put while scrolling right through the signals.
-    freeze: { row: 1, col: 4 },
+    freeze: { row: 1, col: 3 },
     autoFilter: `A1:${lastCol}${Math.max(1, rows.length)}`,
     rowHeights: { 0: 30 },
   };

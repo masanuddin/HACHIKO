@@ -47,7 +47,7 @@ export const PROTOCOL_VERSION = 'hachiko-debug-protocol-1.0';
  */
 const TRIAL_COLUMNS = [
   // ── Identity ──
-  'session_id', 'trial_id', 'subject_id',
+  'session_id', 'trial_id',
   'scenario_code', 'scenario_id', 'scenario_name', 'scenario_category',
   'repetition',
   // ── Was this trial judgeable at all? ──
@@ -85,6 +85,8 @@ const TELEMETRY_COLUMNS = [
   'head_tilt_raw_deg', 'head_tilt_delta_deg', 'head_tilt_smoothed_deg',
   'ear_left', 'ear_right', 'ear_mean', 'ear_relative', 'ear_smoothed',
   // Evidence derived from those measurements.
+  'yaw_instantaneous', 'pitch_up_instantaneous', 'eye_closure_instantaneous',
+  'pitch_down_instantaneous', 'head_tilt_instantaneous',
   'yaw_evidence', 'pitch_up_evidence', 'eye_closure_evidence',
   'pitch_down_support', 'head_tilt_support',
   'yaw_persistence_ms', 'pitch_persistence_ms', 'eye_persistence_ms',
@@ -99,6 +101,7 @@ export function toSample(frame) {
   const t = frame.temporal ?? {};
   const e = frame.evidence ?? {};
   const ev = e.active ?? {};
+  const inst = e.instantaneous ?? {};
   const acc = e.accumulated ?? {};
   const d = frame.classification ?? {};
   const p = frame.performance ?? {};
@@ -115,6 +118,11 @@ export function toSample(frame) {
     earRelative: c.earRelative, earSmoothed: t.earSmoothed,
     eyeEligible: e.eyeEligible ?? null,
     eyeIneligibleReason: e.eyeIneligibleReason ?? null,
+    yawInstantaneous: !!inst.yawStrong,
+    pitchUpInstantaneous: !!inst.pitchUpStrong,
+    eyeClosureInstantaneous: !!inst.eyeClosureStrong,
+    pitchDownInstantaneous: !!inst.pitchDownSupport,
+    rollInstantaneous: !!inst.rollSupport,
     yawEvidence: !!ev.yawStrong,
     pitchUpEvidence: !!ev.pitchUpStrong,
     eyeClosureEvidence: !!ev.eyeClosureStrong,
@@ -401,42 +409,6 @@ export class DebugSession {
      */
     this.abortedCount = 0;
     this.calibrationSnapshot = null;
-    /**
-     * PSEUDONYMOUS subject label currently selected by the operator, e.g. "S01".
-     *
-     * A code, never an identity: no name, no email, no demographics. It exists
-     * so per-subject variation is analysable later without the dataset ever
-     * carrying personal information. Null until set, and never guessed.
-     *
-     * MUTABLE OPERATOR CONTEXT, not the authoritative attribution. The trial's
-     * own `subjectId`, snapshotted at Start Trial, is what owns a result — see
-     * `addTrial`. One session may legitimately contain several subjects, so
-     * this field must never be read to decide who performed a finished trial.
-     */
-    this.subjectId = null;
-  }
-
-  /**
-   * Set the pseudonymous subject code for this session.
-   *
-   * Accepts a short code only. Anything longer, or containing characters a
-   * label would not need, is refused rather than silently stored — the cheapest
-   * moment to stop a real name entering the dataset is before it is written.
-   *
-   * @param {string|null} code e.g. "S01"; null clears it
-   */
-  setSubjectId(code) {
-    if (code === null || code === undefined || code === '') {
-      this.subjectId = null;
-      return null;
-    }
-    const clean = String(code).trim().toUpperCase();
-    if (!/^[A-Z][A-Z0-9_-]{0,11}$/.test(clean)) {
-      throw new Error('subjectId must be a short pseudonymous code such as '
-        + '"S01" — never a name or other identifying detail');
-    }
-    this.subjectId = clean;
-    return clean;
   }
 
   /** Valid repetitions already recorded for a scenario. */
@@ -498,7 +470,7 @@ export class DebugSession {
    *   no snapshot keeps null forever — it is never back-filled from whatever
    *   the session happens to hold at export time.
    */
-  addTrial(trial, scenario, calibrationAtStart = null, subjectAtStart = undefined) {
+  addTrial(trial, scenario, calibrationAtStart = null) {
     // Real window boundaries. Deriving both ends from one save-time stamp made
     // every trial look instantaneous.
     const endedAt = new Date();
@@ -517,17 +489,6 @@ export class DebugSession {
     const record = {
       ...withCal,
       sessionId: this.sessionId,
-      // Snapshotted at Start Trial, exactly like calibrationAtStart — NOT read
-      // here. `this.subjectId` is mutable operator context: an operator who
-      // switches to the next subject before the save lands would otherwise
-      // silently reattribute the trial that just finished. Attribution belongs
-      // to whoever was selected when the bounded window opened.
-      //
-      // `undefined` means the caller passed no snapshot (older call sites and
-      // unit fixtures); that falls back to the session value. An explicit
-      // `null` means the trial genuinely started with no subject selected and
-      // is preserved as null — never guessed, never back-filled.
-      subjectId: subjectAtStart === undefined ? this.subjectId : subjectAtStart,
       group: scenario?.group ?? null,
       // Registry identity travels with the trial, so a row explains itself.
       scenarioCode: scenario?.code ?? null,
@@ -641,7 +602,7 @@ export class DebugSession {
       const sm = t.summary ?? {};
       const sc = getScenario(t.scenario) ?? {};
       return [
-        this.sessionId, t.trialId, t.subjectId ?? null,
+        this.sessionId, t.trialId,
         t.scenarioCode ?? sc.code ?? null, t.scenario,
         t.scenarioName ?? sc.name ?? null,
         t.scenarioCategory ?? sc.category ?? null,
@@ -693,6 +654,8 @@ export class DebugSession {
           round(x.rollRaw, 2), round(x.rollDelta, 2), round(x.rollSmoothed, 2),
           round(x.earLeft), round(x.earRight), round(x.earMean),
           round(x.earRelative), round(x.earSmoothed),
+          x.yawInstantaneous, x.pitchUpInstantaneous, x.eyeClosureInstantaneous,
+          x.pitchDownInstantaneous, x.rollInstantaneous,
           x.yawEvidence, x.pitchUpEvidence, x.eyeClosureEvidence,
           x.pitchDownSupport, x.rollSupport,
           round(x.yawPersistenceMs, 0), round(x.pitchPersistenceMs, 0),
@@ -726,7 +689,6 @@ export class DebugSession {
       pageMode: 'DEBUG',
       session: {
         sessionId: this.sessionId,
-        subjectId: this.subjectId,
         startedAt: this.startedIso,
         exportedAt: new Date().toISOString(),
         requiredRepetitions: this.requiredRepetitions,
@@ -764,7 +726,6 @@ export class DebugSession {
       // Full record: summaries AND the bounded raw samples.
       trials: this.trials.map((t) => ({
         trialId: t.trialId,
-        subjectId: t.subjectId ?? null,
         scenario: t.scenario,
         scenarioCode: t.scenarioCode ?? null,
         scenarioName: t.scenarioName ?? null,

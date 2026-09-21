@@ -110,7 +110,10 @@ test('L7. the header keeps one inference number, the detail lives in Overview', 
 test('L8. live target output is a role-labelled table', () => {
   const m = markup();
   const block = m.slice(m.indexOf('id="objBlock"'), m.indexOf('id="insNote"'));
-  assert.match(block, /<th>Target<\/th><th>Role<\/th><th>Detected<\/th>/);
+  // “Diagnostic detected”, not “Detected”: the live column is a running
+  // diagnostic, never the recorded trial result.
+  assert.match(block,
+    /<th>Target<\/th><th>Role<\/th><th>Diagnostic detected<\/th>/);
   for (const id of ['roPerson', 'dtPerson', 'scPerson', 'pkPerson',
                     'roPhone', 'dtPhone', 'scPhone', 'pkPhone']) {
     assert.ok(block.includes(`id="${id}"`), `target table missing #${id}`);

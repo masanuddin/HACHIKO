@@ -101,6 +101,9 @@ const smp = (o = {}) => ({
   yawRaw: -4.9, pitchRaw: -3.1, rollRaw: 1.9,
   earLeft: 0.4, earRight: 0.39, earMean: 0.398,
   faceDetected: true, headPoseValid: true, eyeEligible: true,
+  yawInstantaneous: false, pitchUpInstantaneous: false,
+  eyeClosureInstantaneous: false, pitchDownInstantaneous: false,
+  rollInstantaneous: false,
   stateSignalValid: true, publicState: 'FOKUS', primaryReason: 'NONE',
   fps: 29.4, faceInferenceMs: 11.2, relativeTimeMs: 0, ...o,
 });
@@ -133,6 +136,24 @@ test('X5. the debug workbook has exactly Trial Summary + Telemetry', () => {
   assert.ok(!t.includes('xl/worksheets/sheet3.xml'), 'exactly two sheets');
 });
 
+test('X5b. instantaneous and persisted evidence remain distinct in XLSX', () => {
+  const s = new DebugSession();
+  const d04 = getScenario('BRIEF_YAW_GLANCE');
+  s.addTrial({ trialId: 'debug_D04_r1', scenario: d04.id, repetition: 1,
+    expectedSemanticOutcome: d04.expectedSemanticOutcome,
+    recordingDurationMs: 3000, sampleCount: 1,
+    samples: [smp({ yawSmoothed: 31, yawInstantaneous: true,
+      yawPersistenceMs: 300, yawEvidence: false })] }, d04, CAL);
+  const doc = s.buildResultsJson({});
+  assert.equal(doc.trials[0].samples[0].yawInstantaneous, true);
+  assert.equal(doc.trials[0].samples[0].yawEvidence, false);
+
+  const t = text(buildDebugReport(doc));
+  assert.ok(t.includes('Yaw Instant Cue'));
+  assert.ok(t.includes('Yaw Evidence'));
+  assert.ok(t.includes('300'));
+});
+
 test('X6. scenarios read as human labels from the registry', () => {
   const t = text(buildDebugReport(debugDoc().doc));
   assert.ok(t.includes('D01 · Neutral frontal'));
@@ -146,7 +167,7 @@ test('X7. an invalid trial reports INVALID, never a false PASS', () => {
   const { doc } = debugDoc();
   const t = text(buildDebugReport(doc));
 
-  // Read the Match column (G) of each trial row, not the whole workbook: the
+  // Read the Match column of each trial row, not the whole workbook: the
   // Validity column already prints "INVALID_SIGNAL", so a substring search
   // would report success even if every verdict had been overwritten to PASS.
   const cell = (row, col) => {
@@ -154,20 +175,18 @@ test('X7. an invalid trial reports INVALID, never a false PASS', () => {
     const c = r.match(new RegExp(`<c r="${col}${row}"[\\s\\S]*?</c>`));
     return c ? (c[0].match(/<t[^>]*>([^<]*)</) ?? [, ''])[1] : null;
   };
-  assert.equal(cell(15, 'H'), '✓ PASS', 'the valid trial passes');
-  assert.equal(cell(16, 'H'), 'INVALID', 'the unusable one claims no verdict');
-  assert.equal(cell(16, 'D'), 'INVALID_SIGNAL', 'and says why');
-  // Column A is the trial's own subject snapshot (blank when none).
-  assert.equal(cell(15, 'A'), null, 'no subject was set for this fixture');
+  assert.equal(cell(15, 'G'), '✓ PASS', 'the valid trial passes');
+  assert.equal(cell(16, 'G'), 'INVALID', 'the unusable one claims no verdict');
+  assert.equal(cell(16, 'C'), 'INVALID_SIGNAL', 'and says why');
 
   // Expected/observed are words, not raw booleans, and the observed wording
   // comes from the authoritative evaluator.
-  assert.equal(cell(16, 'F'), 'Strong trigger expected');
-  assert.equal(cell(16, 'G'), 'Required signal unusable');
-  assert.equal(cell(15, 'G'), 'No strong evidence activated');
-  assert.ok(cell(16, 'I'), 'an unusable trial explains why');
+  assert.equal(cell(16, 'E'), 'Strong trigger expected');
+  assert.equal(cell(16, 'F'), 'Required signal unusable');
+  assert.equal(cell(15, 'F'), 'No strong evidence activated');
+  assert.ok(cell(16, 'H'), 'an unusable trial explains why');
   // A blank cell is absent entirely, so the helper returns null.
-  assert.equal(cell(15, 'I'), null, 'a passing trial invents no blame');
+  assert.equal(cell(15, 'H'), null, 'a passing trial invents no blame');
   assert.ok(!/>(true|false)</.test(t), 'no raw booleans reach the reader');
 
   // And the JSON agrees: the invalid trial claims no verdict.
@@ -195,11 +214,11 @@ test('X9. missing measurements stay blank in the workbook', () => {
   // The yaw signal was never usable, so the summary holds null...
   assert.equal(bad.summary.maxYawDelta, null);
   // ...and the workbook must omit that cell entirely rather than write 0.
-  // Row 14 is the invalid trial; column J is "Yaw Max Delta".
+  // Row 14 is the invalid trial; column K is "Yaw Max Delta".
   const t = text(buildDebugReport(doc));
   const row = body(t, 1).match(/<row r="16"[\s\S]*?<\/row>/)[0];
-  assert.ok(!row.includes('r="L16"'), 'an unmeasured yaw cell must not exist');
-  assert.ok(!row.includes('r="N16"'), 'nor an unmeasured pitch-down cell');
+  assert.ok(!row.includes('r="K16"'), 'an unmeasured yaw cell must not exist');
+  assert.ok(!row.includes('r="M16"'), 'nor an unmeasured pitch-down cell');
 
   // The zero that IS present is a real measurement, not a coerced null:
   // column D is the valid-signal ratio, and 0 of 2 samples were usable.
@@ -493,13 +512,13 @@ test('X27. the Debug workbook is unchanged by this patch', () => {
   const t = text(buildDebugReport(doc));
   assert.ok(t.includes('state="frozen"'));
   assert.ok(t.includes('ySplit="14"'), 'freeze still at the table header');
-  assert.ok(t.includes('<autoFilter ref="A14:V16"/>'));
+  assert.ok(t.includes('<autoFilter ref="A14:U16"/>'));
   assert.equal(rowsIn(t, 1), 16);
   assert.equal(rowsIn(t, 2), 6);
 
   // Its validity semantics and blank handling still hold.
   const row = body(t, 1).match(/<row r="16"[\s\S]*?<\/row>/)[0];
-  assert.ok(!row.includes('r="L16"'), 'unmeasured yaw still blank');
+  assert.ok(!row.includes('r="K16"'), 'unmeasured yaw still blank');
   assert.ok(row.includes('INVALID'));
 
   // And it never picked up the benchmark-only display rules.

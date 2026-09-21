@@ -80,7 +80,7 @@ test('P1. persistence accrued before the window does not carry into it', () => {
     + `got ${fixed.latched}ms`);
 });
 
-test('P2. the harness clears temporal evidence at Start Trial', async () => {
+test('P2. the harness clears temporal evidence at the RECORDING boundary', async () => {
   const { DebugHarness } = await import('../tools/debug/DebugHarness.js');
   const els = {};
   for (const k of ['video', 'status']) els[k] = { textContent: '', style: {} };
@@ -94,7 +94,9 @@ test('P2. the harness clears temporal evidence at Start Trial', async () => {
   h.ai.resetTemporalEvidence = () => { cleared += 1; return realReset(); };
 
   assert.equal(h.startTrial().ok, true);
-  assert.equal(cleared, 1, 'Start Trial must clear accumulated evidence');
+  assert.equal(cleared, 0, 'countdown start must not be the evidence boundary');
+  h.trials.tick(h.trials.countdownStartedAt + h.trials.scenario.countdownMs);
+  assert.equal(cleared, 1, 'RECORDING start must clear accumulated evidence');
 });
 
 test('P3. the clean start does NOT reset calibration', async () => {
@@ -199,7 +201,8 @@ const YAW = S.STRONG_YAW_DELTA_DEG;
 test('P9. D04 accepts a brief glance to EITHER side', () => {
   for (const [side, sign] of [['left', +1], ['right', -1]]) {
     const sm = judge('D04', window_(90, (i) => (i >= 8 && i < 16
-      ? { yawDelta: sign * (YAW + 6) } : {})));
+      ? { yawDelta: sign * (YAW + 6), yawSmoothed: sign * (YAW + 6),
+        yawInstantaneous: true } : {})));
     assert.equal(sm.trialVerdict, TrialVerdict.PASS, `${side} glance must pass`);
     assert.equal(sm.observedOutcome,
       'Yaw threshold crossed; persistence did not complete');
@@ -208,7 +211,8 @@ test('P9. D04 accepts a brief glance to EITHER side', () => {
 
 test('P10. D04 still fails when the glance latched evidence', () => {
   const sm = judge('D04', window_(90, (i) => (i >= 8 && i < 16
-    ? { yawDelta: YAW + 6, yawEvidence: true } : {})));
+    ? { yawDelta: YAW + 6, yawSmoothed: YAW + 6,
+      yawInstantaneous: true, yawEvidence: true } : {})));
   assert.equal(sm.trialVerdict, TrialVerdict.FAIL);
 });
 

@@ -186,7 +186,8 @@ test('V11. left and right receive identical treatment', () => {
 // ═══════════════════════════════════════════════════════════════════════
 test('V12. D04 passes when the threshold is crossed but persistence does not', () => {
   const sm = judge('D04', window_(30, (i) => (i >= 8 && i < 14
-    ? { yawDelta: YAW + 5, yawPersistenceMs: 200 } : {})));
+    ? { yawDelta: YAW + 5, yawSmoothed: YAW + 5,
+      yawInstantaneous: true, yawPersistenceMs: 200 } : {})));
   assert.equal(sm.trialVerdict, TrialVerdict.PASS);
   assert.equal(sm.observedOutcome,
     'Yaw threshold crossed; persistence did not complete');
@@ -194,7 +195,8 @@ test('V12. D04 passes when the threshold is crossed but persistence does not', (
 
 test('V13. D04 fails if the brief glance latched evidence', () => {
   const sm = judge('D04', window_(30, (i) => (i >= 8 && i < 14
-    ? { yawDelta: YAW + 5, yawEvidence: true } : {})));
+    ? { yawDelta: YAW + 5, yawSmoothed: YAW + 5,
+      yawInstantaneous: true, yawEvidence: true } : {})));
   assert.equal(sm.trialVerdict, TrialVerdict.FAIL);
   assert.match(sm.failureReason, /brief glance completed/i);
 });
@@ -206,6 +208,12 @@ test('V14. a motionless D04 is INVALID, not a free PASS', () => {
   assert.equal(sm.trialVerdict, TrialVerdict.INVALID);
   assert.match(sm.failureReason, /persistence was not tested/i);
   assert.equal(sm.matchesExpectation, null);
+});
+
+test('V14b. D04 challenge uses runtime instantaneous yaw, not delta alone', () => {
+  const sm = judge('D04', window_(30, (i) => (i >= 8 && i < 14
+    ? { yawDelta: YAW + 10, yawSmoothed: 4, yawInstantaneous: false } : {})));
+  assert.equal(sm.trialVerdict, TrialVerdict.INVALID);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -430,11 +438,13 @@ test('V34. the evaluator restates no threshold of its own', () => {
   // Every challenge criterion must be a CONFIG value, so this file cannot
   // drift from the engine it verifies.
   const y = judge('D04', window_(30, (i) => (i === 10
-    ? { yawDelta: S.STRONG_YAW_DELTA_DEG + 1 } : {})));
+    ? { yawDelta: S.STRONG_YAW_DELTA_DEG + 1,
+      yawSmoothed: S.STRONG_YAW_DELTA_DEG + 1, yawInstantaneous: true } : {})));
   assert.equal(y.trialVerdict, TrialVerdict.PASS, 'just over the rule counts');
 
   const under = judge('D04', window_(30, (i) => (i === 10
-    ? { yawDelta: S.STRONG_YAW_DELTA_DEG - 1 } : {})));
+    ? { yawDelta: S.STRONG_YAW_DELTA_DEG - 1,
+      yawSmoothed: S.STRONG_YAW_DELTA_DEG - 1, yawInstantaneous: false } : {})));
   assert.equal(under.trialVerdict, TrialVerdict.INVALID, 'just under does not');
 
   // The wording quotes the live config rather than a copy.

@@ -120,6 +120,7 @@ export function buildDebugViewModel(frame, ctx) {
   const c = frame?.calibrated ?? {};
   const t = frame?.temporal ?? {};
   const ev = frame?.evidence?.active ?? {};
+  const inst = frame?.evidence?.instantaneous ?? {};
   const acc = frame?.evidence?.accumulated ?? {};
   const d = frame?.classification ?? {};
   const p = frame?.performance ?? {};
@@ -207,6 +208,8 @@ export function buildDebugViewModel(frame, ctx) {
       yaw: signal(m.yawRaw, c.yawDelta, t.yawSmoothed, {
         rule: `|Δ| > ${S.STRONG_YAW_DELTA_DEG}°`,
         role: 'STRONG',
+        instant: status(inst.yawStrong),
+        instantActive: !!inst.yawStrong,
         persistence: persistence(acc.yawStrong, S.YAW_PERSIST_MS, poseRuleEvaluable),
         active: !!ev.yawStrong,
         status: status(ev.yawStrong),
@@ -219,6 +222,8 @@ export function buildDebugViewModel(frame, ctx) {
       pitchUp: {
         role: 'STRONG',
         rule: `Δ > +${S.STRONG_UP_PITCH_DELTA_DEG}°`,
+        instant: status(inst.pitchUpStrong),
+        instantActive: !!inst.pitchUpStrong,
         persistence: persistence(acc.pitchUpStrong, S.PITCH_UP_PERSIST_MS, poseRuleEvaluable),
         active: !!ev.pitchUpStrong,
         status: status(ev.pitchUpStrong),
@@ -226,6 +231,8 @@ export function buildDebugViewModel(frame, ctx) {
       pitchDown: {
         role: 'SUPPORT',
         rule: `Δ < −${S.DOWN_PITCH_SUPPORT_DEG}°`,
+        instant: status(inst.pitchDownSupport),
+        instantActive: !!inst.pitchDownSupport,
         persistence: persistence(acc.pitchDownSupport,
           S.DOWN_PITCH_SUPPORT_PERSIST_MS, poseRuleEvaluable),
         active: !!ev.pitchDownSupport,
@@ -236,6 +243,8 @@ export function buildDebugViewModel(frame, ctx) {
       headTilt: signal(m.rollRaw, c.rollDelta, t.rollSmoothed, {
         rule: `|Δ| > ${S.ROLL_SUPPORT_DEG}°`,
         role: 'SUPPORT',
+        instant: status(inst.rollSupport),
+        instantActive: !!inst.rollSupport,
         persistence: persistence(acc.rollSupport, S.ROLL_SUPPORT_PERSIST_MS, poseRuleEvaluable),
         active: !!ev.rollSupport,
         status: status(ev.rollSupport),
@@ -253,6 +262,8 @@ export function buildDebugViewModel(frame, ctx) {
           : (eyeEligible ? 'YES' : 'NO'),
         eligibleBool: eyeEligible,
         threshold: `${S.EAR_RELATIVE_THRESHOLD} relative`,
+        instant: status(inst.eyeClosureStrong),
+        instantActive: !!inst.eyeClosureStrong,
         persistence: persistence(acc.eyeClosureStrong, S.EYE_CLOSED_PERSIST_MS,
           eyeRuleEvaluable),
         active: !!ev.eyeClosureStrong,

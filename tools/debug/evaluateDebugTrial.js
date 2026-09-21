@@ -105,6 +105,23 @@ function channelActivity(samples, chan) {
   };
 }
 
+function instantaneousActivity(samples, flag) {
+  let firstIdx = -1;
+  let activeCount = 0;
+  samples.forEach((x, i) => {
+    if (x[flag] === true) {
+      if (firstIdx < 0) firstIdx = i;
+      activeCount += 1;
+    }
+  });
+  return {
+    everActive: firstIdx >= 0,
+    firstActivationMs: firstIdx >= 0
+      ? (samples[firstIdx].relativeTimeMs ?? null) : null,
+    activeSampleCount: activeCount,
+  };
+}
+
 /** Every channel's activity, keyed by channel name. */
 function allActivity(samples) {
   const strong = {};
@@ -172,13 +189,18 @@ function challenge(scenarioId, samples) {
       // D02 and D03 already own direction. Requiring one side here would mark
       // a perfectly valid right-hand glance as "challenge not performed", which
       // is what the pilot hit.
-      const left = peakSigned(samples, 'yawDelta', YAW_LEFT_SIGN);
-      const right = peakSigned(samples, 'yawDelta', YAW_RIGHT_SIGN);
-      const peak = Math.max(finite(left) ? left : -Infinity,
-        finite(right) ? right : -Infinity);
-      const ok = Number.isFinite(peak) && peak >= S.STRONG_YAW_DELTA_DEG;
-      return { performed: ok, peakDeg: Number.isFinite(peak) ? peak : null,
-        criterion: `absolute yaw ≥ ${S.STRONG_YAW_DELTA_DEG}° (either side)` };
+      // The challenge stage now matches runtime yaw evidence: instantaneous
+      // yawStrong, computed from smoothed calibrated yaw by EvidenceEngine.
+      const cue = instantaneousActivity(samples, 'yawInstantaneous');
+      const runtimePeak = Math.max(...samples
+        .filter((x) => x.yawInstantaneous === true && finite(x.yawSmoothed))
+        .map((x) => Math.abs(x.yawSmoothed)), -Infinity);
+      return {
+        performed: cue.everActive,
+        peakDeg: Number.isFinite(runtimePeak) ? runtimePeak : null,
+        firstCueMs: cue.firstActivationMs,
+        criterion: `instantaneous yaw cue from smoothed |yaw| > ${S.STRONG_YAW_DELTA_DEG}°`,
+      };
     }
     case 'YAW_RIGHT_SUSTAINED': {
       const peak = peakSigned(samples, 'yawDelta', YAW_RIGHT_SIGN);

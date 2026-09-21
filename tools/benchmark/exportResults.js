@@ -623,6 +623,12 @@ export function deriveEnvironment(trials, session = {}) {
 
 export function buildResultsJson(trials, options = {}) {
   const session = options.session ?? {};
+  const invalidAttempts = options.invalidAttempts ?? session.invalidAttempts ?? [];
+  const attemptSummary = {
+    evaluableTrials: trials.length,
+    invalidAttempts: invalidAttempts.length,
+    totalAttempts: trials.length + invalidAttempts.length,
+  };
   const doc = {
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportMetadata: {
@@ -648,7 +654,8 @@ export function buildResultsJson(trials, options = {}) {
       exportedAt: new Date().toISOString(),
       requiredRepetitions: options.requiredRepetitions ?? 3,
       totalTrials: trials.length,
-      abortedAttempts: session.abortedCount ?? 0,
+      invalidAttempts: invalidAttempts.length,
+      totalAttempts: attemptSummary.totalAttempts,
     },
     configuration: {
       methodology:
@@ -671,6 +678,8 @@ export function buildResultsJson(trials, options = {}) {
         ({ code, id, label, expect, critical: !!critical })),
     },
     trials,
+    invalidAttempts,
+    attemptSummary,
     scenarioSummaries: buildScenarioSummaries(trials, options),
     modelSummaries: buildModelSummaries(trials, options),
     completion: benchmarkCompletion(trials, options),
@@ -688,8 +697,8 @@ export function buildResultsJson(trials, options = {}) {
  * Export bundle: master JSON plus the analysis CSVs, timestamped.
  */
 export function buildExportBundle(input) {
-  const { trials = [], session = {} } = input;
-  assertNoImagery({ trials });
+  const { trials = [], invalidAttempts = [], session = {} } = input;
+  assertNoImagery({ trials, invalidAttempts });
 
   const d = new Date();
   const stamp = `${d.toISOString().slice(0, 10)}_`
@@ -703,7 +712,7 @@ export function buildExportBundle(input) {
 
   // ONE document, serialised twice. The workbook reads the summaries the JSON
   // already carries rather than recomputing them, so the two cannot diverge.
-  const doc = buildResultsJson(trials, { ...options, session });
+  const doc = buildResultsJson(trials, { ...options, session, invalidAttempts });
   const phase = [...new Set(trials.map((t) => t.phase).filter(Boolean))];
   const phaseTag = phase.length === 1 ? `_${phase[0].toLowerCase()}` : '';
 

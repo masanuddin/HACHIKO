@@ -19,6 +19,7 @@ import { EvidenceEngine } from '../src/ai/pipeline/EvidenceEngine.js';
 import { CONFIG } from '../src/ai/index.js';
 import { DebugSession } from '../tools/debug/DebugSession.js';
 import { getScenarioByCode } from '../tools/debug/scenarios.js';
+import { TrialController } from '../tools/shared/TrialController.js';
 
 const S = CONFIG.state;
 const CAL = { status: 'VALID', valid: true, capturedAtIso: 'x',
@@ -188,6 +189,59 @@ test('C8. D04 cannot inherit pre-trial yaw persistence', () => {
   assert.ok(r.latched >= S.YAW_PERSIST_MS);
 });
 
+test('C8b. countdown yaw cannot leak into the official recording window', () => {
+  const tt = new TemporalTracker(CONFIG, new EvidenceEngine(CONFIG));
+  const sc = { id: 'YAW_LEFT_SUSTAINED', countdownMs: 3000, recordingDurationMs: 3000 };
+  const c = new TrialController({ onRecordingStart: () => tt.reset() });
+  c.cameraStarted(); c.selectScenario(sc); c.startTrial(0, { trialId: 'T', repetition: 1 });
+
+  const strong = S.STRONG_YAW_DELTA_DEG + 8;
+  let countdownPersisted = false;
+  for (let now = 33; now <= sc.countdownMs; now += 33) {
+    const r = tt.update({ facePresent: true, signalValid: true, poseValid: true,
+      yawSmoothed: strong, pitchSmoothed: 0, rollSmoothed: 0, earSmoothed: 1,
+      yawDelta: strong, pitchDelta: 0, earLeft: 0.3, earRight: 0.3, earMean: 0.3 }, now);
+    countdownPersisted ||= r.persisted.yawStrong;
+    c.tick(now);
+  }
+  c.tick(sc.countdownMs);
+  assert.equal(countdownPersisted, true, 'countdown cue really could have latched');
+
+  const first = tt.update({ facePresent: true, signalValid: true, poseValid: true,
+    yawSmoothed: 0, pitchSmoothed: 0, rollSmoothed: 0, earSmoothed: 1,
+    yawDelta: 0, pitchDelta: 0, earLeft: 0.3, earRight: 0.3, earMean: 0.3 },
+  sc.countdownMs + 33);
+  assert.equal(first.persisted.yawStrong, false);
+  assert.equal(first.accumulated.yawStrong, 0);
+});
+
+test('C8c. continuing countdown yaw pays full persistence from recording start', () => {
+  const tt = new TemporalTracker(CONFIG, new EvidenceEngine(CONFIG));
+  const sc = { id: 'YAW_LEFT_SUSTAINED', countdownMs: 3000, recordingDurationMs: 5000 };
+  const c = new TrialController({ onRecordingStart: () => tt.reset() });
+  c.cameraStarted(); c.selectScenario(sc); c.startTrial(0, { trialId: 'T', repetition: 1 });
+
+  const strong = S.STRONG_YAW_DELTA_DEG + 8;
+  for (let now = 33; now <= sc.countdownMs; now += 33) {
+    tt.update({ facePresent: true, signalValid: true, poseValid: true,
+      yawSmoothed: strong, pitchSmoothed: 0, rollSmoothed: 0, earSmoothed: 1,
+      yawDelta: strong, pitchDelta: 0, earLeft: 0.3, earRight: 0.3, earMean: 0.3 }, now);
+    c.tick(now);
+  }
+  c.tick(sc.countdownMs);
+
+  const start = c.recordingStartedAt;
+  let latched = null;
+  for (let now = start + 33; now < start + 4000; now += 33) {
+    const r = tt.update({ facePresent: true, signalValid: true, poseValid: true,
+      yawSmoothed: strong, pitchSmoothed: 0, rollSmoothed: 0, earSmoothed: 1,
+      yawDelta: strong, pitchDelta: 0, earLeft: 0.3, earRight: 0.3, earMean: 0.3 }, now);
+    if (r.persisted.yawStrong && latched === null) latched = now - start;
+  }
+  assert.ok(latched >= S.YAW_PERSIST_MS,
+    `countdown must not shorten persistence; latched at ${latched}ms`);
+});
+
 test('C9. D09 eye persistence starts from bounded evidence only', () => {
   const r = latchDelay({ channel: 'eyeClosureStrong',
     challenge: S.EAR_RELATIVE_THRESHOLD - 0.35,
@@ -247,31 +301,10 @@ test('C12. D08 blink behaviour remains production-equivalent', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// §8 — pseudonymous subject support
+// §8 — no subject identity anywhere
 // ═══════════════════════════════════════════════════════════════════════
-test('C13. a subject code is pseudonymous and normalised', () => {
+test('C13. no subject identity is carried by the session or its exports', () => {
   const s = new DebugSession();
-  assert.equal(s.subjectId, null, 'never guessed');
-  assert.equal(s.setSubjectId('s01'), 'S01', 'normalised to a canonical code');
-  assert.equal(s.subjectId, 'S01');
-  assert.equal(s.setSubjectId(null), null, 'and can be cleared');
-});
-
-test('C14. anything resembling an identity is refused', () => {
-  // The cheapest moment to stop a real name entering the dataset is before it
-  // is written, not in a later scrub.
-  const s = new DebugSession();
-  for (const bad of ['Aflaha Fathinah', 'user@example.com', '081234567890',
-                     'subject one please', 'S01; DROP']) {
-    assert.throws(() => s.setSubjectId(bad), /pseudonymous/,
-      `"${bad}" must be refused`);
-  }
-  assert.equal(s.subjectId, null, 'and nothing is stored on refusal');
-});
-
-test('C15. the subject code reaches every trial and the export', () => {
-  const s = new DebugSession();
-  s.setSubjectId('S02');
   const sc = getScenarioByCode('D01');
   const ref = s.nextTrialRef(sc.id);
   const rec = s.addTrial({ trialId: ref.trialId, scenario: sc.id,
@@ -281,27 +314,20 @@ test('C15. the subject code reaches every trial and the export', () => {
       eyeEligible: true, stateSignalValid: true, publicState: 'FOKUS',
       primaryReason: 'NONE', fps: 30, faceInferenceMs: 11 }] }, sc, CAL);
 
-  assert.equal(rec.subjectId, 'S02', 'stamped onto the trial at save time');
-  const doc = s.buildResultsJson({});
-  assert.equal(doc.session.subjectId, 'S02');
-  assert.equal(doc.trials[0].subjectId, 'S02');
+  // The session carries no subject concept at all.
+  assert.equal(s.subjectId, undefined, 'no session-level subject field');
+  assert.equal(typeof s.setSubjectId, 'undefined', 'and no setter remains');
+  assert.equal(rec.subjectId, undefined, 'trials are not stamped with one');
 
-  const head = s.buildTrialsCsv().split('\n')[0].split(',');
-  const row = s.buildTrialsCsv().split('\n')[1].split(',');
-  assert.ok(head.includes('subject_id'));
-  assert.equal(row[head.indexOf('subject_id')], 'S02');
-});
-
-test('C16. a session without a subject records blank, never a guess', () => {
-  const s = new DebugSession();
-  const sc = getScenarioByCode('D01');
-  s.addTrial({ trialId: 't', scenario: sc.id, repetition: 1,
-    recordingDurationMs: 1000, sampleCount: 0, samples: [] }, sc, CAL);
   const doc = s.buildResultsJson({});
-  assert.equal(doc.trials[0].subjectId, null);
-  const head = s.buildTrialsCsv().split('\n')[0].split(',');
-  const row = s.buildTrialsCsv().split('\n')[1].split(',');
-  assert.equal(row[head.indexOf('subject_id')], '', 'blank, not "unknown"');
+  assert.equal(doc.session.subjectId, undefined);
+  assert.equal(doc.trials[0].subjectId, undefined);
+  assert.ok(!JSON.stringify(doc).includes('subjectId'),
+    'the JSON archive mentions no subject');
+
+  const NL = String.fromCharCode(10);
+  const head = s.buildTrialsCsv().split(NL)[0].split(',');
+  assert.ok(!head.includes('subject_id'), 'the CSV has no subject column');
 });
 
 // ═══════════════════════════════════════════════════════════════════════

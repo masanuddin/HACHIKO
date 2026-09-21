@@ -179,6 +179,23 @@
   table.vals td:first-child{text-align:left;font-family:inherit;color:var(--dim);
                             white-space:nowrap}
   table.vals tr:last-child td{border-bottom:none}
+  /* Signal Inspector only. Its widest table carries eight columns inside a
+     narrow side column, so this pane runs one step smaller than the rest of
+     the page. Scoped to the pane, not to individual tables: the eye tables
+     sit directly beneath the head-pose one and must match it, or the panel
+     reads as two different type sizes stacked together. */
+  #paneFeat table.vals{font-size:10px}
+  #paneFeat table.vals th{font-size:7.5px;letter-spacing:.2px;padding:2px 2px}
+  #paneFeat table.vals td{padding:2.5px 2px}
+  #paneFeat table.vals td.rulecell{font-size:inherit}
+  /* The placeholder that stands in for a table must match the table it
+     replaces, otherwise the panel changes type size as rows appear. */
+  #paneFeat .tblstate{font-size:10px}
+  /* `.val` carries its own 11.5px for the key/value lists it was built for.
+     The renderer reuses that class for table cells it colours, so those cells
+     came out larger than the plain ones beside them. Inside a table the cell
+     owns the size; `.val` is left to do nothing but colour. */
+  table.vals td.val{font-size:inherit}
   .rulehead{font-size:9px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;
             color:var(--accent);margin:9px 0 3px;padding-top:6px;
             border-top:1px solid var(--border)}
@@ -301,6 +318,7 @@
       <div class="hint" id="trialExpected" style="color:var(--dim)"></div>
 
       <div id="trialBig" class="runbig">CAMERA OFF</div>
+      <div id="trialScope" class="hint">LIVE PREVIEW - diagnostic only, not included in a trial result.</div>
       <div class="bar"><div id="trialFill" class="fill"></div></div>
 
       <div class="row" style="margin-top:6px">
@@ -394,24 +412,24 @@
         <div id="tblHead"><table class="vals">
           <thead><tr>
             <th>Signal</th><th>Raw</th><th>&Delta; base</th><th>Smoothed</th>
-            <th>Role</th><th>Persistence</th><th>Status</th>
+            <th>Rule</th><th>Instant cue</th><th>Persistence</th><th>Evidence</th>
           </tr></thead>
           <tbody>
             <tr>
               <td>Yaw</td><td id="yawRaw">Waiting for camera</td><td id="yawDelta">Waiting for camera</td>
               <td id="yawSm">Waiting for camera</td><td id="yawRule" class="rulecell">Waiting for camera</td>
-              <td id="yawPers">Waiting for camera</td><td id="yawStat">Waiting for camera</td>
+              <td id="yawInst">Waiting for camera</td><td id="yawPers">Waiting for camera</td><td id="yawStat">Waiting for camera</td>
             </tr>
             <tr>
               <td>Pitch</td><td id="pitchRaw">Waiting for camera</td><td id="pitchDelta">Waiting for camera</td>
               <td id="pitchSm">Waiting for camera</td><td class="dimval">measurement</td>
-              <td class="dimval">see below</td><td class="dimval">see below</td>
+              <td class="dimval">see below</td><td class="dimval">see below</td><td class="dimval">see below</td>
             </tr>
             <tr>
               <td>Head Tilt <span class="tip" title="Derived from the head-pose roll angle. Supporting evidence only — it cannot independently trigger TERALIH.">?</span></td>
               <td id="rollRaw">Waiting for camera</td><td id="rollDelta">Waiting for camera</td>
               <td id="rollSm">Waiting for camera</td><td id="rollRule" class="rulecell">Waiting for camera</td>
-              <td id="rollPers">Waiting for camera</td><td id="rollStat">Waiting for camera</td>
+              <td id="rollInst">Waiting for camera</td><td id="rollPers">Waiting for camera</td><td id="rollStat">Waiting for camera</td>
             </tr>
           </tbody>
         </table></div>
@@ -422,19 +440,19 @@
         <div id="stPitch" class="tblstate" hidden></div>
         <div id="tblPitch"><table class="vals">
           <thead><tr>
-            <th>Interpretation</th><th>Role</th><th>Rule</th>
+            <th>Interpretation</th><th>Role</th><th>Rule</th><th>Instant cue</th>
             <th>Persistence</th><th>Status</th>
           </tr></thead>
           <tbody>
             <tr>
               <td>Pitch Up</td><td class="tierstrong">STRONG</td>
               <td id="pitchUpRule" class="rulecell">Waiting for camera</td>
-              <td id="pitchPers">Waiting for camera</td><td id="pitchStat">Waiting for camera</td>
+              <td id="pitchUpInst">Waiting for camera</td><td id="pitchPers">Waiting for camera</td><td id="pitchStat">Waiting for camera</td>
             </tr>
             <tr>
               <td>Pitch Down</td><td class="tiersupport">SUPPORT</td>
               <td id="pitchDownRule" class="rulecell">Waiting for camera</td>
-              <td id="pitchDownPers">Waiting for camera</td><td id="pitchDownStat">Waiting for camera</td>
+              <td id="pitchDownInst">Waiting for camera</td><td id="pitchDownPers">Waiting for camera</td><td id="pitchDownStat">Waiting for camera</td>
             </tr>
           </tbody>
         </table></div>
@@ -458,6 +476,7 @@
             <span class="tip" title="Whether EAR is trustworthy now. At extreme head angles the eye foreshortens and EAR stops meaning what we think it means.">?</span></td>
             <td id="eyeEligCell">Waiting for camera</td></tr>
           <tr><td>Closure threshold</td><td id="eyeThresh">Waiting for camera</td></tr>
+          <tr><td>Instant cue</td><td id="eyeInst">Waiting for camera</td></tr>
           <tr><td>Persistence
             <span class="tip" title="How long the condition has continuously satisfied the rule.">?</span></td>
             <td id="eyePers">Waiting for camera</td></tr>
@@ -676,31 +695,33 @@ harness.onViewModel = (vm) => {
     cell(ids.delta, sg.delta);
     cell(ids.sm, sg.smoothed);
     if (ids.rule) cell(ids.rule, sg.rule);
+    if (ids.inst) cell(ids.inst, sg.instant, statCls(sg.instantActive, sg.role));
     if (ids.pers) cell(ids.pers, sg.persistence.text,
       `val ${sg.persistence.ok ? '' : 'dimval'}`.trim());
     if (ids.stat) cell(ids.stat, sg.status, statCls(sg.active, sg.role));
   };
   if (showHead) {
     pose('yaw', { raw: 'yawRaw', delta: 'yawDelta', sm: 'yawSm',
-                  rule: 'yawRule', pers: 'yawPers', stat: 'yawStat' });
+                  rule: 'yawRule', inst: 'yawInst', pers: 'yawPers', stat: 'yawStat' });
     // Pitch is a MEASUREMENT row: its rules live in the interpretation table.
     pose('pitch', { raw: 'pitchRaw', delta: 'pitchDelta', sm: 'pitchSm' });
     pose('headTilt', { raw: 'rollRaw', delta: 'rollDelta', sm: 'rollSm',
-                       rule: 'rollRule', pers: 'rollPers', stat: 'rollStat' });
+                       rule: 'rollRule', inst: 'rollInst', pers: 'rollPers', stat: 'rollStat' });
   }
 
   // ── Pitch interpretation: one measurement, two asymmetric rules. ──
   const interp = (sg, ids) => {
     cell(ids.rule, sg.rule);
+    cell(ids.inst, sg.instant, statCls(sg.instantActive, sg.role));
     cell(ids.pers, sg.persistence.text,
       `val ${sg.persistence.ok ? '' : 'dimval'}`.trim());
     cell(ids.stat, sg.status, statCls(sg.active, sg.role));
   };
   if (showPitch) {
     interp(vm.signals.pitchUp,
-      { rule: 'pitchUpRule', pers: 'pitchPers', stat: 'pitchStat' });
+      { rule: 'pitchUpRule', inst: 'pitchUpInst', pers: 'pitchPers', stat: 'pitchStat' });
     interp(vm.signals.pitchDown,
-      { rule: 'pitchDownRule', pers: 'pitchDownPers', stat: 'pitchDownStat' });
+      { rule: 'pitchDownRule', inst: 'pitchDownInst', pers: 'pitchDownPers', stat: 'pitchDownStat' });
   }
 
   // ── Eye: measurements and decision, from the same eligibility result the
@@ -714,6 +735,7 @@ harness.onViewModel = (vm) => {
   cell('eyeEligCell', eye.eligible,
     `val ${eye.eligibleBool === true ? 'ok' : eye.eligibleBool === false ? 'warn' : 'dimval'}`);
   cell('eyeThresh', eye.threshold);
+  cell('eyeInst', eye.instant, statCls(eye.instantActive, 'STRONG'));
   cell('eyePers', eye.persistence.text,
     `val ${eye.persistence.ok ? '' : 'dimval'}`.trim());
   cell('eyeStat', eye.status, statCls(eye.active, 'STRONG'));
@@ -798,6 +820,11 @@ harness.onTrialEvent = (e) => {
       : st === TrialState.SAVING ? 'SAVING' : 'NOT RECORDING';
     big.className = 'runbig' + (st === TrialState.RECORDING ? ' rec'
       : st === TrialState.COUNTDOWN ? ' cd' : '');
+    id('trialScope').textContent = st === TrialState.RECORDING
+      ? 'RECORDING - telemetry is included in the official trial result.'
+      : st === TrialState.COUNTDOWN
+        ? 'COUNTDOWN - live diagnostic only; not included in the trial result.'
+        : 'LIVE PREVIEW - diagnostic only, not included in a trial result.';
     syncStartGate();
     id('btnAbort').disabled = !harness.trials.isBusy();
     refreshOpenModal();
@@ -807,11 +834,13 @@ harness.onTrialEvent = (e) => {
     id('btnInvalid').disabled = !harness.lastTrial();
     els.status.textContent =
       `Trial saved: ${t.scenario}, repetition ${t.repetition} of 3.`;
+    const verdict = s.trialVerdict ?? 'INVALID';
+    const reason = s.failureReason ? ` · reason: ${s.failureReason}` : '';
     id('trialHint').innerHTML =
       `<b>✓ SAVED</b> ${t.scenario} · repetition ${t.repetition} of 3 · `
+      + `verdict: <b>${verdict}</b>${reason} · `
       + `observed <b>${s.observedFinalState}</b> (${s.primaryReason}) · `
-      + `trigger ${s.triggerOccurred ? Math.round(s.triggerDelayMs) + ' ms' : 'none'} · `
-      + `matches: <b>${s.matchesExpectation ? 'yes' : 'no'}</b>`;
+      + `trigger ${s.triggerOccurred ? Math.round(s.triggerDelayMs) + ' ms' : 'none'}`;
     const rep = harness.session.repetitionCount(t.scenario);
     id('trialRep').textContent = `Repetition ${Math.min(rep + 1, 3)} of 3`;
     renderTrialPanel(); refreshOpenModal();

@@ -1,10 +1,12 @@
 /**
- * Subject provenance + official export package (spec §10).
+ * Start-Trial provenance + official export package (spec §10).
  *
- * The rule under test: attribution belongs to whoever was selected when the
- * bounded window OPENED, and nothing afterwards may rewrite it. Subject ID
- * follows the same provenance philosophy as `calibrationAtStart` — captured
- * once at Start Trial, immutable thereafter.
+ * The rule under test: what a trial was interpreted against belongs to the
+ * moment the bounded window OPENED, and nothing afterwards may rewrite it.
+ * `calibrationAtStart` is captured once at Start Trial, immutable thereafter.
+ *
+ * The dataset carries no subject identity of any kind — see C13 in
+ * cleanstart.test.js, which locks that removal in.
  *
  * No AI parameter is read or changed here.
  */
@@ -12,7 +14,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DebugSession } from '../tools/debug/DebugSession.js';
-import { DebugHarness } from '../tools/debug/DebugHarness.js';
 import { buildDebugReport } from '../tools/debug/debugReport.js';
 import { getScenarioByCode } from '../tools/debug/scenarios.js';
 
@@ -26,108 +27,25 @@ const smp = (i = 0) => ({ relativeTimeMs: i * 33, timestampMs: i * 33,
   stateSignalValid: true, publicState: 'FOKUS', primaryReason: 'NONE',
   fps: 30, faceInferenceMs: 11 });
 
-/** Save a trial through the session, with an explicit subject snapshot. */
-function save(session, code, subjectSnapshot, n = 3) {
+/** Save a trial through the session. */
+function save(session, code, n = 3) {
   const sc = getScenarioByCode(code);
   const ref = session.nextTrialRef(sc.id);
   return session.addTrial({ trialId: ref.trialId, scenario: sc.id,
     repetition: ref.repetition, recordingDurationMs: 10000, sampleCount: n,
     samples: Array.from({ length: n }, (_, i) => smp(i)) },
-    sc, CAL(), subjectSnapshot);
+    sc, CAL());
 }
 
-/** A harness wired to a fake clock, for the full Start Trial path. */
-function harness() {
-  const els = {};
-  for (const k of ['video', 'status']) els[k] = { textContent: '', style: {} };
-  const h = new DebugHarness({ FilesetResolver: {}, FaceLandmarker: {} }, els);
-  h.ai.getCalibrationSnapshot = () => CAL();
-  h.trials.cameraStarted();
-  return h;
-}
 
-/**
- * Run one trial end to end. `switchTo` changes the operator's CURRENT subject
- * mid-trial, before the save lands — the mutation this guards against.
- */
-function runTrial(h, code, subjectAtStart, switchTo = null) {
-  const sc = getScenarioByCode(code);
-  h.session.setSubjectId(subjectAtStart);
-  h.trials.selectScenario(sc);
-  h.startTrial();
-  const t0 = h.trials.countdownStartedAt;
-  h.trials.tick(t0 + sc.countdownMs + 1);          // -> RECORDING
-  const rs = h.trials.recordingStartedAt;
-  for (let t = rs + 33; t < rs + 700; t += 33) {
-    h.trials.offerSample({ ...smp(), timestampMs: t });
-  }
-  if (switchTo !== null) h.session.setSubjectId(switchTo);
-  h.trials.tick(rs + sc.recordingDurationMs + 50); // -> complete
-  return h.lastTrialRecord;
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // §3 — the snapshot must be taken at Start Trial
 // ═══════════════════════════════════════════════════════════════════════
-test('S1. changing the current subject mid-trial does NOT reattribute it', () => {
-  // The defect: attribution was read at SAVE time, so an operator advancing to
-  // the next subject before the save landed silently stole the finished trial.
-  const h = harness();
-  const rec = runTrial(h, 'D01', 'S01', 'S02');
 
-  assert.equal(rec.subjectId, 'S01', 'the trial belongs to who performed it');
-  assert.equal(h.session.subjectId, 'S02', 'while the UI has moved on');
-});
 
-test('S2. the snapshot is captured at Start Trial, not later', () => {
-  const h = harness();
-  h.session.setSubjectId('S01');
-  h.trials.selectScenario(getScenarioByCode('D01'));
-  assert.equal(h._pendingSubjectId, null, 'nothing captured before the start');
 
-  h.startTrial();
-  assert.equal(h._pendingSubjectId, 'S01', 'captured at the boundary');
 
-  h.session.setSubjectId('S03');
-  assert.equal(h._pendingSubjectId, 'S01', 'and immutable afterwards');
-});
-
-test('S3. the NEXT trial uses the new subject', () => {
-  const h = harness();
-  const first = runTrial(h, 'D01', 'S01', 'S02');
-  const second = runTrial(h, 'D01', 'S02');
-  assert.equal(first.subjectId, 'S01');
-  assert.equal(second.subjectId, 'S02');
-});
-
-test('S4. prior trials are never rewritten by later subject changes', () => {
-  const s = new DebugSession();
-  save(s, 'D01', 'S01');
-  save(s, 'D01', 'S02');
-  const before = s.trials.map((t) => t.subjectId);
-
-  for (const who of ['S03', 'S09', null]) s.setSubjectId(who);
-
-  assert.deepEqual(s.trials.map((t) => t.subjectId), before,
-    'history is immutable');
-  assert.deepEqual(s.buildResultsJson({}).trials.map((t) => t.subjectId),
-    ['S01', 'S02'], 'and the export agrees');
-});
-
-test('S5. a trial started without a subject stays blank, never guessed', () => {
-  const s = new DebugSession();
-  save(s, 'D01', null);              // explicitly no subject at start
-  s.setSubjectId('S01');             // operator sets one afterwards
-
-  assert.equal(s.trials[0].subjectId, null, 'no back-fill');
-  const doc = s.buildResultsJson({});
-  assert.equal(doc.trials[0].subjectId, null);
-  // And no invented placeholder anywhere.
-  const json = JSON.stringify(doc);
-  for (const bad of ['UNKNOWN', 'ANONYMOUS', 'N/A', 'undefined']) {
-    assert.ok(!json.includes(`"subjectId":"${bad}"`), `${bad} must not appear`);
-  }
-});
 
 // ═══════════════════════════════════════════════════════════════════════
 // §4 — the other Start Trial snapshots still hold
@@ -137,11 +55,11 @@ test('S6. calibration remains immutable across recalibration', () => {
   const sc = getScenarioByCode('D01');
   const first = s.addTrial({ trialId: 't1', scenario: sc.id, repetition: 1,
     recordingDurationMs: 10000, sampleCount: 1, samples: [smp()] },
-    sc, CAL(-2.5), 'S01');
+    sc, CAL(-2.5));
   s.calibrationSnapshot = CAL(44);
   const second = s.addTrial({ trialId: 't2', scenario: sc.id, repetition: 2,
     recordingDurationMs: 10000, sampleCount: 1, samples: [smp()] },
-    sc, CAL(44), 'S01');
+    sc, CAL(44));
 
   assert.equal(first.calibrationAtStart.baseline.yaw, -2.5);
   assert.equal(second.calibrationAtStart.baseline.yaw, 44);
@@ -149,7 +67,7 @@ test('S6. calibration remains immutable across recalibration', () => {
 
 test('S7. the config/protocol snapshot is captured with the session', () => {
   const s = new DebugSession();
-  save(s, 'D01', 'S01');
+  save(s, 'D01');
   const doc = s.buildResultsJson({});
   for (const k of ['state', 'temporal', 'calibration', 'validity', 'headPose',
                    'eyeEligibility']) {
@@ -165,45 +83,11 @@ test('S7. the config/protocol snapshot is captured with the session', () => {
 // ═══════════════════════════════════════════════════════════════════════
 // §7 / §8 — provenance in JSON and XLSX
 // ═══════════════════════════════════════════════════════════════════════
-test('S8. per-trial attribution survives export, and outranks the session', () => {
-  const s = new DebugSession();
-  save(s, 'D01', 'S01');
-  save(s, 'D01', 'S02');
-  s.setSubjectId('S03');             // mutable operator context only
 
-  const doc = s.buildResultsJson({});
-  assert.deepEqual(doc.trials.map((t) => t.subjectId), ['S01', 'S02'],
-    'trial-level truth is per-trial');
-  assert.equal(doc.session.subjectId, 'S03',
-    'session metadata reports the current selection...');
-  // ...and must never be read as "all trials belong to S03".
-  assert.ok(!doc.trials.every((t) => t.subjectId === doc.session.subjectId));
-});
-
-test('S9. the workbook shows each trial its own subject', () => {
-  const s = new DebugSession();
-  save(s, 'D01', 'S01');
-  save(s, 'D01', 'S02');
-  s.setSubjectId('S03');
-
-  const xml = new TextDecoder().decode(buildDebugReport(s.buildResultsJson({})));
-  const sheets = [...xml.matchAll(/<sheetData>([\s\S]*?)<\/sheetData>/g)];
-  const summary = sheets[0][1];
-  const telemetry = sheets[1][1];
-
-  assert.ok(xml.includes('Subject'), 'Trial Summary has a Subject column');
-  for (const who of ['S01', 'S02']) {
-    assert.ok(summary.includes(`>${who}<`), `${who} must appear in the summary`);
-    assert.ok(telemetry.includes(`>${who}<`), `${who} must appear in telemetry`);
-  }
-  // The current selection performed no trial, so it must appear nowhere.
-  assert.ok(!summary.includes('>S03<'), 'the session selection is not attribution');
-  assert.ok(!telemetry.includes('>S03<'));
-});
 
 test('S10. the workbook exposes no personal data', () => {
   const s = new DebugSession();
-  save(s, 'D01', 'S01');
+  save(s, 'D01');
   const xml = new TextDecoder().decode(buildDebugReport(s.buildResultsJson({})));
   // A pseudonymous code is the only identity the dataset carries.
   assert.ok(!/@[a-z]+\.[a-z]{2,}/i.test(xml), 'no email addresses');
@@ -215,7 +99,7 @@ test('S10. the workbook exposes no personal data', () => {
 // ═══════════════════════════════════════════════════════════════════════
 test('S11. the normal export is exactly JSON + XLSX', () => {
   const s = new DebugSession();
-  save(s, 'D01', 'S01');
+  save(s, 'D01');
   const b = s.buildExportBundle({});
 
   assert.deepEqual(b.files.map((f) => f.name).sort(),
@@ -240,16 +124,16 @@ test('S13. CSV helpers may remain for internal use', () => {
   // Retained deliberately: tests and offline tooling read them. They are not
   // part of the official package and carry no authority.
   const s = new DebugSession();
-  save(s, 'D01', 'S01');
+  save(s, 'D01');
   assert.ok(typeof s.buildTrialsCsv === 'function');
-  assert.ok(s.buildTrialsCsv().includes('subject_id'),
-    'and they carry the same attribution');
-  assert.ok(s.buildTrialsCsv().split('\n')[1].includes('S01'));
+  assert.ok(s.buildTrialsCsv().includes('trial_id'), 'the trial still names itself');
+  assert.ok(!s.buildTrialsCsv().includes('subject_id'),
+    'and carries no subject identity');
 });
 
 test('S14. the JSON alone is a complete record', () => {
   const s = new DebugSession();
-  save(s, 'D01', 'S01', 5);
+  save(s, 'D01', 5);
   const doc = s.buildResultsJson({});
   for (const k of ['schemaVersion', 'protocolVersion', 'session', 'environment',
                    'calibration', 'config', 'scenarios', 'progress',
@@ -265,25 +149,26 @@ test('S14. the JSON alone is a complete record', () => {
 // ═══════════════════════════════════════════════════════════════════════
 // §9 — readiness for the targeted collection
 // ═══════════════════════════════════════════════════════════════════════
-test('S15. the 45-trial protocol is representable end to end', () => {
+test('S15. the full protocol is representable end to end', () => {
+  // The Behavioral DEVELOPMENT run is the registry itself, three times over:
+  // 11 scenarios x 3 repetitions. The count is derived, never a literal, so
+  // adding a scenario cannot leave this test asserting a stale total.
   const s = new DebugSession();
-  const CODES = ['D01', 'D06', 'D08', 'D09', 'D11'];
-  for (const subj of ['S01', 'S02', 'S03']) {
-    for (const code of CODES) for (let r = 0; r < 3; r++) save(s, code, subj);
-  }
+  const CODES = ['D01', 'D02', 'D03', 'D04', 'D05', 'D06',
+                 'D07', 'D08', 'D09', 'D10', 'D11'];
+  for (const code of CODES) for (let r = 0; r < 3; r++) save(s, code);
 
   const doc = s.buildResultsJson({});
-  assert.equal(doc.trials.length, 45);
-  for (const subj of ['S01', 'S02', 'S03']) {
-    assert.equal(doc.trials.filter((t) => t.subjectId === subj).length, 15,
-      `${subj} must own 15 trials`);
-  }
+  assert.equal(doc.trials.length, CODES.length * 3);
+  assert.equal(doc.trials.length, 33, 'one subject, the whole registry');
   // Every trial carries what a later offline replay needs.
   for (const t of doc.trials) {
-    assert.ok(t.subjectId && t.scenarioCode && t.calibrationAtStart);
+    assert.ok(t.scenarioCode && t.calibrationAtStart);
     assert.ok(t.recordingStartedAtIso !== t.recordingEndedAtIso);
     assert.ok(Array.isArray(t.samples));
   }
+  assert.ok(!JSON.stringify(doc).includes('subjectId'),
+    'and none of them carries a subject identity');
 });
 
 test('S16. INVALID does not fill a slot; FAIL does — unchanged', () => {

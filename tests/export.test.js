@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { BenchmarkRunner } from '../tools/benchmark/BenchmarkRunner.js';
 import {
   buildTrialsCsv, buildScenarioSummaryCsv, buildModelSummaryCsv,
-  buildExportBundle, buildModelSummaries, buildRecommendation,
+  buildExportBundle, buildModelSummaries, buildRecommendation, buildResultsJson,
   benchmarkCompletion, assertNoImagery,
   TRIAL_COLUMNS, SCENARIO_SUMMARY_COLUMNS, MODEL_SUMMARY_COLUMNS,
 } from '../tools/benchmark/exportResults.js';
@@ -289,6 +289,26 @@ test('U15. model summary confusion counts match the trials exactly', () => {
   assert.equal(row.tn, 1); assert.equal(row.fp, 1);
   assert.ok(Math.abs(row.sensitivity - 2 / 3) < 1e-9);
   assert.ok(Math.abs(row.specificity - 0.5) < 1e-9);
+});
+
+test('U15b. invalid benchmark attempts are preserved but not scored', () => {
+  const r = new BenchmarkRunner({});
+  r.recordTrial({ task: 'person', scenarioId: 'frontal_seated', expected: true,
+    observation: obs() });
+  r.recordInvalidAttempt({ task: 'person', scenarioId: 'frontal_seated',
+    modelId: 'edl2-f16', repetition: 2, reason: 'no bounded samples captured' });
+
+  const [row] = buildModelSummaries(r.getTrials(), { requiredRepetitions: 3 });
+  assert.equal(row.tp + row.tn + row.fp + row.fn, 1);
+  assert.deepEqual(r.getAttemptSummary(),
+    { evaluableTrials: 1, invalidAttempts: 1, totalAttempts: 2 });
+
+  const doc = buildResultsJson(r.getTrials(), {
+    session: { sessionId: r.sessionId },
+    invalidAttempts: r.getInvalidAttempts(),
+  });
+  assert.equal(doc.attemptSummary.totalAttempts, 2);
+  assert.equal(doc.invalidAttempts[0].valid, false);
 });
 
 test('U16. no image or video content appears in any export artefact', () => {

@@ -51,14 +51,13 @@ export class DebugHarness {
       requiredRepetitions: this.session.requiredRepetitions,
       onStateChange: (info) => this._onTrialState(info),
       onTrialComplete: (trial) => this._onTrialComplete(trial),
+      onRecordingStart: (info) => this._onRecordingStart(info),
     });
     this.onTrialEvent = () => {};
     /** Page-supplied renderer for panels this class does not own. */
     this.onViewModel = null;
     /** Calibration in force when the current trial started. */
     this._pendingCalibration = null;
-    /** Pseudonymous subject selected when the current trial started. */
-    this._pendingSubjectId = null;
     this.lastTrialRecord = null;
     this.stream = null;
     this.running = false;
@@ -251,17 +250,6 @@ export class DebugHarness {
       capturedAtIso: new Date().toISOString(),
       baseline: cal.baseline ? { ...cal.baseline } : null,
     };
-    // Subject attribution follows the same rule as calibration: captured HERE,
-    // once, and immutable thereafter. An operator who advances to the next
-    // subject before this trial saves must not reattribute it.
-    this._pendingSubjectId = this.session.subjectId ?? null;
-    // 3. CLEAN START. Evidence accrued before the window opened is not this
-    //    trial's evidence: a head already turned during the countdown banks
-    //    persistence that makes the trial appear to latch in a fraction of the
-    //    configured time. Cleared at the boundary so the bounded window starts
-    //    from a known baseline. Calibration is deliberately NOT reset.
-    this.ai.resetTemporalEvidence?.();
-
     const ok = this.trials.startTrial(performance.now(), ref);
     return { ok, ...ref };
   }
@@ -297,10 +285,18 @@ export class DebugHarness {
     this.onTrialEvent({ type: 'state', ...info });
   }
 
+  _onRecordingStart(info) {
+    // Exact official-data boundary: countdown frames are live diagnostics only.
+    // Clear temporal evidence here, after countdown and before the first
+    // recordable frame is processed. Calibration and warmed smoothing remain.
+    this.ai.resetTemporalEvidence?.();
+    this.onTrialEvent({ type: 'recording-start', ...info });
+  }
+
   _onTrialComplete(trial) {
     const scenario = getScenario(trial.scenario);
     const record = this.session.addTrial(trial, scenario,
-      this._pendingCalibration, this._pendingSubjectId);
+      this._pendingCalibration);
     this.lastTrialRecord = record;
     this.onTrialEvent({ type: 'complete', trial: record });
   }
@@ -334,16 +330,19 @@ export class DebugHarness {
       if (!skipped && measurement) {
         this._lastMeasurement = measurement;
         this._trackExtremes(measurement);
+        // Advance the trial clock first. If this tick opens the RECORDING
+        // window, the onRecordingStart hook clears temporal evidence before
+        // this frame is interpreted and before it can enter the bounded sample.
+        const tick = this.trials.tick(now);
+
         const frame = this.ai.processFrame(measurement, now, {
           faceInferenceMs: inferenceMs,
           objectInferenceMs: 0,
           objectDetections: null,
         });
 
-        // Advance the trial clock, then offer the frame. `offerSample` is the
-        // single gate: it accepts ONLY inside the recording window, so preview,
-        // countdown and post-trial frames can never enter the experiment.
-        const tick = this.trials.tick(now);
+        // `offerSample` is the single storage gate: preview, countdown and
+        // post-trial frames can render live but never enter the experiment.
         this.trials.offerSample({ ...toSample(frame), timestampMs: now });
 
         this._render(frame);

@@ -412,7 +412,7 @@
            such concept, so it gets its own readout. -->
       <div id="poseBlock" style="display:none">
         <table class="vals"><tbody>
-          <tr><td>Pose detected</td><td id="poDetected">Waiting for camera</td></tr>
+          <tr><td>Pose diagnostic detected</td><td id="poDetected">Waiting for camera</td></tr>
           <tr><td>Landmarks available</td><td id="poLandmarks">Waiting for camera</td></tr>
           <tr><td>Visible landmarks</td><td id="poVisible">Waiting for camera</td></tr>
           <tr><td>Usable landmark ratio
@@ -425,7 +425,7 @@
 
       <table class="vals" id="objBlock">
         <thead><tr>
-          <th>Target</th><th>Role</th><th>Detected</th><th>Current</th><th>Peak</th>
+          <th>Target</th><th>Role</th><th>Diagnostic detected</th><th>Current floor score</th><th>Recording peak</th>
         </tr></thead>
         <tbody>
           <tr id="rowPerson">
@@ -871,7 +871,20 @@ function onTrialState(info) {
 function onTrialComplete(trial) {
   // The peak is computed ONLY from samples inside the recording window.
   const obs = BenchmarkRunner.peak(trial.samples);
-  if (!obs) { setStatus('no samples captured in the window'); return; }
+  if (!obs) {
+    const invalid = runner.recordInvalidAttempt({
+      task: isPose() ? 'pose' : task,
+      scenarioId: trial.scenario,
+      modelId: runner.activeId,
+      repetition: trial.repetition,
+      reason: 'no bounded samples captured during recording window',
+      phase: $('anPhase').value,
+      sampleCount: trial.sampleCount ?? 0,
+    });
+    setStatus(`invalid attempt recorded: ${invalid.reason}`);
+    render();
+    return;
+  }
   const t = runner.recordTrial({
     task: isPose() ? 'pose' : task,
     scenarioId: trial.scenario, expected: selected.expect,
@@ -908,8 +921,8 @@ function toast(t) {
     <span class="k">task</span><span class="v">${t.task}</span>
     <span class="k">scenario</span><span class="v">${t.scenarioId}</span>
     <span class="k">repetition</span><span class="v ${t.repetition >= req ? 'ok' : ''}">${t.repetition} of ${req}</span>
-    <span class="k">detected</span><span class="v ${t.detected ? 'ok' : 'bad'}">${t.detected ? 'YES' : 'NO'}</span>
-    <span class="k">peak score</span><span class="v">${num(t.maxScore)}</span>
+    <span class="k">diagnostic detected</span><span class="v ${t.detected ? 'ok' : 'bad'}">${t.detected ? 'YES' : 'NO'}</span>
+    <span class="k">peak diagnostic score</span><span class="v">${num(t.maxScore)}</span>
     <span class="k">competing</span><span class="v dim">${t.competingClass ?? 'None'} ${t.competingScore ? num(t.competingScore, 2) : ''}</span>
     <span class="k">inference p50 / p95</span><span class="v">${t.inferenceMs.toFixed(0)} / ${(t.p95InferenceMs ?? t.inferenceMs).toFixed(0)} ms</span></div>`;
   $('toast').classList.add('show');
@@ -1259,12 +1272,13 @@ $('btnInvalid').onclick = () => {
 
 $('btnClear').onclick = () => {
   if (!confirm('Discard all recorded trials from this session?')) return;
-  runner.trials.length = 0; render();
+  runner.trials.length = 0; runner.invalidAttempts.length = 0; render();
 };
 
 $('btnExport').onclick = () => {
   const bundle = buildExportBundle({
     trials: runner.getTrials(),
+    invalidAttempts: runner.getInvalidAttempts(),
     session: { sessionId: runner.sessionId, startedIso: runner.sessionStartedIso,
                requiredRepetitions: REQ,
                userAgent: navigator.userAgent },
