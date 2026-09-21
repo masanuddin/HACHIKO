@@ -47,7 +47,7 @@ export const PROTOCOL_VERSION = 'hachiko-debug-protocol-1.0';
  */
 const TRIAL_COLUMNS = [
   // ── Identity ──
-  'session_id', 'trial_id',
+  'session_id', 'trial_id', 'subject_id',
   'scenario_code', 'scenario_id', 'scenario_name', 'scenario_category',
   'repetition',
   // ── Was this trial judgeable at all? ──
@@ -60,7 +60,7 @@ const TRIAL_COLUMNS = [
   'trigger_delay_ms',
   // ── Core metrics over the bounded window ──
   'max_abs_yaw_delta_deg', 'max_pitch_up_delta_deg', 'max_pitch_down_delta_deg',
-  'max_abs_head_tilt_delta_deg', 'min_relative_ear', 'face_available_ratio',
+  'max_abs_head_tilt_delta_deg', 'min_relative_ear',
   // ── The window itself ──
   'sample_count', 'median_fps', 'inference_p50_ms',
   'recording_started_at', 'recording_ended_at', 'duration_ms',
@@ -295,6 +295,17 @@ export function evaluateTrialValidity(samples, scenario, calibration) {
     trialValidityReason: null };
 }
 
+/**
+ * Did this trial yield evidence a verdict can rest on?
+ *
+ * PASS and FAIL both did. INVALID did not — and an older record with no
+ * verdict at all is treated as not evaluable rather than assumed good.
+ */
+export function isEvaluable(trial) {
+  const v = trial?.summary?.trialVerdict ?? null;
+  return v === 'PASS' || v === 'FAIL';
+}
+
 export function summariseTrial(trial, scenario) {
   const s = trial.samples ?? [];
   const last = s[s.length - 1] ?? null;
@@ -390,11 +401,83 @@ export class DebugSession {
      */
     this.abortedCount = 0;
     this.calibrationSnapshot = null;
+    /**
+     * PSEUDONYMOUS subject label currently selected by the operator, e.g. "S01".
+     *
+     * A code, never an identity: no name, no email, no demographics. It exists
+     * so per-subject variation is analysable later without the dataset ever
+     * carrying personal information. Null until set, and never guessed.
+     *
+     * MUTABLE OPERATOR CONTEXT, not the authoritative attribution. The trial's
+     * own `subjectId`, snapshotted at Start Trial, is what owns a result — see
+     * `addTrial`. One session may legitimately contain several subjects, so
+     * this field must never be read to decide who performed a finished trial.
+     */
+    this.subjectId = null;
+  }
+
+  /**
+   * Set the pseudonymous subject code for this session.
+   *
+   * Accepts a short code only. Anything longer, or containing characters a
+   * label would not need, is refused rather than silently stored — the cheapest
+   * moment to stop a real name entering the dataset is before it is written.
+   *
+   * @param {string|null} code e.g. "S01"; null clears it
+   */
+  setSubjectId(code) {
+    if (code === null || code === undefined || code === '') {
+      this.subjectId = null;
+      return null;
+    }
+    const clean = String(code).trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9_-]{0,11}$/.test(clean)) {
+      throw new Error('subjectId must be a short pseudonymous code such as '
+        + '"S01" — never a name or other identifying detail');
+    }
+    this.subjectId = clean;
+    return clean;
   }
 
   /** Valid repetitions already recorded for a scenario. */
   repetitionCount(scenarioId) {
+    return this.attemptCount(scenarioId);
+  }
+
+  /** Every saved bounded trial for a scenario, whatever its verdict. */
+  attemptCount(scenarioId) {
     return this.trials.filter((t) => t.scenario === scenarioId).length;
+  }
+
+  /**
+   * Repetitions that actually produced EVIDENCE: PASS or FAIL.
+   *
+   * An INVALID trial could not be judged — the required signal was unusable,
+   * or the operator never performed the challenge — so it proves nothing about
+   * the pipeline and must not fill a slot in the official three. It is still
+   * saved and still exported; it simply does not count.
+   *
+   * FAIL counts. A failure is a real result about real behaviour, and retrying
+   * until it turns green would be selecting the dataset for its conclusion.
+   */
+  evaluableCount(scenarioId) {
+    return this.trials.filter((t) => t.scenario === scenarioId
+      && isEvaluable(t)).length;
+  }
+
+  /** Attempts / evaluable / pass / fail / invalid for one scenario. */
+  scenarioTally(scenarioId) {
+    const mine = this.trials.filter((t) => t.scenario === scenarioId);
+    const verdictOf = (t) => t.summary?.trialVerdict ?? null;
+    const pass = mine.filter((t) => verdictOf(t) === 'PASS').length;
+    const fail = mine.filter((t) => verdictOf(t) === 'FAIL').length;
+    return {
+      attempts: mine.length,
+      evaluable: pass + fail,
+      pass,
+      fail,
+      invalid: mine.length - pass - fail,
+    };
   }
 
   /** Next trial id + repetition, without recording anything. */
@@ -415,7 +498,7 @@ export class DebugSession {
    *   no snapshot keeps null forever — it is never back-filled from whatever
    *   the session happens to hold at export time.
    */
-  addTrial(trial, scenario, calibrationAtStart = null) {
+  addTrial(trial, scenario, calibrationAtStart = null, subjectAtStart = undefined) {
     // Real window boundaries. Deriving both ends from one save-time stamp made
     // every trial look instantaneous.
     const endedAt = new Date();
@@ -434,6 +517,17 @@ export class DebugSession {
     const record = {
       ...withCal,
       sessionId: this.sessionId,
+      // Snapshotted at Start Trial, exactly like calibrationAtStart — NOT read
+      // here. `this.subjectId` is mutable operator context: an operator who
+      // switches to the next subject before the save lands would otherwise
+      // silently reattribute the trial that just finished. Attribution belongs
+      // to whoever was selected when the bounded window opened.
+      //
+      // `undefined` means the caller passed no snapshot (older call sites and
+      // unit fixtures); that falls back to the session value. An explicit
+      // `null` means the trial genuinely started with no subject selected and
+      // is preserved as null — never guessed, never back-filled.
+      subjectId: subjectAtStart === undefined ? this.subjectId : subjectAtStart,
       group: scenario?.group ?? null,
       // Registry identity travels with the trial, so a row explains itself.
       scenarioCode: scenario?.code ?? null,
@@ -483,10 +577,16 @@ export class DebugSession {
   progress(scenarios) {
     const req = this.requiredRepetitions;
     return scenarios.map((s) => {
-      const done = this.repetitionCount(s.id);
+      const t = this.scenarioTally(s.id);
       return {
-        scenarioId: s.id, group: s.group, done: Math.min(done, req), required: req,
-        complete: done >= req, pending: !!s.pending,
+        scenarioId: s.id, group: s.group,
+        // `done` is EVALUABLE repetitions: what the official three counts.
+        done: Math.min(t.evaluable, req), required: req,
+        complete: t.evaluable >= req, pending: !!s.pending,
+        // The full picture, so a reader is never shown 3/3 while invalid
+        // attempts sit unmentioned.
+        attempts: t.attempts, evaluable: t.evaluable,
+        pass: t.pass, fail: t.fail, invalid: t.invalid,
       };
     });
   }
@@ -541,7 +641,7 @@ export class DebugSession {
       const sm = t.summary ?? {};
       const sc = getScenario(t.scenario) ?? {};
       return [
-        this.sessionId, t.trialId,
+        this.sessionId, t.trialId, t.subjectId ?? null,
         t.scenarioCode ?? sc.code ?? null, t.scenario,
         t.scenarioName ?? sc.name ?? null,
         t.scenarioCategory ?? sc.category ?? null,
@@ -562,7 +662,7 @@ export class DebugSession {
         round(sm.maxYawDelta, 2),
         round(sm.maxPitchUpDelta, 2), round(sm.maxPitchDownDelta, 2),
         round(sm.maxRollDelta, 2),
-        round(sm.minEarRelative, 4), round(sm.faceAvailableRatio, 3),
+        round(sm.minEarRelative, 4),
         t.sampleCount ?? null,
         round(sm.medianFps, 1), round(sm.medianFaceInferenceMs, 2),
         t.recordingStartedAtIso ?? null, t.recordingEndedAtIso ?? null,
@@ -626,6 +726,7 @@ export class DebugSession {
       pageMode: 'DEBUG',
       session: {
         sessionId: this.sessionId,
+        subjectId: this.subjectId,
         startedAt: this.startedIso,
         exportedAt: new Date().toISOString(),
         requiredRepetitions: this.requiredRepetitions,
@@ -663,6 +764,7 @@ export class DebugSession {
       // Full record: summaries AND the bounded raw samples.
       trials: this.trials.map((t) => ({
         trialId: t.trialId,
+        subjectId: t.subjectId ?? null,
         scenario: t.scenario,
         scenarioCode: t.scenarioCode ?? null,
         scenarioName: t.scenarioName ?? null,

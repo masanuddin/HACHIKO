@@ -154,18 +154,20 @@ test('X7. an invalid trial reports INVALID, never a false PASS', () => {
     const c = r.match(new RegExp(`<c r="${col}${row}"[\\s\\S]*?</c>`));
     return c ? (c[0].match(/<t[^>]*>([^<]*)</) ?? [, ''])[1] : null;
   };
-  assert.equal(cell(13, 'G'), '✓ PASS', 'the valid trial passes');
-  assert.equal(cell(14, 'G'), 'INVALID', 'the unusable one claims no verdict');
-  assert.equal(cell(14, 'C'), 'INVALID_SIGNAL', 'and says why');
+  assert.equal(cell(15, 'H'), '✓ PASS', 'the valid trial passes');
+  assert.equal(cell(16, 'H'), 'INVALID', 'the unusable one claims no verdict');
+  assert.equal(cell(16, 'D'), 'INVALID_SIGNAL', 'and says why');
+  // Column A is the trial's own subject snapshot (blank when none).
+  assert.equal(cell(15, 'A'), null, 'no subject was set for this fixture');
 
   // Expected/observed are words, not raw booleans, and the observed wording
   // comes from the authoritative evaluator.
-  assert.equal(cell(14, 'E'), 'Strong trigger expected');
-  assert.equal(cell(14, 'F'), 'Required signal unusable');
-  assert.equal(cell(13, 'F'), 'No strong evidence activated');
-  assert.ok(cell(14, 'H'), 'an unusable trial explains why');
+  assert.equal(cell(16, 'F'), 'Strong trigger expected');
+  assert.equal(cell(16, 'G'), 'Required signal unusable');
+  assert.equal(cell(15, 'G'), 'No strong evidence activated');
+  assert.ok(cell(16, 'I'), 'an unusable trial explains why');
   // A blank cell is absent entirely, so the helper returns null.
-  assert.equal(cell(13, 'H'), null, 'a passing trial invents no blame');
+  assert.equal(cell(15, 'I'), null, 'a passing trial invents no blame');
   assert.ok(!/>(true|false)</.test(t), 'no raw booleans reach the reader');
 
   // And the JSON agrees: the invalid trial claims no verdict.
@@ -183,7 +185,7 @@ test('X8. workbook row counts match the master document', () => {
   // directory), so the body is the LAST segment the name splits off.
   assert.equal(rowsIn(t, 2), 1 + totalSamples,
     'one telemetry row per bounded sample, plus the header');
-  assert.equal(rowsIn(t, 1), 14,
+  assert.equal(rowsIn(t, 1), 16,
     'summary panel + blank + header + 2 trial rows');
 });
 
@@ -195,13 +197,13 @@ test('X9. missing measurements stay blank in the workbook', () => {
   // ...and the workbook must omit that cell entirely rather than write 0.
   // Row 14 is the invalid trial; column J is "Yaw Max Delta".
   const t = text(buildDebugReport(doc));
-  const row = body(t, 1).match(/<row r="14"[\s\S]*?<\/row>/)[0];
-  assert.ok(!row.includes('r="K14"'), 'an unmeasured yaw cell must not exist');
-  assert.ok(!row.includes('r="M14"'), 'nor an unmeasured pitch-down cell');
+  const row = body(t, 1).match(/<row r="16"[\s\S]*?<\/row>/)[0];
+  assert.ok(!row.includes('r="L16"'), 'an unmeasured yaw cell must not exist');
+  assert.ok(!row.includes('r="N16"'), 'nor an unmeasured pitch-down cell');
 
   // The zero that IS present is a real measurement, not a coerced null:
   // column D is the valid-signal ratio, and 0 of 2 samples were usable.
-  assert.ok(row.includes('r="D14"'));
+  assert.ok(row.includes('r="E16"'));
   assert.equal(bad.summary.validSignalRatio, 0);
 });
 
@@ -490,14 +492,14 @@ test('X27. the Debug workbook is unchanged by this patch', () => {
   const { doc } = debugDoc();
   const t = text(buildDebugReport(doc));
   assert.ok(t.includes('state="frozen"'));
-  assert.ok(t.includes('ySplit="12"'), 'freeze still at the table header');
-  assert.ok(t.includes('<autoFilter ref="A12:U14"/>'));
-  assert.equal(rowsIn(t, 1), 14);
+  assert.ok(t.includes('ySplit="14"'), 'freeze still at the table header');
+  assert.ok(t.includes('<autoFilter ref="A14:V16"/>'));
+  assert.equal(rowsIn(t, 1), 16);
   assert.equal(rowsIn(t, 2), 6);
 
   // Its validity semantics and blank handling still hold.
-  const row = body(t, 1).match(/<row r="14"[\s\S]*?<\/row>/)[0];
-  assert.ok(!row.includes('r="K14"'), 'unmeasured yaw still blank');
+  const row = body(t, 1).match(/<row r="16"[\s\S]*?<\/row>/)[0];
+  assert.ok(!row.includes('r="L16"'), 'unmeasured yaw still blank');
   assert.ok(row.includes('INVALID'));
 
   // And it never picked up the benchmark-only display rules.

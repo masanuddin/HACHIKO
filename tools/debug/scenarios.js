@@ -138,17 +138,24 @@ export const DEBUG_SCENARIOS = [
   {
     code: 'D04', id: 'BRIEF_YAW_GLANCE', name: 'Brief yaw glance',
     category: DebugCategory.TEMPORAL_CONTROL,
-    instruction: 'Briefly look away far enough to cross the yaw threshold, '
-      + 'then return to neutral BEFORE the configured persistence completes.',
+    instruction: 'Briefly glance away to EITHER side, far enough to cross the '
+      + 'yaw rule, then return to neutral before the configured persistence '
+      + 'completes. Stay neutral for the rest of the trial.',
     purpose: 'Prove that crossing a threshold is not evidence without duration.',
     expectedSemanticBehavior: [
-      'Yaw may temporarily exceed the numeric threshold.',
+      'Yaw may temporarily exceed the numeric threshold, either side.',
       'Persistence must NOT complete.',
       'Yaw strong evidence must NOT latch.',
-      'No sustained-yaw TERALIH evidence.',
+      'The window outlasts the persistence rule, so a held turn WOULD have '
+        + 'latched — which is what makes the negative result meaningful.',
     ],
     countdownMs: DEFAULT_COUNTDOWN_MS,
-    recordingDurationMs: shortOf(S.YAW_PERSIST_MS),
+    // Deliberately LONGER than YAW_PERSIST_MS. A window shorter than the rule
+    // cannot distinguish "the glance was too brief" from "the trial ended too
+    // soon": evidence could not have latched either way, so a pass proved
+    // nothing. Running past the rule means a held turn would have latched, so
+    // the absence of evidence is now a real result about persistence.
+    recordingDurationMs: Math.max(3000, S.YAW_PERSIST_MS + 1500),
     expectedSemanticOutcome: 'Threshold crossed briefly; evidence must not latch.',
     triggerExpected: false,
   },
@@ -172,7 +179,9 @@ export const DEBUG_SCENARIOS = [
   {
     code: 'D06', id: 'PITCH_DOWN_STUDY_LIKE', name: 'Pitch down, study-like',
     category: DebugCategory.SUPPORT_EVIDENCE,
-    instruction: 'Lower your head naturally, as if reading or looking at notes.',
+    instruction: 'Read or look down at notes in a natural study posture, and '
+      + 'hold that posture for the whole trial. Do not exaggerate the angle to '
+      + 'chase a threshold — the point is what real studying looks like.',
     purpose: 'Verify the intentional distinction: pitch-down is SUPPORT '
       + 'evidence, not automatic distraction.',
     expectedSemanticBehavior: [
@@ -218,9 +227,8 @@ export const DEBUG_SCENARIOS = [
   {
     code: 'D09', id: 'SUSTAINED_EYE_CLOSURE', name: 'Sustained eye closure',
     category: DebugCategory.STRONG_EVIDENCE,
-    instruction: 'Stay in an eye-eligible frontal pose and close both eyes '
-      + 'long enough to exceed the configured sustained-closure persistence. '
-      + 'Do not trigger this from an invalid pose.',
+    instruction: 'Remain frontal. As soon as recording begins, close both eyes '
+      + 'and keep them closed until the trial ends.',
     purpose: 'Verify prolonged eye-closure strong evidence.',
     expectedSemanticBehavior: [
       'The eye signal stays ELIGIBLE (frontal pose).',
@@ -229,7 +237,11 @@ export const DEBUG_SCENARIOS = [
       'Eye-closure evidence becomes ACTIVE after the configured duration.',
     ],
     countdownMs: DEFAULT_COUNTDOWN_MS,
-    recordingDurationMs: longOf(S.EYE_CLOSED_PERSIST_MS),
+    // Persistence + a wider buffer than the default. Failures in the pilot were
+    // operators releasing a fraction early, not the rule misfiring, so the fix
+    // is a window that makes the challenge comfortable to perform — not a
+    // shorter persistence requirement.
+    recordingDurationMs: S.EYE_CLOSED_PERSIST_MS + 3500,
     expectedSemanticOutcome: 'Closure evidence activates, under a valid eye signal.',
     triggerExpected: true,
   },

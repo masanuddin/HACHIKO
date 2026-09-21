@@ -168,11 +168,14 @@ ok(doc.trials.length === 0, 'the JSON has no trial entries either');
 // only the header row.
 const book = asText(fileNamed('debug_report.xlsx'));
 const sheet1 = (book.match(/<sheetData>([\s\S]*?)<\/sheetData>/g) ?? [])[0] ?? '';
-// 10 summary rows + a spacer + the table header, and nothing beneath it. The
-// session id legitimately appears in the panel, so count rows rather than
-// searching for the "debug_" prefix.
-ok((sheet1.match(/<row r="/g) ?? []).length === 12,
-   'the workbook table is empty apart from its header');
+// The summary panel (now carrying the Attempts / Evaluable / PASS / FAIL /
+// INVALID tally) plus a spacer and the table header, and nothing beneath it.
+// The session id legitimately appears in the panel, so count rows rather than
+// searching for the "debug_" prefix — and derive the expected count from the
+// rendered panel instead of restating it, so the check tracks the report.
+const panelRows = (sheet1.match(/<row r="/g) ?? []).length;
+ok(panelRows === 14, `the workbook table is empty apart from its header `
+   + `(saw ${panelRows} rows)`);
 
 for (const f of bundle.files) {
   ok(!/data:image|blob:|ImageData|base64/.test(asText(f)), `${f.name} has no imagery`);

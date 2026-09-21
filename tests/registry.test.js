@@ -68,9 +68,15 @@ test('R4. the brief glance must NOT expect evidence to latch', () => {
   const s = getScenario('BRIEF_YAW_GLANCE');
   assert.equal(s.category, DebugCategory.TEMPORAL_CONTROL);
   assert.equal(s.triggerExpected, false);
-  assert.ok(s.recordingDurationMs < CONFIG.state.YAW_PERSIST_MS,
-    'the window must close before persistence completes');
+  // The window must OUTLAST the persistence rule. A shorter window cannot
+  // distinguish "the glance was too brief" from "the trial ended too soon" —
+  // evidence could not have latched either way, so a pass proved nothing.
+  // Running past the rule makes the absence of evidence a real result.
+  assert.ok(s.recordingDurationMs > CONFIG.state.YAW_PERSIST_MS,
+    'the window must outlast persistence, or a pass is vacuous');
   assert.ok(s.expectedSemanticBehavior.some((x) => /must NOT latch/i.test(x)));
+  // Direction-agnostic: D02/D03 own laterality, D04 owns duration.
+  assert.match(s.instruction, /EITHER side/i);
 });
 
 test('R5. pitch-down and head tilt are SUPPORT-only', () => {
@@ -100,7 +106,11 @@ test('R6. blinking and sustained closure are different scenarios', () => {
   // Closure evidence is only meaningful while the eye signal is trustworthy.
   assert.ok(closed.expectedSemanticBehavior.some((x) => /ELIGIBLE/i.test(x)),
     'closure must require a valid eye signal');
-  assert.match(closed.instruction, /Do not trigger this from an invalid pose/i);
+  // The instruction must be unambiguous about WHEN to close and for HOW LONG:
+  // pilot failures were operators releasing early, not the rule misfiring.
+  assert.match(closed.instruction, /close both eyes/i);
+  assert.match(closed.instruction, /until the trial ends/i);
+  assert.match(closed.instruction, /frontal/i, 'pose eligibility still matters');
 });
 
 test('R7. face dropout is not defined as physical absence', () => {
@@ -143,7 +153,8 @@ test('R10. durations derive from CONFIG, not from literals', () => {
   assert.ok(getScenario('YAW_LEFT_SUSTAINED').recordingDurationMs > s.YAW_PERSIST_MS);
   assert.ok(getScenario('PITCH_UP_SUSTAINED').recordingDurationMs > s.PITCH_UP_PERSIST_MS);
   assert.ok(getScenario('SUSTAINED_EYE_CLOSURE').recordingDurationMs > s.EYE_CLOSED_PERSIST_MS);
-  assert.ok(getScenario('BRIEF_YAW_GLANCE').recordingDurationMs < s.YAW_PERSIST_MS);
+  // D04 outlasts its rule too: see R4 for why a short window is vacuous.
+  assert.ok(getScenario('BRIEF_YAW_GLANCE').recordingDurationMs > s.YAW_PERSIST_MS);
 });
 
 test('R11. the Debug selector is generated from the registry', () => {

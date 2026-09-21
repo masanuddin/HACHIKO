@@ -264,7 +264,7 @@
     <button id="btnReset" class="sm" disabled>Reset</button>
     <button id="btnStop" class="sm" disabled>Stop</button>
     <button id="btnExportSession" class="sm" disabled
-            title="Downloads one ZIP containing debug_results.json, debug_trials.csv and debug_telemetry.csv. Each file is readable on its own.">Export Session</button>
+            title="Downloads one ZIP containing debug_results.json (the complete evidence record) and debug_report.xlsx (a human-readable report built from it).">Export Session</button>
     <button id="btnHelp" class="sm">? Help</button>
   </div>
 </header>
@@ -1066,7 +1066,7 @@ id('btnInvalid').onclick = () => {
 id('btnExportSession').onclick = () => {
   const b = harness.exportSession();
   els.status.textContent =
-    `Exported ${b.archiveName} — results.json, trials.csv, telemetry.csv.`;
+    `Exported ${b.archiveName} — debug_results.json + debug_report.xlsx.`;
 };
 
 // ── Help drawer ─────────────────────────────────────────────────────

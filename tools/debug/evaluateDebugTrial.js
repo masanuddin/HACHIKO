@@ -160,13 +160,25 @@ function minEligibleEar(samples) {
  */
 function challenge(scenarioId, samples) {
   switch (scenarioId) {
-    case 'YAW_LEFT_SUSTAINED':
-    case 'BRIEF_YAW_GLANCE': {
+    case 'YAW_LEFT_SUSTAINED': {
       const peak = peakSigned(samples, 'yawDelta', YAW_LEFT_SIGN);
       const opposite = peakSigned(samples, 'yawDelta', YAW_RIGHT_SIGN);
       return { performed: finite(peak) && peak >= S.STRONG_YAW_DELTA_DEG,
         peakDeg: peak, oppositeDeg: opposite,
         criterion: `yaw ≥ ${S.STRONG_YAW_DELTA_DEG}° toward the asked side` };
+    }
+    case 'BRIEF_YAW_GLANCE': {
+      // DIRECTION-AGNOSTIC on purpose. D04 tests PERSISTENCE, not laterality —
+      // D02 and D03 already own direction. Requiring one side here would mark
+      // a perfectly valid right-hand glance as "challenge not performed", which
+      // is what the pilot hit.
+      const left = peakSigned(samples, 'yawDelta', YAW_LEFT_SIGN);
+      const right = peakSigned(samples, 'yawDelta', YAW_RIGHT_SIGN);
+      const peak = Math.max(finite(left) ? left : -Infinity,
+        finite(right) ? right : -Infinity);
+      const ok = Number.isFinite(peak) && peak >= S.STRONG_YAW_DELTA_DEG;
+      return { performed: ok, peakDeg: Number.isFinite(peak) ? peak : null,
+        criterion: `absolute yaw ≥ ${S.STRONG_YAW_DELTA_DEG}° (either side)` };
     }
     case 'YAW_RIGHT_SUSTAINED': {
       const peak = peakSigned(samples, 'yawDelta', YAW_RIGHT_SIGN);
@@ -253,12 +265,44 @@ function dropoutSequence(samples) {
  * D10's real claim: nothing is fabricated during the dropout.
  */
 function fabricatedDuringDropout(samples) {
-  return samples.some((x) => {
-    const poseDead = x.faceDetected !== true || x.headPoseValid !== true;
-    const eyeDead = x.faceDetected !== true || x.eyeEligible !== true;
-    return (poseDead && (x.yawEvidence === true || x.pitchUpEvidence === true))
-      || (eyeDead && x.eyeClosureEvidence === true);
-  });
+  // Production HOLDs state for SIGNAL_INVALID_GRACE_MS after the signal goes
+  // bad (StateEngine: "Within grace, HOLD"), so evidence that was already
+  // active when the signal died legitimately persists for a moment. That is
+  // carry-through, not fabrication, and flagging it made honest D10 runs fail.
+  //
+  // The real violation is evidence that appears FROM NOTHING while the signal
+  // is unusable: inactive before the dropout, active during it.
+  const grace = CONFIG.validity?.SIGNAL_INVALID_GRACE_MS ?? 0;
+  const CHANNELS = [
+    { flag: 'yawEvidence',
+      dead: (x) => x.faceDetected !== true || x.headPoseValid !== true },
+    { flag: 'pitchUpEvidence',
+      dead: (x) => x.faceDetected !== true || x.headPoseValid !== true },
+    { flag: 'eyeClosureEvidence',
+      dead: (x) => x.faceDetected !== true || x.eyeEligible !== true },
+  ];
+
+  for (const c of CHANNELS) {
+    let lastLiveMs = null;      // when this channel's signal was last usable
+    let activeWhenLost = false; // was it already firing at that moment?
+
+    for (const x of samples) {
+      const t = finite(x.relativeTimeMs) ? x.relativeTimeMs : null;
+      if (!c.dead(x)) {
+        lastLiveMs = t;
+        activeWhenLost = x[c.flag] === true;
+        continue;
+      }
+      if (x[c.flag] !== true) continue;
+
+      // Firing while the signal is dead. Acceptable only as carry-through:
+      // it must have been active when the signal was lost, AND still be
+      // inside the configured grace.
+      const since = (t !== null && lastLiveMs !== null) ? t - lastLiveMs : Infinity;
+      if (!activeWhenLost || since > grace) return true;
+    }
+  }
+  return false;
 }
 
 /** PASS shorthand. */

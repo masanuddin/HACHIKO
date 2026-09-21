@@ -179,14 +179,16 @@ test('T11. status labels distinguish the recording states', () => {
 // ── Scenario configuration ──────────────────────────────────────────────
 test('T12. scenario durations are derived from the AI persistence windows', () => {
   const s = CONFIG.state;
-  // A "long" probe must outlast its persistence window, or it could never
-  // demonstrate the rule firing; a "short" probe must fall inside it.
+  // EVERY temporal probe must outlast its persistence window. A sustained
+  // probe needs the time to demonstrate the rule firing; a brief-glance probe
+  // needs it so that "no evidence" is a statement about the GLANCE rather than
+  // about the recording having stopped too early.
   const yawLong = getScenario('YAW_LEFT_SUSTAINED');
   const yawShort = getScenario('BRIEF_YAW_GLANCE');
   assert.ok(yawLong.recordingDurationMs > s.YAW_PERSIST_MS,
     'a sustained-yaw trial must outlast the yaw persistence window');
-  assert.ok(yawShort.recordingDurationMs < s.YAW_PERSIST_MS,
-    'a brief-glance trial must end before persistence completes');
+  assert.ok(yawShort.recordingDurationMs > s.YAW_PERSIST_MS,
+    'a brief-glance trial must also outlast it, or its pass is vacuous');
 
   const eye = getScenario('SUSTAINED_EYE_CLOSURE');
   assert.ok(eye.recordingDurationMs > s.EYE_CLOSED_PERSIST_MS);

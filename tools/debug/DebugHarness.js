@@ -57,6 +57,8 @@ export class DebugHarness {
     this.onViewModel = null;
     /** Calibration in force when the current trial started. */
     this._pendingCalibration = null;
+    /** Pseudonymous subject selected when the current trial started. */
+    this._pendingSubjectId = null;
     this.lastTrialRecord = null;
     this.stream = null;
     this.running = false;
@@ -249,6 +251,17 @@ export class DebugHarness {
       capturedAtIso: new Date().toISOString(),
       baseline: cal.baseline ? { ...cal.baseline } : null,
     };
+    // Subject attribution follows the same rule as calibration: captured HERE,
+    // once, and immutable thereafter. An operator who advances to the next
+    // subject before this trial saves must not reattribute it.
+    this._pendingSubjectId = this.session.subjectId ?? null;
+    // 3. CLEAN START. Evidence accrued before the window opened is not this
+    //    trial's evidence: a head already turned during the countdown banks
+    //    persistence that makes the trial appear to latch in a fraction of the
+    //    configured time. Cleared at the boundary so the bounded window starts
+    //    from a known baseline. Calibration is deliberately NOT reset.
+    this.ai.resetTemporalEvidence?.();
+
     const ok = this.trials.startTrial(performance.now(), ref);
     return { ok, ...ref };
   }
@@ -286,7 +299,8 @@ export class DebugHarness {
 
   _onTrialComplete(trial) {
     const scenario = getScenario(trial.scenario);
-    const record = this.session.addTrial(trial, scenario, this._pendingCalibration);
+    const record = this.session.addTrial(trial, scenario,
+      this._pendingCalibration, this._pendingSubjectId);
     this.lastTrialRecord = record;
     this.onTrialEvent({ type: 'complete', trial: record });
   }

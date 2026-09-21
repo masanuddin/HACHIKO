@@ -38,7 +38,8 @@ const triggerText = (flag, observed) => {
 };
 
 const TRIAL_HEADERS = [
-  'Scenario', 'Rep', 'Validity', 'Valid Signal %', 'Expected', 'Observed',
+  'Subject', 'Scenario', 'Rep', 'Validity', 'Valid Signal %',
+  'Expected', 'Observed',
   'Match', 'Why It Failed', 'Final State', 'Primary Reason',
   'Yaw Max Δ (°)', 'Pitch Up Max Δ (°)', 'Pitch Down Max Δ (°)',
   'Head Tilt Max Δ (°)', 'EAR Min Rel.', 'Trigger Delay (ms)',
@@ -46,15 +47,23 @@ const TRIAL_HEADERS = [
   'Duration (s)',
 ];
 const TRIAL_WIDTHS = [
-  30, 6, 11, 13, 24, 34, 11, 38, 13, 18,
+  9, 30, 6, 11, 13, 24, 34, 11, 38, 13, 18,
   13, 15, 16, 16, 12, 15, 9, 11, 16, 16, 12,
 ];
 
 /** Sheet 1: the everyday page. */
 function trialSummarySheet(doc) {
   const trials = doc.trials ?? [];
-  const valid = trials.filter((t) => t.summary?.trialValidity === 'VALID').length;
   const cal = doc.calibration ?? {};
+
+  // Verdict tally, not signal validity. "Valid Trials" used to mean "the
+  // signal was usable", which reads as "the verification was valid" — a
+  // different and much stronger claim.
+  const verdict = (t) => t.summary?.trialVerdict ?? null;
+  const pass = trials.filter((t) => verdict(t) === 'PASS').length;
+  const fail = trials.filter((t) => verdict(t) === 'FAIL').length;
+  const evaluable = pass + fail;
+  const invalid = trials.length - evaluable;
 
   const rows = [
     [{ v: 'HACHIKO DEBUG VERIFICATION REPORT', s: S.TITLE }],
@@ -66,10 +75,14 @@ function trialSummarySheet(doc) {
      { v: doc.environment?.videoWidth
        ? `${doc.environment.videoWidth}×${doc.environment.videoHeight}` : null, s: S.VALUE }],
     [{ v: 'Calibration Status', s: S.LABEL }, { v: cal.status ?? null, s: S.VALUE }],
-    [{ v: 'Trials Recorded', s: S.LABEL }, { v: trials.length, s: S.VALUE }],
-    [{ v: 'Valid Trials', s: S.LABEL }, { v: valid, s: S.VALUE }],
-    [{ v: 'Invalid Trials', s: S.LABEL },
-     { v: trials.length - valid, s: trials.length - valid ? S.WARN : S.VALUE }],
+    [{ v: 'Recorded Attempts', s: S.LABEL }, { v: trials.length, s: S.VALUE }],
+    // Evaluable = PASS + FAIL: attempts that actually produced evidence.
+    // An INVALID attempt is kept and exported, but proves nothing, so it does
+    // not fill one of the three official repetitions.
+    [{ v: 'Evaluable Repetitions', s: S.LABEL }, { v: evaluable, s: S.VALUE }],
+    [{ v: 'PASS', s: S.LABEL }, { v: pass, s: pass ? S.PASS : S.VALUE }],
+    [{ v: 'FAIL', s: S.LABEL }, { v: fail, s: fail ? S.FAIL : S.VALUE }],
+    [{ v: 'INVALID', s: S.LABEL }, { v: invalid, s: invalid ? S.WARN : S.VALUE }],
     [],
     TRIAL_HEADERS.map((h) => ({ v: h, s: S.HEADER })),
   ];
@@ -85,6 +98,9 @@ function trialSummarySheet(doc) {
       : { v: 'INVALID', s: S.WARN };
 
     rows.push([
+      // The trial's OWN snapshot, never the session's current selection: one
+      // session may legitimately contain several subjects.
+      t.subjectId ?? null,
       scenarioLabel(t),
       t.repetition ?? null,
       { v: sm.trialValidity ?? null, s: isValid ? S.DEFAULT : S.WARN },
@@ -124,7 +140,7 @@ function trialSummarySheet(doc) {
 }
 
 const TELEMETRY_HEADERS = [
-  'Trial', 'Scenario', 'Rep', 'Elapsed (ms)',
+  'Trial', 'Subject', 'Scenario', 'Rep', 'Elapsed (ms)',
   'Face', 'Head Pose Valid', 'Eye Eligible', 'Eye Ineligible Reason',
   'State Signal Valid',
   'Yaw Raw', 'Yaw Δ', 'Yaw Smoothed',
@@ -148,7 +164,8 @@ function telemetrySheet(doc) {
     const label = scenarioLabel(t);
     for (const x of t.samples ?? []) {
       rows.push([
-        t.trialId, label, t.repetition ?? null, num(x.relativeTimeMs, S.NUM1),
+        t.trialId, t.subjectId ?? null, label, t.repetition ?? null,
+        num(x.relativeTimeMs, S.NUM1),
 
         yn(x.faceDetected),
         { v: yn(x.headPoseValid), s: x.headPoseValid === false ? S.WARN : S.DEFAULT },
@@ -183,7 +200,7 @@ function telemetrySheet(doc) {
     name: 'Telemetry',
     rows,
     widths: [
-      26, 28, 6, 13,
+      26, 9, 28, 6, 13,
       8, 16, 13, 24, 18,
       10, 10, 13, 10, 10, 13, 13, 12, 17,
       10, 10, 10, 12, 13,

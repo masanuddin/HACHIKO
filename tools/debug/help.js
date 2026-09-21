@@ -86,9 +86,11 @@ export const DEBUG_HELP = [
     html: `
       <h3>Debug Harness exports</h3>
       <table>
-        <tr><td>Export Session</td><td>Both files at once. Use this by default.</td></tr>
-        <tr><td>JSON session</td><td>Full per-frame telemetry plus the config that produced it.</td></tr>
-        <tr><td>CSV telemetry</td><td>One row per frame, for spreadsheet analysis.</td></tr>
+        <tr><td>Export Session</td><td>One ZIP with both files. Use this by default.</td></tr>
+        <tr><td>debug_results.json</td><td>The authoritative record: full
+          per-frame telemetry, every trial, and the config that produced them.</td></tr>
+        <tr><td>debug_report.xlsx</td><td>A human-readable report built from
+          that JSON. A presentation view, never a second source of truth.</td></tr>
         <tr><td>Analysis</td><td>Distributions, transitions, detection delays, ground-truth comparison.</td></tr>
       </table>
       <p style="margin-top:10px"><b>Column prefixes:</b>
@@ -96,7 +98,7 @@ export const DEBUG_HELP = [
         <code>t_</code> temporal · <code>e_</code> evidence ·
         <code>d_</code> derived prediction · <code>g_</code> ground truth.</p>
       <p class="hint">Debug telemetry and Bake-off trial data are different
-      experiment types. Do not merge the two CSVs.</p>
+      experiment types. Do not merge the two datasets.</p>
       <p class="hint">No webcam image, frame or video is ever stored or exported.</p>`,
   },
 ];

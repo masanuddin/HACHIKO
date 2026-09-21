@@ -186,6 +186,48 @@ export class HachikoAI {
   }
 
   /**
+   * Clear accumulated EVIDENCE at an experiment boundary, keeping both the
+   * calibration baseline and the warm smoothing window.
+   *
+   * WHY IT EXISTS. A bounded Verification Trial must not inherit persistence
+   * accrued before it opened. An operator who turns their head during the
+   * countdown banks ~1.2 s of yaw persistence, so the trial latches ~360 ms in
+   * and reports a persistence it never measured.
+   *
+   * WHAT IT DELIBERATELY DOES NOT CLEAR — the smoother.
+   * An EMA seeded from null adopts its first sample RAW, skipping the ramp
+   * that production always pays. Clearing it made every channel latch EARLY
+   * against continuous monitoring:
+   *
+   *     channel      rule     warm     cleared   drift
+   *     yaw          1500ms   1650ms   1551ms    -99ms
+   *     pitch-up     2000ms   2178ms   2046ms   -132ms
+   *     eye closure  3000ms   3069ms   3036ms    -33ms
+   *     roll         2000ms   2145ms   2046ms    -99ms
+   *     pitch-down   2000ms   2178ms   2046ms   -132ms
+   *
+   * That is a Debug-only advantage: the harness would measure a pipeline
+   * fractionally quicker than the one that ships, and every activation-delay
+   * number it published would be biased low. The countdown's neutral frames
+   * are exactly the warm-up production would have, so the honest boundary
+   * keeps them and resets only what accumulates evidence.
+   *
+   * Calibration is untouched for the same reason: every delta in the trial is
+   * measured against it, and re-deriving it would change what the numbers mean.
+   *
+   * Production semantics are unchanged — continuous monitoring never calls
+   * this, and the engine's rules are identical either side of the call.
+   */
+  resetTemporalEvidence() {
+    // Persistence timers and face-missing tracking: what would otherwise be
+    // inherited from pre-trial activity.
+    this.temporal.reset();
+    // Latched public state and its recovery bookkeeping.
+    this.stateEngine.reset();
+    // NOTE: this.smoother is intentionally NOT reset. See above.
+  }
+
+  /**
    * Full reset of AI state: baseline, filters, timers, classification.
    * Does not clear any consumer's stored telemetry — that is the consumer's
    * business. `sessionId` increments so consumers can start a new session.

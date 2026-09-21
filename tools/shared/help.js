@@ -84,14 +84,10 @@ const PRIVACY = {
       <tr><td>results.json</td><td>The complete structured record: config,
         scenario protocol, every trial and its raw samples. Nothing else is
         needed to reanalyse a session.</td></tr>
-      <tr><td>trials.csv</td><td>One row per trial, carrying the session,
-        calibration, scenario, expectation, metrics <em>and</em> the thresholds
-        those metrics must be read against. Opens directly in Excel.</td></tr>
-      <tr><td>telemetry.csv <span class="pend">debug</span></td>
-        <td>Per-frame time series inside each recorded window. Every row names
-        its session, trial, scenario and repetition.</td></tr>
-      <tr><td>summary.csv <span class="pend">benchmark</span></td>
-        <td>The model-comparison table: completion, metrics, rank.</td></tr>
+      <tr><td>report.xlsx</td><td>A human-readable workbook built from that
+        JSON: trial summaries, telemetry and progress, formatted to read in
+        Excel. A presentation view of the record above — never a second source
+        of truth, and it computes no metric of its own.</td></tr>
     </table>
     <p>Deleted trials are absent from all three — no tombstone, no hidden
     row.</p>`,
