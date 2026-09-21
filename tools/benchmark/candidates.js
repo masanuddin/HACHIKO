@@ -24,10 +24,13 @@
  *   EfficientDet-Lite0/2 : idx 0 = person,  idx 76 = cell phone   (90 labels)
  *   SSD MobileNetV2      : idx 0 = BACKGROUND, idx 1 = person,
  *                          idx 77 = cell phone                    (91 labels)
+ *   YOLO26n              : idx 0 = person,  idx 67 = cell phone   (80 labels)
  *
- * SSD carries a background class, shifting every index by +1. Hardcoding a
- * single index pair across models would silently mis-label everything, so each
- * candidate declares its own indices.
+ * SSD carries a background class, shifting every index by +1. YOLO ships the
+ * 80-class COCO set with no background and no placeholder rows, so its phone
+ * index is 67 — reusing EfficientDet's 76 there resolves to "scissors".
+ * Every index above was read back from the model's OWN embedded label map
+ * (see `npm run bench:assets`, which re-verifies them on download).
  */
 
 /** Official Google/MediaPipe model host. No third-party mirrors. */
@@ -42,6 +45,15 @@ const BASE = 'https://storage.googleapis.com/mediapipe-models';
  * @property {string} file        local filename under public/assets/bench/
  * @property {number} sizeBytes   verified by HEAD request
  * @property {Object} [labelIndices] per-model class indices (object detectors)
+ * @property {string} [runtime]   inference engine: mediapipe | litert.js
+ * @property {number} [inputWidth]  model input tensor width
+ * @property {number} [inputHeight] model input tensor height
+ * @property {string} [sourceRelease] upstream release the weights come from
+ * @property {string} [sourceMetadataVersion] version embedded in the INSPECTED
+ *   source model — evidence about that file, not about a later export
+ * @property {string} [exportToolVersion] Ultralytics version that produced the
+ *   local artefact; null until the export actually runs
+ * @property {string} [browserRuntimeVersion] npm package that runs it in-browser
  * @property {string} delegate
  * @property {string} notes
  */
@@ -56,6 +68,8 @@ export const CANDIDATES = [
     file: 'edl0_float16.tflite',
     sizeBytes: 7254339,
     labelIndices: { PERSON: 0, PHONE: 76 },
+    runtime: 'mediapipe',
+    inputWidth: 320, inputHeight: 320,
     delegate: 'GPU',
     notes: 'Same architecture as the failing INT8 build, without quantisation. '
          + 'Isolates "is quantisation the problem?" from "is the model too small?".',
@@ -68,6 +82,8 @@ export const CANDIDATES = [
     file: 'edl2_float16.tflite',
     sizeBytes: 12138859,
     labelIndices: { PERSON: 0, PHONE: 76 },
+    runtime: 'mediapipe',
+    inputWidth: 448, inputHeight: 448,
     delegate: 'GPU',
     notes: 'Larger backbone, higher input resolution. Expected to be the '
          + 'strongest on small/angled phones, at a latency cost.',
@@ -81,6 +97,8 @@ export const CANDIDATES = [
     sizeBytes: 11316189,
     // NOTE the +1 offset: this model has a background class at index 0.
     labelIndices: { PERSON: 1, PHONE: 77 },
+    runtime: 'mediapipe',
+    inputWidth: 300, inputHeight: 300,
     delegate: 'GPU',
     notes: 'Different architecture family. Historically strong on person, '
          + 'weaker on small objects. Index offset differs — see header.',
@@ -92,12 +110,68 @@ export const CANDIDATES = [
     url: `${BASE}/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
     file: 'pose_landmarker_lite.task',
     sizeBytes: 5777746,
+    runtime: 'mediapipe',
+    inputWidth: 256, inputHeight: 256,
     delegate: 'GPU',
     notes: 'PRESENCE ONLY: "is a body observable?". Landmarks are NEVER used '
          + 'for focus, distraction, or posture — that is explicitly out of '
          + 'scope. Included because body detection may survive the extreme '
          + 'yaw and back-facing cases where a face is lost, which is exactly '
          + 'the P2 failure v0.3 must fix.',
+  },
+  {
+    id: 'yolo26n',
+    label: 'YOLO26n Detect',
+    task: 'object',
+    // OFFICIAL LiteRT artefact, published by Ultralytics. No local export and
+    // no renaming: the file keeps its upstream name so the artefact on disk is
+    // traceable to the exact release asset it came from.
+    url: 'https://github.com/ultralytics/yolo-flutter-app/releases/download/'
+       + 'v0.6.6/yolo26n_w8a32.tflite',
+    file: 'yolo26n_w8a32.tflite',
+    // Measured from the downloaded artefact, not read off the release page.
+    sizeBytes: 2875553,
+    // VERIFIED from the model's embedded metadata, not assumed: YOLO uses the
+    // 80-class COCO set, so cell phone is 67 and NOT EfficientDet's 76.
+    labelIndices: { PERSON: 0, PHONE: 67 },
+    // A SECOND RUNTIME. Every other candidate is MediaPipe Tasks Vision, which
+    // loads .tflite through its own ObjectDetector. YOLO's tensor layout does
+    // not satisfy that contract, so it runs through @ultralytics/yolo on
+    // LiteRT.js instead. Only the engine differs — same camera frames, same
+    // scenarios, same recording window, same evaluability rules.
+    runtime: 'litert.js',
+    inputWidth: 640,
+    inputHeight: 640,
+    // QUANTISATION, stated explicitly. w8a32 = INT8 weights, FP32 activations.
+    // It is NOT the float32 graph, and it is NOT full INT8: recording it
+    // loosely would invite a false comparison against the float16 MediaPipe
+    // candidates, whose numeric precision differs.
+    quantization: 'w8a32',
+    quantizationNote: 'INT8 weights, FP32 activations',
+    // ── PROVENANCE, kept as SEPARATE facts ───────────────────────────
+    // Collapsing these lets the artefact inherit a version nothing measured.
+    //
+    // 1. The release this exact .tflite was published in.
+    sourceRepo: 'ultralytics/yolo-flutter-app',
+    sourceRelease: 'v0.6.6',
+    sourceAsset: 'yolo26n_w8a32.tflite',
+    // 2. Verified from the downloaded bytes, not from the release listing.
+    sha256: 'd9cef07ce652ccfa9ce58e4ac8a4df98ff037739a9dad20a8afcae21b545df73',
+    // 3. Published by Ultralytics, so there is no local export tool.
+    exportToolVersion: null,
+    exportProvenance: 'official Ultralytics release asset (no local export)',
+    // 4. Browser runtime that executes it, pinned in package.json.
+    browserRuntimeVersion: '@ultralytics/yolo@0.0.46',
+    litertRuntimeVersion: '@litertjs/core@2.5.3',
+    // Separately: the class map was cross-read from the FP32 yolo26n.onnx
+    // (ultralytics 8.4.38) because this .tflite embeds no label metadata.
+    // The runtime supplies the same COCO-80 map at load; see Y23.
+    classMapSource: 'yolo26n.onnx (ultralytics-8.4.38) + runtime names map',
+    delegate: 'auto',           // webgpu when the adapter works, else cpu
+    notes: 'Newer detector family, evaluated on exactly the same protocol. '
+         + 'Being newer is not evidence: it is a candidate, not a winner. '
+         + 'w8a32 quantisation differs from the float16 MediaPipe builds, so '
+         + 'raw confidences are not comparable across the two families.',
   },
 ];
 

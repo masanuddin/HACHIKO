@@ -10,12 +10,15 @@
  *
  * Run: npm run bench:assets
  */
-import { mkdir, writeFile, stat, access, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, stat, access, readFile, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 import { CANDIDATES } from '../tools/benchmark/candidates.js';
+import {
+  verifyAsset, describeVerification,
+} from '../tools/benchmark/assetIntegrity.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'public', 'assets', 'bench');
@@ -28,25 +31,54 @@ console.log(`[bench] fetching ${CANDIDATES.length} candidate models -> public/as
 for (const c of CANDIDATES) {
   const dest = join(outDir, c.file);
 
-  if (await exists(dest)) {
-    const { size } = await stat(dest);
-    console.log(`  ✓ ${c.id.padEnd(14)} cached      ${(size / 1e6).toFixed(2)} MB`);
-  } else {
-    process.stdout.write(`  … ${c.id.padEnd(14)} downloading ${(c.sizeBytes / 1e6).toFixed(2)} MB`);
+
+  // A cached file is NOT trusted on sight: existing says nothing about
+  // contents. A half-written download and an upstream replacement both leave
+  // a file that exists.
+  let cached = await exists(dest);
+  if (cached) {
+    const v = await verifyAsset(dest, c);
+    if (v.ok) {
+      console.log(`  ✓ ${c.id.padEnd(14)} cached      `
+        + `${(v.actualSize / 1e6).toFixed(2)} MB · ${describeVerification(v)}`);
+    } else {
+      // Re-fetch once: the usual cause is a truncated earlier download, and
+      // silently keeping the bad bytes is exactly the outcome to avoid.
+      console.warn(`  ! ${c.id.padEnd(14)} cached file REJECTED — `
+        + `${describeVerification(v)}`);
+      await rm(dest, { force: true });
+      cached = false;
+    }
+  }
+
+  if (!cached) {
+    const declared = c.sizeBytes ? `${(c.sizeBytes / 1e6).toFixed(2)} MB` : '';
+    process.stdout.write(`  … ${c.id.padEnd(14)} downloading ${declared}`);
     const res = await fetch(c.url);
     if (!res.ok) {
-      console.error(`\n[bench] FAILED ${c.id}: HTTP ${res.status} for ${c.url}`);
+      console.error(`
+[bench] FAILED ${c.id}: HTTP ${res.status} for ${c.url}`);
       process.exitCode = 1;
       continue;
     }
     await writeFile(dest, Buffer.from(await res.arrayBuffer()));
-    const { size } = await stat(dest);
-    // Guard against a silently truncated or substituted asset.
-    if (size !== c.sizeBytes) {
-      console.warn(`\n    ! size ${size} != declared ${c.sizeBytes} — update candidates.js`);
+
+    const v = await verifyAsset(dest, c);
+    if (!v.ok) {
+      // HARD FAILURE. The mismatched file is deleted so a later run cannot
+      // mistake it for a good cache, and the bootstrap exits non-zero.
+      await rm(dest, { force: true });
+      console.error(`
+[bench] INTEGRITY FAILURE ${c.id}: ${describeVerification(v)}`);
+      console.error(`         source: ${c.url}`);
+      console.error('         Asset does not match the pinned release; '
+        + 'it has been deleted rather than used.');
+      process.exitCode = 1;
+      continue;
     }
-    console.log(`  -> ${(size / 1e6).toFixed(2)} MB`);
+    console.log(`  -> ${(v.actualSize / 1e6).toFixed(2)} MB · ${describeVerification(v)}`);
   }
+
 
   // Verify the label map the runner will rely on.
   if (c.task === 'object') {
@@ -62,7 +94,12 @@ for (const c of CANDIDATES) {
         + `${ok ? '(matches candidates.js)' : `!! MISMATCH vs declared ${declared.PERSON}/${declared.PHONE}`}`);
       if (!ok) process.exitCode = 1;
     } catch {
-      console.log('      (labels.txt not readable here; runner falls back to name matching)');
+      // The official YOLO LiteRT asset embeds no labels.txt. That is not a
+      // fault: the browser runtime supplies the class map at load, and
+      // resolveClassIds re-reads it from the loaded model and reports any
+      // disagreement with candidates.js.
+      console.log('      (no embedded labels.txt; class map is verified at '
+        + 'load time by resolveClassIds)');
     }
   }
 }

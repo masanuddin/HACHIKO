@@ -30,10 +30,20 @@ const trial = (over = {}) => ({
 });
 
 // ── Candidate declarations ──────────────────────────────────────────────
-test('B1. candidates use official MediaPipe assets only', () => {
+test('B1. every candidate asset comes from its own official host', () => {
+  // MediaPipe candidates come from Google's model host. YOLO26n cannot: it is
+  // not a MediaPipe model, so its official source is the Ultralytics release.
+  // The rule is "official upstream, never a third-party mirror", not "one host".
+  const OFFICIAL = [
+    'https://storage.googleapis.com/mediapipe-models/',
+    // Ultralytics publishes its LiteRT artefacts from the flutter-app repo;
+    // the weights repo carries only .pt and .onnx.
+    'https://github.com/ultralytics/assets/releases/',
+    'https://github.com/ultralytics/yolo-flutter-app/releases/',
+  ];
   for (const c of CANDIDATES) {
-    assert.ok(c.url.startsWith('https://storage.googleapis.com/mediapipe-models/'),
-      `${c.id} must come from the official model host`);
+    assert.ok(OFFICIAL.some((h) => c.url.startsWith(h)),
+      `${c.id} must come from an official model host, got ${c.url}`);
   }
 });
 

@@ -49,6 +49,61 @@ if (await exists(bundleSrc)) {
   await copyFile(bundleSrc, join(outDir, 'vision_bundle.mjs'));
   console.log('[assets] copied vision_bundle.mjs');
 }
+
+// ── YOLO26n browser runtime (benchmark page only) ────────────────────────
+// Same rule as the MediaPipe bundle: vendor from node_modules so the page
+// needs no bundler and no CDN, and the served bytes are the ones the
+// lockfile pinned. The benchmark page declares an import map for
+// `@litertjs/*`, because @litertjs/core imports `@litertjs/wasm-utils` as a
+// BARE specifier that a browser cannot resolve on its own.
+const YOLO_RUNTIME = [
+  // dist/index.js imports "../pkg/...", so the vendored tree must keep the
+  // package's own dist/ + pkg/ shape or that relative path escapes the folder.
+  ['@ultralytics/yolo', 'dist/index.js', 'ultralytics-yolo/dist/index.js'],
+  ['@litertjs/core', 'dist/index.js', 'litertjs/core.js'],
+  ['@litertjs/wasm-utils', 'dist/index.js', 'litertjs/wasm-utils.js'],
+];
+let yoloCopied = 0;
+for (const [pkg, from, to] of YOLO_RUNTIME) {
+  const src = join(root, 'node_modules', ...pkg.split('/'), ...from.split('/'));
+  if (!(await exists(src))) continue;
+  const dest = join(outDir, ...to.split('/'));
+  await mkdir(dirname(dest), { recursive: true });
+  await copyFile(src, dest);
+  yoloCopied += 1;
+}
+// The whole pkg/ tree, recursively: dist/index.js reaches into it for the
+// wasm glue AND for pkg/snippets/, so copying only the top-level files
+// leaves a module that imports a file that is not there.
+async function copyTree(from, to) {
+  if (!(await exists(from))) return 0;
+  await mkdir(to, { recursive: true });
+  let n = 0;
+  for (const e of await readdir(from, { withFileTypes: true })) {
+    n += e.isDirectory()
+      ? await copyTree(join(from, e.name), join(to, e.name))
+      : (await copyFile(join(from, e.name), join(to, e.name)), 1);
+  }
+  return n;
+}
+yoloCopied += await copyTree(
+  join(root, 'node_modules', '@ultralytics', 'yolo', 'pkg'),
+  join(outDir, 'ultralytics-yolo', 'pkg'));
+
+// The wasm the LiteRT runtime loads at init, self-hosted so a
+// cross-origin-isolated page is not blocked from fetching it off a CDN.
+const litertWasmDir = join(root, 'node_modules', '@litertjs', 'core', 'wasm');
+if (await exists(litertWasmDir)) {
+  const wasmOut = join(outDir, 'litertjs', 'wasm');
+  await mkdir(wasmOut, { recursive: true });
+  for (const f of await readdir(litertWasmDir)) {
+    await copyFile(join(litertWasmDir, f), join(wasmOut, f));
+    yoloCopied += 1;
+  }
+}
+console.log(yoloCopied
+  ? `[assets] vendored ${yoloCopied} YOLO/LiteRT runtime files`
+  : '[assets] YOLO/LiteRT runtime not installed — run npm install');
 // v0.3: object detector model (person + cell phone). Fetched once and cached
 // in public/assets so the harness still runs offline afterwards.
 const OBJECT_MODEL_URL =

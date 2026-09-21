@@ -73,6 +73,8 @@ export class BenchmarkRunner {
     this.deps = deps;
     this.wasmPath = options.wasmPath ?? './assets/wasm';
     this.assetDir = options.assetDir ?? './assets/bench';
+    /** LiteRT.js wasm, for the YOLO candidate only. Null = the package CDN. */
+    this.litertWasmPath = options.litertWasmPath ?? null;
     /** @type {Map<string, {candidate:Object, instance:Object, delegate:string}>} */
     this.loaded = new Map();
     this.activeId = null;
@@ -102,6 +104,17 @@ export class BenchmarkRunner {
     }
     const candidate = CANDIDATES.find((c) => c.id === candidateId);
     if (!candidate) throw new Error(`unknown candidate: ${candidateId}`);
+
+    // A SECOND RUNTIME. YOLO26n is not a MediaPipe model and does not satisfy
+    // ObjectDetector's tensor/metadata contract, so it loads through the
+    // official @ultralytics/yolo package on LiteRT.js. Everything else about
+    // its trial — scene, scenarios, window, evaluability — is unchanged.
+    if (candidate.runtime === 'litert.js') {
+      const entry = await this._loadYolo(candidate);
+      this.loaded.set(candidateId, entry);
+      this.activeId = candidateId;
+      return entry;
+    }
 
     const { FilesetResolver, ObjectDetector, PoseLandmarker } = this.deps;
     const fileset = await FilesetResolver.forVisionTasks(this.wasmPath);
@@ -153,6 +166,10 @@ export class BenchmarkRunner {
   observe(video, nowMs) {
     const entry = this.loaded.get(this.activeId);
     if (!entry) return null;
+    // LiteRT inference is asynchronous and cannot be answered here. The page
+    // calls `observeAsync` for that candidate; returning a stale or empty
+    // observation instead would silently record a non-detection.
+    if (entry.yolo) return null;
     // VIDEO mode needs strictly increasing timestamps.
     if (video.currentTime === entry.lastVideoTime) return null;
     entry.lastVideoTime = video.currentTime;
@@ -170,6 +187,73 @@ export class BenchmarkRunner {
     observation.inferenceMs = performance.now() - t0;
     observation.modelId = entry.candidate.id;
     observation.delegate = entry.delegate;
+    observation.timestampMs = nowMs;
+    observation.videoWidth = video?.videoWidth ?? null;
+    observation.videoHeight = video?.videoHeight ?? null;
+
+    this.lastObservation = observation;
+    return observation;
+  }
+
+  /**
+   * Load the LiteRT candidate. A failure here is REPORTED, never papered over
+   * by falling back to another model: substituting a detector would make the
+   * recorded evidence describe a model the operator never selected.
+   */
+  async _loadYolo(candidate) {
+    const { YoloBenchmarkModel } = this.deps;
+    if (!YoloBenchmarkModel) {
+      throw new Error(`MODEL_INIT_ERROR: ${candidate.id} needs the LiteRT `
+        + 'adapter; @ultralytics/yolo is not available on this page');
+    }
+    const url = `${this.assetDir}/${candidate.file}`;
+    let model;
+    try {
+      model = await YoloBenchmarkModel.load(this.deps, url, candidate, {
+        device: candidate.delegate === 'auto' ? 'auto' : candidate.delegate,
+        litertWasmUrl: this.litertWasmPath,
+      });
+    } catch (err) {
+      // See scripts/export-yolo-litert.md: the .tflite is exported by hand,
+      // so "missing artefact" is the likeliest cause and must say so.
+      throw new Error(`MODEL_INIT_ERROR: ${candidate.id} failed to load `
+        + `(${err?.message ?? err})`);
+    }
+    return {
+      candidate, instance: model, delegate: model.describe().delegate,
+      runtime: 'litert.js', lastVideoTime: -1, yolo: model,
+    };
+  }
+
+  /**
+   * Asynchronous inference for the LiteRT candidate.
+   *
+   * Same contract as `observe`: one frame in, one canonical observation out,
+   * stamped with the same fields so the recorder cannot tell the runtimes
+   * apart. The engine's own inference timing is preferred over the wall clock
+   * because it excludes pre/post-processing, which is what the MediaPipe
+   * number also measures.
+   */
+  async observeAsync(video, nowMs) {
+    const entry = this.loaded.get(this.activeId);
+    if (!entry?.yolo) return null;
+    if (video.currentTime === entry.lastVideoTime) return null;
+    entry.lastVideoTime = video.currentTime;
+
+    const t0 = performance.now();
+    let observation;
+    try {
+      observation = await entry.yolo.observe(video);
+    } catch (err) {
+      console.warn('[bench] yolo inference failed:', err);
+      return null;
+    }
+    const wall = performance.now() - t0;
+    observation.inferenceMs = Number.isFinite(observation.engineInferenceMs)
+      ? observation.engineInferenceMs : wall;
+    observation.modelId = entry.candidate.id;
+    observation.delegate = entry.delegate;
+    observation.runtime = 'litert.js';
     observation.timestampMs = nowMs;
     observation.videoWidth = video?.videoWidth ?? null;
     observation.videoHeight = video?.videoHeight ?? null;

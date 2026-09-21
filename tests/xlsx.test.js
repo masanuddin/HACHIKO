@@ -264,7 +264,9 @@ test('X11. the Overview states phase, basis and threshold status', () => {
   assert.ok(t.includes('DEVELOPMENT'));
   assert.ok(t.includes('NOT FROZEN'));
   assert.ok(t.includes('PRELIMINARY'));
-  assert.ok(t.includes('2 / 210 trials'), 'progress against the full matrix');
+  // Derived from the registries, so registering a candidate cannot leave a
+  // stale total on the face of the report.
+  assert.match(t, /2 \/ \d+ trials/, 'progress against the full matrix');
   assert.ok(t.includes('diagnostic-floor results, not final'),
     'the caveat must be on the face of the report');
 });

@@ -487,7 +487,7 @@
         <button class="sm active" data-atab="tabScen"
           title="Per-scenario results: how each candidate performed on one specific condition.">Scenario Results</button>
         <button class="sm" data-atab="tabModel"
-          title="Aggregate across every required scenario, plus ranking when eligible.">Model Comparison</button>
+          title="Side-by-side evidence across every required scenario. No ranking.">Model Comparison</button>
       </div>
 
       <!-- ── TAB 1: SCENARIO RESULTS ───────────────────────────────── -->
@@ -509,6 +509,7 @@
         <div class="tw">
           <table class="vals cmp"><thead><tr>
             <th title="Candidate model">Model</th>
+            <th title="Benchmark task — each candidate is measured separately for presence and phone">Task</th>
             <th title="Coverage — required scenarios completed">Cov</th>
             <th title="Recall — sensitivity across positive trials">Rec</th>
             <th title="Specificity across negative-control trials">Spec</th>
@@ -522,7 +523,8 @@
           </tr></thead><tbody id="rankBody"></tbody></table>
         </div>
         <div class="hint" id="rankNote">Partial metrics are marked PRELIMINARY.
-          Only fully evaluated candidates are ranked.</div>
+          Model selection is based on task-specific trade-offs after
+          DEVELOPMENT analysis.</div>
         <div id="strengths"></div>
         <div id="ranking"></div>
         <div id="recBlock"></div>
@@ -551,10 +553,27 @@
   <div class="body" id="helpBody"></div>
 </aside>
 
+<!--
+  IMPORT MAP — required for the YOLO26n runtime only.
+  @litertjs/core imports "@litertjs/wasm-utils" as a BARE specifier, which a
+  browser cannot resolve without this map. Both files are vendored from
+  node_modules by `npm run assets`, so the served bytes are the versions the
+  lockfile pinned — no CDN, no bundler.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "@litertjs/core": "/public/assets/litertjs/core.js",
+    "@litertjs/wasm-utils": "/public/assets/litertjs/wasm-utils.js"
+  }
+}
+</script>
+
 <script type="module">
 import { FilesetResolver, ObjectDetector, PoseLandmarker }
   from '/public/assets/vision_bundle.mjs';
 import { BenchmarkRunner } from '/tools/benchmark/BenchmarkRunner.js';
+import { YoloBenchmarkModel } from '/tools/benchmark/yoloAdapter.js';
 import {
   CANDIDATES, PERSON_SCENARIOS, PHONE_SCENARIOS,
   BENCH_COUNTDOWN_MS, BENCH_RECORDING_MS,
@@ -564,7 +583,7 @@ import { TrialController, TrialState, statusLabel }
 // Metrics come from ONE layer (buildModelSummaries -> taskMetrics). The page
 // never recomputes them, so a UI number and an exported number cannot diverge.
 import {
-  buildExportBundle, buildModelSummaries, buildRecommendation,
+  buildExportBundle, buildModelSummaries, SELECTION_NOTE,
   benchmarkCompletion, requiredScenarios, buildScenarioSummaries,
   scenarioStrengths,
 } from '/tools/benchmark/exportResults.js';
@@ -572,9 +591,21 @@ import { BENCH_HELP as HELP_SECTIONS } from '/tools/shared/help.js';
 import { buildZip } from '/tools/shared/zip.js';
 
 const $ = (x) => document.getElementById(x);
+// YOLO26n runtime, loaded lazily and NEVER fatally: every other candidate
+// must keep working if the vendored runtime is missing. A failure here shows
+// up later as an explicit MODEL_INIT_ERROR on that one candidate, which is
+// what keeps the benchmark auditable.
+let YOLO = null;
+try {
+  ({ YOLO } = await import('/public/assets/ultralytics-yolo/dist/index.js'));
+} catch (err) {
+  console.warn('[bench] YOLO runtime unavailable:', err?.message ?? err);
+}
+
 const runner = new BenchmarkRunner(
-  { FilesetResolver, ObjectDetector, PoseLandmarker },
-  { wasmPath: '/public/assets/wasm', assetDir: '/public/assets/bench' });
+  { FilesetResolver, ObjectDetector, PoseLandmarker, YOLO, YoloBenchmarkModel },
+  { wasmPath: '/public/assets/wasm', assetDir: '/public/assets/bench',
+    litertWasmPath: '/public/assets/litertjs/wasm/' });
 
 let stream = null, running = false, rafId = null;
 let task = 'person';
@@ -608,6 +639,10 @@ for (const c of CANDIDATES) {
     setStatus(`loading ${c.id}…`);
     try {
       const e = await runner.load(c.id);
+      // Switching candidates must not carry the previous one's observation
+      // into the new one's panels, nor let its in-flight promise land here.
+      asyncObs = null; pendingAsync = false;
+      win = []; lat.length = 0; peak = { p: null, h: null };
       [...$('models').children].forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
       $('hModel').textContent = c.id;
@@ -768,7 +803,7 @@ function renderProgressModal() {
     </table>
     <div class="hint">Every candidate runs every assigned scenario, three
       repetitions each. A candidate with missing scenarios is reported
-      INCOMPLETE rather than ranked.</div>`;
+      INCOMPLETE rather than given metrics it has not earned.</div>`;
 }
 
 const openScenModal = (mode) => {
@@ -1087,8 +1122,9 @@ function renderScenarioTab(all) {
 /**
  * TAB 2 — Model Comparison.
  *
- * Aggregate across every required scenario. A candidate is only ranked once it
- * is COMPLETE; before that its numbers are shown but labelled PRELIMINARY.
+ * SIDE-BY-SIDE EVIDENCE, never a leaderboard. Aggregate across every required
+ * scenario; incomplete candidates are shown but labelled PRELIMINARY. No row
+ * is a placing, and the row order is the registry's, not performance.
  */
 function renderComparisonTab(all, summaries) {
   const pctv = (v) => (v === null || v === undefined
@@ -1096,15 +1132,22 @@ function renderComparisonTab(all, summaries) {
 
   // "Not applicable" and "not collected yet" are different problems. Saying
   // the former when the truth is the latter tells a tester to stop looking.
+  // A metric with no contradicting evidence yet. The REASON is the tooltip's
+  // job: printing the full sentence in the cell forced this 12-column table
+  // far past its container and put the whole comparison behind a horizontal
+  // scrollbar. The marker still reads as "not measured", never as a zero.
   const awaiting = (value, reason) => (value === null || value === undefined
-    ? `<span class="dimval" title="${reason}">${reason}</span>` : null);
+    ? `<span class="dimval" title="${reason}">n/a</span>` : null);
 
   $('rankBody').innerHTML = summaries.map((r) => {
     const complete = r.completenessFlag === 'COMPLETE';
     const cov = `${r.scenariosCompleted}/${r.scenariosRequired}`;
-    const status = complete
-      ? (r.finalRank ? `RANK ${r.finalRank}` : 'COMPLETE')
-      : (r.totalValidTrials ? '<span class="prelim">PRELIM</span>' : 'NOT RUN');
+    // Evidence completeness only. The same three words the JSON and the
+    // workbook use, so no reader has to reconcile two vocabularies.
+    const status = r.evaluationStatus === 'EVALUABLE'
+      ? 'EVALUABLE'
+      : (r.evaluationStatus === 'PRELIMINARY'
+        ? '<span class="prelim">PRELIMINARY</span>' : 'INCOMPLETE');
     const recall = pctv(r.recall) ?? awaiting(r.recall, 'Awaiting positive trials');
     const spec = pctv(r.specificity)
       ?? awaiting(r.specificity, 'Awaiting negative-control data');
@@ -1112,7 +1155,7 @@ function renderComparisonTab(all, summaries) {
       ? r.discriminability.toFixed(2)
       : awaiting(null, 'Awaiting positive + negative data');
     return `<tr${complete ? '' : ' class="prelimrow"'}>
-      <td>${r.model}</td><td>${cov}</td>
+      <td>${r.model}</td><td>${r.task}</td><td>${cov}</td>
       <td>${recall}</td>
       <td style="color:${r.specificity === 1 ? 'var(--ok)' : 'var(--bad)'}">${spec}</td>
       <td style="color:${r.fp ? 'var(--bad)' : 'var(--faint)'}">${r.fp}</td>
@@ -1125,12 +1168,9 @@ function renderComparisonTab(all, summaries) {
       <td style="color:${complete ? 'var(--ok)' : 'var(--warn)'};font-weight:700;font-size:9.5px">${status}</td>
     </tr>`;
   }).join('')
-    || '<tr><td colspan="11" class="dimval">No trials recorded yet.</td></tr>';
+    || '<tr><td colspan="12" class="dimval">No trials recorded yet.</td></tr>';
 
-  $('rankNote').textContent = summaries.some((r) => r.completenessFlag !== 'COMPLETE')
-    ? 'PRELIM rows are partial evidence and are never ranked.'
-    : (summaries.length ? 'All listed candidates are fully evaluated.'
-      : 'Partial metrics are marked PRELIMINARY. Only fully evaluated candidates are ranked.');
+  $('rankNote').textContent = SELECTION_NOTE;
 
   // ── Strengths / weaknesses, from the same scenario summaries ──
   const done = summaries.filter((r) => r.completenessFlag === 'COMPLETE');
@@ -1147,41 +1187,40 @@ function renderComparisonTab(all, summaries) {
           + sw.weak.map((x) => line(x, 'bad2')).join('') + '</div>' : '');
   }).join('') : '';
 
-  // ── Ranking: only from complete evidence, and only when eligible ──
+  // ── Evidence completeness per task. NOT a leaderboard. ──
+  //
+  // This panel used to rank complete candidates and name a winner. It no
+  // longer does: presence wants recall (never miss a present user) and phone
+  // wants specificity (a phantom phone can push TERALIH), so one ordering
+  // cannot serve both, and a run measured at the DIAGNOSTIC FLOOR has not
+  // established an operating point to rank at. Candidates are listed in
+  // registry order with their evidence; a human chooses.
   const rankHtml = [];
   for (const tk of ['pose', 'phone', 'person']) {
     const forTask = summaries.filter((r) => r.task === tk);
     if (!forTask.length) continue;
-    const complete = forTask.filter((r) => r.completenessFlag === 'COMPLETE');
     const assigned = CANDIDATES.filter((c) =>
       (c.task === 'pose' ? ['pose'] : ['person', 'phone']).includes(tk)).length;
+    const done = forTask.filter((r) => r.evaluationStatus === 'EVALUABLE').length;
     const label = tk === 'pose' ? 'PRESENCE' : tk.toUpperCase();
-    if (complete.length < assigned) {
-      rankHtml.push(`<div class="subhead">${label} ranking</div>`
-        + `<div class="hint">Final ranking becomes available after all `
-        + `candidates for this task are complete (${complete.length}/${assigned}).</div>`);
-      continue;
-    }
-    const ranked = complete.slice().sort((a, b) => (a.finalRank ?? 99) - (b.finalRank ?? 99));
-    rankHtml.push(`<div class="subhead">${label} ranking</div>`
-      + '<table class="vals cmp"><thead><tr><th>Rank</th><th>Model</th>'
-      + '<th>Key evidence</th></tr></thead><tbody>'
-      + ranked.map((r) => `<tr><td>${r.finalRank ?? '?'}</td><td>${r.model}</td>`
+    // Registry order, fixed. Never sorted by a metric.
+    const order = new Map(CANDIDATES.map((c, k) => [c.id, k]));
+    const listed = forTask.slice()
+      .sort((a, b) => (order.get(a.model) ?? 99) - (order.get(b.model) ?? 99));
+    rankHtml.push(`<div class="subhead">${label} evidence (${done}/${assigned} evaluable)</div>`
+      + '<table class="vals cmp"><thead><tr><th>Model</th><th>Status</th>'
+      + '<th>Evidence</th></tr></thead><tbody>'
+      + listed.map((r) => `<tr><td>${r.model}</td><td>${r.evaluationStatus}</td>`
         + `<td>recall ${pctv(r.recall) ?? 'n/a'} · spec ${pctv(r.specificity) ?? 'n/a'}`
-        + ` · ${num(r.medianInferenceMs, 0, '?')} ms</td></tr>`).join('')
+        + ` · ${num(r.medianInferenceMs, 0, '?')} ms p50</td></tr>`).join('')
       + '</tbody></table>');
   }
-  $('ranking').innerHTML = rankHtml.join('');
+  $('ranking').innerHTML = rankHtml.join('')
+    + `<div class="hint">${SELECTION_NOTE}</div>`;
 
-  // ── Final selection: only when the architecture decision is supportable ──
-  const rec = buildRecommendation(all, { requiredRepetitions: REQ });
-  $('recBlock').innerHTML = (rec.strategy && rec.strategy !== 'INCOMPLETE')
-    ? `<div class="subhead">Final perception selection</div><div class="kv">
-        <span class="k">presence</span><span class="v ok">${rec.presenceModel ?? 'Not selected'}</span>
-        <span class="k">phone</span><span class="v ok">${rec.phoneModel ?? 'Not selected'}</span>
-        <span class="k">architecture</span><span class="v">${rec.strategy}</span></div>
-        <div class="hint">${rec.rationale ?? ''}</div>`
-    : '';
+  // No automatic selection panel. Selection is a human judgement made after
+  // DEVELOPMENT analysis, weighing each task's own risk.
+  $('recBlock').innerHTML = '';
 }
 
 function nextAction(progress, summary) {
@@ -1223,6 +1262,10 @@ $('btnStart').onclick = async () => {
 $('btnStop').onclick = () => {
   $('hInferWrap').hidden = true;
   running = false; if (rafId) cancelAnimationFrame(rafId);
+  // Drop any async inference still in flight. `running` already stops the
+  // loop, but a promise that resolves afterwards must not leave an
+  // observation waiting to be rendered when the camera comes back.
+  asyncObs = null; pendingAsync = false;
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
   runner.close();
   $('btnStart').disabled = false; $('btnStop').disabled = true;
@@ -1255,7 +1298,7 @@ $('btnInvalid').onclick = () => {
     `Repetition: ${last.repetition} of ${REQ}`,
     '',
     'This permanently removes the trial and its contribution to progress,',
-    'metrics and ranking. It cannot be undone.',
+    'metrics and every derived summary. It cannot be undone.',
     '',
     'Delete only immediate procedural mistakes — never because a model',
     'performed unexpectedly.',
@@ -1395,9 +1438,6 @@ function renderInspector(obs) {
   $('poseBlock').style.display = pose ? '' : 'none';
   $('objBlock').style.display = pose ? 'none' : '';
   $('detailBlock').style.display = pose ? 'none' : '';
-  $('insCtx').textContent = runner.activeId
-    ? `${runner.activeId} · ${$('hTask').textContent}` : 'no model loaded';
-
   if (pose) {
     if (!obs) {
       for (const id of ['poDetected', 'poLandmarks', 'poVisible', 'poRatio']) {
@@ -1513,10 +1553,45 @@ function renderOverview(obs) {
   $('ovRaw').textContent = obs ? String(obs.rawCount) : 'Collecting…';
 }
 
+/**
+ * Live diagnostic inference.
+ *
+ * ASYNC CANDIDATES. MediaPipe answers synchronously; the LiteRT candidate
+ * cannot, so its result arrives a frame or two later. `pendingAsync` keeps at
+ * most one inference in flight: without it a slow backend would queue a new
+ * predict every rAF and fall further behind on every frame.
+ *
+ * `asyncObs` holds the newest LiteRT observation so the panels keep rendering
+ * between completions instead of blanking. It is LIVE DIAGNOSTIC state only —
+ * `offerSample` still decides what enters a trial, so nothing here can widen
+ * the recording window.
+ */
+let pendingAsync = false;
+let asyncObs = null;
+
 function loop() {
   if (!running) return;
   const now = performance.now();
-  const obs = runner.observe($('video'), now);
+  const entry = runner.loaded.get(runner.activeId);
+  let obs;
+
+  if (entry?.yolo) {
+    // Kick off the next inference and consume whatever has landed. Live
+    // inference depends on MODEL READY + CAMERA ON only — never on a
+    // scenario being selected or a trial recording.
+    if (!pendingAsync) {
+      pendingAsync = true;
+      const seq = runner.activeId;
+      runner.observeAsync($('video'), now)
+        .then((o) => { if (o && runner.activeId === seq) asyncObs = o; })
+        .catch((err) => console.warn('[bench] async inference failed:', err))
+        .finally(() => { pendingAsync = false; });
+    }
+    obs = asyncObs;
+    asyncObs = null;           // consume once; do not re-record a stale frame
+  } else {
+    obs = runner.observe($('video'), now);
+  }
 
   // Advance the trial clock every frame, even when no observation landed, so
   // countdown and auto-stop stay on schedule.
@@ -1537,6 +1612,13 @@ function loop() {
     : tickInfo.state === TrialState.CAMERA_OFF ? 'dim' : 'ok');
   $('trialFill').style.width = trials.isRecording()
     ? `${Math.min(100, (tickInfo.elapsedMs / BENCH_RECORDING_MS) * 100)}%` : '0%';
+
+  // Model identity is a property of what is LOADED, not of whether a frame
+  // happened to produce a detection. Deriving it inside the detection branch
+  // let "no model loaded" sit beside "yolo26n ready (webgpu)" — a reader
+  // cannot tell which of the two to believe.
+  $('insCtx').textContent = runner.activeId
+    ? `${runner.activeId} · ${$('hTask').textContent}` : 'no model loaded';
 
   if (obs) {
     // THE BOUNDARY: samples are accepted only inside the recording window.

@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   buildScenarioSummaries, scenarioStrengths, buildModelSummaries,
-  buildRecommendation, requiredScenarios,
+  buildEvidenceReadiness, requiredScenarios, EvaluationStatus,
 } from '../tools/benchmark/exportResults.js';
 
 const page = () =>
@@ -169,24 +169,30 @@ test('A10. a model summary aggregates every required scenario', () => {
   const r = rows.find((x) => x.model === 'edl2-f16');
   assert.equal(r.completenessFlag, 'COMPLETE');
   assert.equal(r.scenariosCompleted, requiredScenarios('phone').length);
-  assert.ok(r.finalRank >= 1);
+  assert.equal(r.evaluationStatus, EvaluationStatus.EVALUABLE);
+  assert.equal(r.finalRank, undefined, 'no placing is computed');
 });
 
-test('A11. an incomplete model is never ranked', () => {
+test('A11. partial evidence reads PRELIMINARY, never a placing', () => {
   const rows = buildModelSummaries([
     ...completeSet('edl2-f16', 'phone'),
     mk({ modelId: 'edl0-f16', task: 'phone', scenarioId: 'screen_portrait' }),
   ], OPT);
   const partial = rows.find((x) => x.model === 'edl0-f16');
   assert.equal(partial.completenessFlag, 'INCOMPLETE');
-  assert.equal(partial.finalRank, null);
+  assert.equal(partial.evaluationStatus, EvaluationStatus.PRELIMINARY);
+  assert.equal(partial.finalRank, undefined);
 });
 
-test('A12. ranking waits for every assigned candidate', () => {
-  const js = script();
-  assert.match(js, /Final ranking becomes available after all/);
-  assert.match(js, /complete\.length < assigned/,
-    'ranking must gate on all assigned candidates being complete');
+test('A12. candidate order is the registry, never performance', () => {
+  // Feed the weaker candidate first and the stronger second: if the table
+  // sorted by performance, the order would flip. It must not.
+  const rows = buildModelSummaries([
+    ...completeSet('edl2-f16', 'phone'),
+    ...completeSet('edl0-f16', 'phone'),
+  ], OPT).filter((r) => r.task === 'phone');
+  assert.deepEqual(rows.map((r) => r.model), ['edl0-f16', 'edl2-f16'],
+    'registry order: EDL0 precedes EDL2 regardless of outcome');
 });
 
 // ── §V: deletion propagates through every derived level ────────────────
@@ -206,11 +212,13 @@ test('A13. deleting the last trial recalculates every level', () => {
   assert.equal(r.complete, false, 'and stops claiming completeness');
   assert.equal(r.medianPeakTargetScore, 0.55, 'and the median re-derives');
 
-  // Model level and ranking eligibility follow from the same source.
+  // Model level follows from the same source.
   const rows = buildModelSummaries(trials, OPT);
   assert.equal(rows[0].completenessFlag, 'INCOMPLETE');
-  assert.equal(rows[0].finalRank, null);
-  assert.equal(buildRecommendation(trials, OPT).strategy, 'INCOMPLETE');
+  assert.equal(rows[0].evaluationStatus, EvaluationStatus.PRELIMINARY);
+  const readiness = buildEvidenceReadiness(trials, OPT);
+  assert.equal(readiness.evidenceComplete, false);
+  assert.ok(!('strategy' in readiness), 'no strategy is chosen');
 });
 
 // ── §T: no vague terminology survives ──────────────────────────────────

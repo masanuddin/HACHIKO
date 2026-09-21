@@ -6,10 +6,15 @@
  * ── OFFICIAL METHODOLOGY ─────────────────────────────────────────────────
  * Every candidate is evaluated on EVERY assigned scenario, with repeated
  * trials. There is no staged elimination: a model is never dropped on a
- * subset, and no ADVANCE/BORDERLINE/DROP verdict feeds the recommendation.
- * Ranking and the final recommendation are computed from the complete
- * collected evidence, and a candidate with missing scenarios is reported as
- * INCOMPLETE rather than being given a verdict it has not earned.
+ * subset, and no ADVANCE/BORDERLINE/DROP verdict is produced.
+ *
+ * ── NO AUTOMATIC SELECTION ───────────────────────────────────────────────
+ * This export ranks nothing and recommends nothing. Presence and phone carry
+ * opposite risks — a missed person is a false negative that matters, while a
+ * phantom phone can push TERALIH — so one ordering cannot serve both, and a
+ * run measured at the DIAGNOSTIC FLOOR has not established an operating point
+ * to rank at. Candidates appear in registry order and carry an evidence
+ * completeness status only. Humans choose, after DEVELOPMENT analysis.
  *
  * ── EXPORT SHAPE ─────────────────────────────────────────────────────────
  * One master results.json plus flat CSVs that open directly in a spreadsheet.
@@ -37,6 +42,26 @@ export const EXPORT_SCHEMA_VERSION = 'hachiko-benchmark-export-3.0';
  * different protocols are never pooled by accident.
  */
 export const BENCH_PROTOCOL_VERSION = 'hachiko-benchmark-protocol-1.0';
+
+/**
+ * Evidence completeness. NOT a placing, NOT a quality judgement.
+ *
+ * The same three values are used by the dashboard, the JSON and the workbook,
+ * so a reader never has to reconcile two vocabularies for one idea.
+ */
+export const EvaluationStatus = Object.freeze({
+  /** No evaluable trial recorded yet. */
+  INCOMPLETE: 'INCOMPLETE',
+  /** Some DEVELOPMENT evidence exists; required coverage is not complete. */
+  PRELIMINARY: 'PRELIMINARY',
+  /** Required evaluable DEVELOPMENT protocol is complete. */
+  EVALUABLE: 'EVALUABLE',
+});
+
+/** One sentence, reused verbatim everywhere a reader might expect a winner. */
+export const SELECTION_NOTE =
+  'Partial metrics are marked PRELIMINARY. Model selection is based on '
+  + 'task-specific trade-offs after DEVELOPMENT analysis.';
 
 /**
  * benchmark_trials.csv — one row per model x task x scenario x repetition.
@@ -111,8 +136,11 @@ export const MODEL_SUMMARY_COLUMNS = [
   'min_positive_score', 'median_positive_score', 'max_positive_score',
   'max_negative_score', 'score_margin', 'discriminability',
   'suggested_operating_threshold',
-  // RUNTIME / FEASIBILITY
-  'inference_p50_ms', 'inference_p95_ms', 'model_size_mb', 'delegate',
+  // RUNTIME / FEASIBILITY — recorded, never scored
+  'inference_p50_ms', 'inference_p95_ms', 'model_size_mb',
+  'model_input_w', 'model_input_h', 'runtime', 'delegate',
+  // Kept apart from steady-state latency on purpose.
+  'model_load_ms', 'warmup_ms',
   // PROVENANCE
   'metric_basis', 'diagnostic_floor', 'operating_threshold',
   'operating_threshold_status', 'metrics_status',
@@ -241,9 +269,43 @@ export function applyMetricReadiness(metrics, positiveCount, negativeCount) {
   };
 }
 
+/**
+ * THE FORMAL SET: the first `required` evaluable repetitions of each
+ * candidate x task x scenario, in recording order.
+ *
+ * Earlier archives held unequal extra repetitions — one candidate retried a
+ * hard scenario five times, another ran it three. Aggregating all of them
+ * weights the aggregate toward whichever candidate was retried most, which is
+ * the opposite of what a retry is for. Extras are retained as evidence (they
+ * are never deleted) but excluded from the formal aggregate, and completeness
+ * is capped so a 4th repetition cannot report 133%.
+ *
+ * Order is recording order, so the set is deterministic and re-derivable.
+ * @returns {{formal: Object[], extra: Object[]}}
+ */
+export function partitionFormalSet(trials, required = 3) {
+  const seen = new Map();
+  const formal = [];
+  const extra = [];
+  for (const t of trials) {
+    const key = `${t.modelId}|${t.task}|${t.scenarioId}`;
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    (n <= required ? formal : extra).push(t);
+  }
+  return { formal, extra };
+}
+
 export function buildModelSummaries(trials, options = {}) {
   const required = options.requiredRepetitions ?? 3;
-  const grouped = groupTrials(trials);
+  // Aggregate the FORMAL set only. Extras stay visible in Scenario Results.
+  const { formal, extra } = partitionFormalSet(trials, required);
+  const extraByKey = {};
+  for (const t of extra) {
+    const k = `${t.modelId}|${t.task}`;
+    extraByKey[k] = (extraByKey[k] ?? 0) + 1;
+  }
+  const grouped = groupTrials(formal);
   const rows = [];
 
   for (const [key, list] of Object.entries(grouped)) {
@@ -255,6 +317,9 @@ export function buildModelSummaries(trials, options = {}) {
     const completed = need.filter(
       (s) => list.filter((t) => t.scenarioId === s.id).length >= required).length;
     const complete = completed === need.length;
+    // Capped by construction: `completed` counts scenarios that reached the
+    // requirement, never repetitions, so extras cannot push this past 1.
+    const coverage = need.length ? Math.min(1, completed / need.length) : 0;
 
     const positiveTrials = list.filter(
       (t) => (t.expectedTargetPresent ?? t.expected)).length;
@@ -272,6 +337,8 @@ export function buildModelSummaries(trials, options = {}) {
       modelName: candidate?.label ?? model,
       scenariosRequired: need.length,
       scenariosCompleted: completed,
+      coverage,
+      extraTrials: extraByKey[`${model}|${task}`] ?? 0,
       completenessFlag: complete ? 'COMPLETE' : 'INCOMPLETE',
       totalValidTrials: list.length,
       positiveTrials,
@@ -288,34 +355,43 @@ export function buildModelSummaries(trials, options = {}) {
       medianInferenceMs: m.medianInferenceMs,
       p95InferenceMs: m.p95InferenceMs,
       modelSizeBytes: candidate?.sizeBytes ?? null,
+      // COMPUTING FEASIBILITY. Recorded, never scored: a smaller or faster
+      // model is not thereby a better one for either task.
+      modelInputWidth: candidate?.inputWidth ?? null,
+      modelInputHeight: candidate?.inputHeight ?? null,
+      runtime: list[0]?.runtime ?? candidate?.runtime ?? null,
+      // The backend that ACTUALLY ran, read back from the trial, never the
+      // one the registry hoped for.
       delegate: list[0]?.delegate ?? candidate?.delegate ?? null,
+      // Load/warm-up is kept apart from steady-state latency on purpose:
+      // folding a one-off initialisation into p50 would misreport every
+      // candidate, and worst the heaviest one.
+      modelLoadMs: list.find((t) => t.modelLoadMs != null)?.modelLoadMs ?? null,
+      warmupMs: list.find((t) => t.warmupMs != null)?.warmupMs ?? null,
     });
   }
 
-  // Rank only within COMPLETE evaluations, per task. An incomplete candidate
-  // gets no rank rather than a flattering or damning position it has not earned.
-  const byTask = {};
-  for (const r of rows) (byTask[r.task] ??= []).push(r);
-  for (const list of Object.values(byTask)) {
-    const complete = list.filter((r) => r.completenessFlag === 'COMPLETE');
-    complete.sort((a, b) =>
-      (b.recall ?? 0) - (a.recall ?? 0)
-      || (b.specificity ?? 0) - (a.specificity ?? 0)
-      || (b.discriminability ?? 0) - (a.discriminability ?? 0));
-    complete.forEach((r, i) => {
-      r.finalRank = i + 1;
-      r.finalRecommendation = i === 0 ? 'RECOMMENDED' : 'EVALUATED';
-    });
-    for (const r of list) {
-      if (r.completenessFlag !== 'COMPLETE') {
-        r.finalRank = null;
-        r.finalRecommendation = 'INCOMPLETE — not eligible for ranking';
-      }
-    }
+  // EVIDENCE COMPLETENESS ONLY — never a placing.
+  //
+  // This table used to sort COMPLETE candidates by recall and stamp the top
+  // row RECOMMENDED. That is a model choice, and it is not one a DEVELOPMENT
+  // table computed at the diagnostic floor is entitled to make: presence and
+  // phone carry opposite risks (a missed person vs. a phantom phone), so no
+  // single ordering can be correct for both. `evaluationStatus` therefore
+  // reports how much evidence exists, and nothing about how good it is.
+  for (const r of rows) {
+    r.evaluationStatus = r.completenessFlag === 'COMPLETE'
+      ? EvaluationStatus.EVALUABLE
+      : (r.totalValidTrials > 0
+        ? EvaluationStatus.PRELIMINARY
+        : EvaluationStatus.INCOMPLETE);
   }
 
+  // DETERMINISTIC ORDER: registry order, then task. Never performance, so the
+  // top row cannot be misread as the winner.
+  const order = new Map(CANDIDATES.map((c, i) => [c.id, i]));
   rows.sort((a, b) => a.task.localeCompare(b.task)
-    || (a.finalRank ?? 99) - (b.finalRank ?? 99)
+    || (order.get(a.model) ?? 99) - (order.get(b.model) ?? 99)
     || a.model.localeCompare(b.model));
   return rows;
 }
@@ -324,8 +400,14 @@ export function buildModelSummaries(trials, options = {}) {
 export function buildScenarioSummaries(trials, options = {}) {
   const required = options.requiredRepetitions ?? 3;
   const sessionId = options.sessionId ?? '';
+  // SAME formal set the model summaries aggregate. If this counted every
+  // trial while Model Comparison counted the first three, the two views
+  // would disagree on the same evidence — §AE requires them to reconcile.
+  // Extras remain in the recorded trials and in `extraTrials`; they are
+  // excluded here only from the formal per-scenario rollup.
+  const { formal } = partitionFormalSet(trials, required);
   const bucket = {};
-  for (const t of trials) {
+  for (const t of formal) {
     (bucket[`${t.modelId}|${t.task}|${t.scenarioId}`] ??= []).push(t);
   }
 
@@ -470,7 +552,7 @@ export function buildScenarioSummaryCsv(trials, options = {}) {
   return toCsv(SCENARIO_SUMMARY_COLUMNS, rows);
 }
 
-/** benchmark_model_summary.csv — candidate x task, with rank + recommendation. */
+/** benchmark_model_summary.csv — candidate x task. Evidence only: no rank. */
 export function buildModelSummaryCsv(trials, options = {}) {
   const required = options.requiredRepetitions ?? 3;
   const phases = [...new Set(trials.map((t) => t.phase).filter(Boolean))];
@@ -484,7 +566,7 @@ export function buildModelSummaryCsv(trials, options = {}) {
     phase, r.model, r.task,
 
     r.scenariosCompleted, r.scenariosRequired,
-    r.totalValidTrials, r.scenariosRequired * required, r.completenessFlag,
+    r.totalValidTrials, r.scenariosRequired * required, r.evaluationStatus,
 
     r.positiveTrials, r.negativeTrials,
 
@@ -499,7 +581,8 @@ export function buildModelSummaryCsv(trials, options = {}) {
 
     round(r.medianInferenceMs, 2), round(r.p95InferenceMs, 2),
     r.modelSizeBytes ? Number((r.modelSizeBytes / 1e6).toFixed(2)) : null,
-    r.delegate,
+    r.modelInputWidth, r.modelInputHeight, r.runtime, r.delegate,
+    round(r.modelLoadMs, 1), round(r.warmupMs, 1),
 
     metricBasis, BENCH_SCORE_THRESHOLD, null, operatingStatus, metricsStatus,
   ]);
@@ -507,50 +590,44 @@ export function buildModelSummaryCsv(trials, options = {}) {
 }
 
 /**
- * Architectural recommendation, computed ONLY from complete evaluations.
+ * DEVELOPMENT evidence readiness — deliberately NOT a model choice.
  *
- * ONE_MODEL when a single detector is the top-ranked complete candidate for
- * both person and phone; SPLIT_MODEL when presence and phone are best served by
- * different models. Anything less than full data returns INCOMPLETE — the
- * recommendation must come from the whole benchmark, not a subset.
+ * This used to return ONE_MODEL/SPLIT_MODEL naming a winner per task. It no
+ * longer does. Presence optimises for recall (never miss a present user) while
+ * phone optimises for specificity (a phantom phone can push TERALIH), so the
+ * two cannot share one ordering, and a benchmark run at the diagnostic floor
+ * has not measured an operating point anyway.
+ *
+ * The research team selects the candidate manually, per task, after
+ * DEVELOPMENT analysis. This function only reports whether the evidence needed
+ * for that judgement has been collected.
  */
-export function buildRecommendation(trials, options = {}) {
+export function buildEvidenceReadiness(trials, options = {}) {
   const summaries = buildModelSummaries(trials, options);
-  const best = (task) => summaries.find(
-    (r) => r.task === task && r.completenessFlag === 'COMPLETE' && r.finalRank === 1) ?? null;
-
-  const person = best('person');
-  const phone = best('phone');
-  const pose = best('pose');
-
-  if (!phone || (!person && !pose)) {
-    return {
-      strategy: 'INCOMPLETE',
-      presenceModel: null, phoneModel: null,
-      rationale: 'Full evaluation is not finished for every required task. '
-               + 'Complete all scenarios for all candidates before drawing a '
-               + 'recommendation.',
-    };
+  const byTask = {};
+  for (const r of summaries) {
+    (byTask[r.task] ??= []).push({
+      model: r.modelName,
+      modelId: r.model,
+      evaluationStatus: r.evaluationStatus,
+      evaluableTrials: r.totalValidTrials,
+      scenariosCompleted: r.scenariosCompleted,
+      scenariosRequired: r.scenariosRequired,
+    });
   }
+  // Completeness is measured against the REQUIRED matrix, not against the
+  // rows that happen to exist: a session holding only phone trials would
+  // otherwise report complete while presence had never been run.
+  const expected = benchmarkCompletion(trials, options);
+  const every = expected.complete === true
+    && summaries.length > 0
+    && summaries.every((r) => r.evaluationStatus === EvaluationStatus.EVALUABLE);
 
-  // Prefer whichever complete candidate scored best on presence.
-  const presenceBest = (pose && person)
-    ? ((pose.recall ?? 0) > (person.recall ?? 0) ? pose : person)
-    : (pose ?? person);
-
-  if (presenceBest && presenceBest.model === phone.model) {
-    return {
-      strategy: 'ONE_MODEL',
-      presenceModel: presenceBest.model, phoneModel: phone.model,
-      rationale: `${phone.model} is top-ranked for both presence and phone on the `
-               + 'complete evaluation; one model is simpler to ship and maintain.',
-    };
-  }
   return {
-    strategy: 'SPLIT_MODEL',
-    presenceModel: presenceBest?.model ?? null, phoneModel: phone.model,
-    rationale: `Presence is best served by ${presenceBest?.model}, phone by `
-             + `${phone.model}. Reliability outranks single-model elegance.`,
+    // No strategy, no winner, no recommended model. By design.
+    evidenceComplete: every,
+    perTask: byTask,
+    selectionNote: SELECTION_NOTE,
   };
 }
 
@@ -665,10 +742,47 @@ export function buildResultsJson(trials, options = {}) {
       scoringNote:
         'Raw confidence is NOT comparable across model families. Ranking uses '
         + 'recall, specificity and model-local separation.',
+      // §AA: anything a DEVELOPMENT run surfaces is a CANDIDATE threshold.
+      // Nothing here is frozen, and threshold analysis never rewrites a trial.
+      thresholdAnalysisNote:
+        'Any threshold surfaced from this run is a DEVELOPMENT CANDIDATE '
+        + 'THRESHOLD, derived per model from recorded scores. It is not a '
+        + 'final or frozen operating threshold, and raw confidences are not '
+        + 'comparable as calibrated probabilities across model families.',
+      diagnosticFloorNote:
+        `The score floor (${BENCH_SCORE_THRESHOLD}) is a DIAGNOSTIC FLOOR used `
+        + 'to observe what each detector reports. It is not an operating '
+        + 'threshold and selects no model.',
     },
+    // PROVENANCE: enough for a future reader to know what actually ran.
+    // Runtime and input dimensions are recorded because candidates do NOT
+    // share an inference stack or a tensor size, and pretending otherwise
+    // would be a fake fairness. What they DO share is the scene, the
+    // scenarios, the window and the evaluability rules.
     candidates: CANDIDATES.map((c) => ({
       id: c.id, label: c.label, task: c.task, modelFile: c.file,
-      sourceUrl: c.url, sizeBytes: c.sizeBytes, delegate: c.delegate,
+      sourceUrl: c.url, sizeBytes: c.sizeBytes,
+      runtime: c.runtime ?? 'mediapipe',
+      requestedDelegate: c.delegate,
+      inputWidth: c.inputWidth ?? null,
+      inputHeight: c.inputHeight ?? null,
+      // Four distinct provenance facts, never merged into one "version":
+      // where the weights came from, what the inspected source model said,
+      // what tool produced the local artefact (null until exported), and
+      // what runs it in the browser.
+      sourceRepo: c.sourceRepo ?? null,
+      sourceRelease: c.sourceRelease ?? null,
+      sourceAsset: c.sourceAsset ?? null,
+      sha256: c.sha256 ?? null,
+      exportToolVersion: c.exportToolVersion ?? null,
+      exportProvenance: c.exportProvenance ?? null,
+      browserRuntimeVersion: c.browserRuntimeVersion ?? null,
+      litertRuntimeVersion: c.litertRuntimeVersion ?? null,
+      classMapSource: c.classMapSource ?? null,
+      // Numeric precision differs across candidate families, so it is stated
+      // rather than left for a reader to assume from the file name.
+      quantization: c.quantization ?? null,
+      quantizationNote: c.quantizationNote ?? null,
       labelIndices: c.labelIndices ?? null,
     })),
     scenarioConfiguration: {
@@ -683,7 +797,8 @@ export function buildResultsJson(trials, options = {}) {
     scenarioSummaries: buildScenarioSummaries(trials, options),
     modelSummaries: buildModelSummaries(trials, options),
     completion: benchmarkCompletion(trials, options),
-    recommendation: buildRecommendation(trials, options),
+    evidenceReadiness: buildEvidenceReadiness(trials, options),
+    selectionNote: SELECTION_NOTE,
     notes: {
       privacy: 'No webcam image, frame or video is recorded or exported.',
       deletion: 'Deleted trials leave zero trace — no tombstone is retained.',
@@ -718,7 +833,8 @@ export function buildExportBundle(input) {
 
   return {
     stamp,
-    recommendation: buildRecommendation(trials, options),
+    evidenceReadiness: buildEvidenceReadiness(trials, options),
+    selectionNote: SELECTION_NOTE,
     completion: benchmarkCompletion(trials, options),
     archiveName: `hachiko_benchmark${phaseTag}_${stamp}.zip`,
     files: [

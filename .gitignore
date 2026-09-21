@@ -5,6 +5,11 @@ public/assets/wasm/
 public/assets/vision_bundle.mjs
 public/assets/face_landmarker.task
 public/assets/bench/
+# Vendored by `npm run assets` from node_modules, exactly like
+# vision_bundle.mjs above: ~40 MB of regenerable copies, pinned by
+# package-lock.json rather than by being committed.
+public/assets/ultralytics-yolo/
+public/assets/litertjs/
 
 # Scratch files from headless probes (extracted page scripts, module stubs).
 # These are generated, never authored — if one survives, a probe crashed.

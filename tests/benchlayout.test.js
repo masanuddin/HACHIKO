@@ -41,13 +41,15 @@ test('L2. the candidate card carries no model telemetry', () => {
   assert.match(card, /id="models"/, 'the selector itself stays');
 });
 
-test('L3. all four candidates are still offered and loadable', () => {
+test('L3. every registered candidate is offered and loadable', () => {
   const js = script();
   assert.match(js, /for \(const c of CANDIDATES\)/,
     'buttons are generated from the candidate list, not hardcoded');
   assert.match(js, /runner\.load\(c\.id\)/, 'selection still loads the model');
   assert.match(js, /b\.classList\.add\('active'\)/, 'active model is highlighted');
-  assert.equal(CANDIDATES.length, 4);
+  // Derived, not a literal: adding a candidate must not need a test edit.
+  assert.ok(CANDIDATES.length >= 4, 'the original four survive');
+  assert.ok(CANDIDATES.some((c) => c.id === 'yolo26n'), 'YOLO26n is offered too');
 });
 
 // ── §4: stable position is the whole point ─────────────────────────────

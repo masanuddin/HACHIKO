@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 import { BenchmarkRunner } from '../tools/benchmark/BenchmarkRunner.js';
 import {
   buildTrialsCsv, buildScenarioSummaryCsv, buildModelSummaryCsv,
-  buildExportBundle, buildModelSummaries, buildRecommendation, buildResultsJson,
+  buildExportBundle, buildModelSummaries, buildEvidenceReadiness, buildResultsJson,
+  EvaluationStatus, partitionFormalSet,
   benchmarkCompletion, assertNoImagery,
   TRIAL_COLUMNS, SCENARIO_SUMMARY_COLUMNS, MODEL_SUMMARY_COLUMNS,
 } from '../tools/benchmark/exportResults.js';
@@ -141,9 +142,10 @@ test('U8. benchmark export is ONE archive of JSON + XLSX', () => {
   for (const k of ['schemaVersion', 'exportMetadata', 'environment', 'session',
                    'configuration', 'candidates', 'scenarioConfiguration',
                    'trials', 'scenarioSummaries', 'modelSummaries',
-                   'completion', 'recommendation', 'notes']) {
+                   'completion', 'evidenceReadiness', 'selectionNote', 'notes']) {
     assert.ok(k in doc, `results.json missing "${k}"`);
   }
+  assert.ok(!('recommendation' in doc), 'the JSON recommends no model');
   assert.ok(doc.scenarioSummaries.length > 0,
     'per-scenario detail must survive in the JSON');
   assert.equal(doc.exportMetadata.methodology, 'FULL_EVALUATION_ALL_CANDIDATES');
@@ -189,12 +191,13 @@ test('U9. an incomplete candidate is reported INCOMPLETE, never ranked', () => {
   const rows = buildModelSummaries(r.getTrials(), { requiredRepetitions: 3 });
   const person = rows.find((x) => x.task === 'person');
   assert.equal(person.completenessFlag, 'INCOMPLETE');
-  assert.equal(person.finalRank, null, 'no rank without full data');
-  assert.match(person.finalRecommendation, /INCOMPLETE/);
+  assert.equal(person.evaluationStatus, EvaluationStatus.PRELIMINARY);
+  assert.equal(person.finalRank, undefined, 'no rank is computed at all');
+  assert.equal(person.finalRecommendation, undefined);
   assert.ok(person.scenariosCompleted < person.scenariosRequired);
 });
 
-test('U10. a fully evaluated candidate is ranked and recommended', () => {
+test('U10. a fully evaluated candidate reads EVALUABLE, not RECOMMENDED', () => {
   const r = new BenchmarkRunner({});
   for (const s of PERSON_SCENARIOS) {
     for (let i = 0; i < 3; i++) {
@@ -210,15 +213,21 @@ test('U10. a fully evaluated candidate is ranked and recommended', () => {
   const person = rows.find((x) => x.task === 'person');
   assert.equal(person.completenessFlag, 'COMPLETE');
   assert.equal(person.scenariosCompleted, PERSON_SCENARIOS.length);
-  assert.equal(person.finalRank, 1);
-  assert.equal(person.finalRecommendation, 'RECOMMENDED');
+  assert.equal(person.evaluationStatus, EvaluationStatus.EVALUABLE);
+  assert.equal(person.coverage, 1, 'coverage caps at 100%');
+  // Completing the protocol earns a status, never a placing.
+  assert.equal(person.finalRank, undefined);
+  assert.equal(person.finalRecommendation, undefined);
 });
 
-test('U11. the recommendation refuses to conclude on partial data', () => {
-  const rec = buildRecommendation(seeded().getTrials(), { requiredRepetitions: 3 });
-  assert.equal(rec.strategy, 'INCOMPLETE');
-  assert.equal(rec.presenceModel, null);
-  assert.match(rec.rationale, /not finished|Complete all/i);
+test('U11. evidence readiness names no winner, on any amount of data', () => {
+  const rec = buildEvidenceReadiness(seeded().getTrials(), { requiredRepetitions: 3 });
+  assert.equal(rec.evidenceComplete, false);
+  // The old shape chose a model. The new one must not, under any key.
+  for (const banned of ['strategy', 'presenceModel', 'phoneModel', 'rationale']) {
+    assert.ok(!(banned in rec), `readiness must not carry "${banned}"`);
+  }
+  assert.match(rec.selectionNote, /task-specific trade-offs/i);
 });
 
 test('U12. staged elimination is gone from the official flow', () => {

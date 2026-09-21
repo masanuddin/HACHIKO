@@ -19,7 +19,7 @@ import {
   BENCH_COUNTDOWN_MS, BENCH_RECORDING_MS,
 } from '../tools/benchmark/candidates.js';
 import {
-  buildModelSummaries, buildRecommendation, requiredScenarios,
+  buildModelSummaries, buildEvidenceReadiness, requiredScenarios,
   MODEL_SUMMARY_COLUMNS,
 } from '../tools/benchmark/exportResults.js';
 
@@ -132,7 +132,7 @@ const completeSet = (modelId, task) => {
   return out;
 };
 
-test('I5. an incomplete candidate is never given a final rank', () => {
+test('I5. status reports evidence completeness, never a placing', () => {
   const trials = [
     ...completeSet('edl2-f16', 'phone'),
     // Only one scenario, one repetition: nowhere near complete.
@@ -142,29 +142,33 @@ test('I5. an incomplete candidate is never given a final rank', () => {
   const partial = rows.find((r) => r.model === 'edl0-f16');
   const full = rows.find((r) => r.model === 'edl2-f16');
   assert.equal(partial.completenessFlag, 'INCOMPLETE');
-  assert.equal(partial.finalRank, null, 'incomplete candidates carry no rank');
+  assert.equal(partial.evaluationStatus, 'PRELIMINARY');
   assert.equal(full.completenessFlag, 'COMPLETE');
-  assert.ok(full.finalRank >= 1, 'a complete candidate is ranked');
+  assert.equal(full.evaluationStatus, 'EVALUABLE');
+  // Completing the protocol earns a status, never a position.
+  assert.equal(partial.finalRank, undefined);
+  assert.equal(full.finalRank, undefined, 'no candidate is ranked, ever');
 });
 
-test('I6. no recommendation is produced from partial evidence', () => {
-  // Phone complete, presence untouched: not enough to recommend an architecture.
-  const rec = buildRecommendation(completeSet('edl2-f16', 'phone'),
+test('I6. no recommendation is produced, from any amount of evidence', () => {
+  const rec = buildEvidenceReadiness(completeSet('edl2-f16', 'phone'),
     { requiredRepetitions: 3 });
-  assert.equal(rec.strategy, 'INCOMPLETE');
-  assert.equal(rec.presenceModel, null);
-  assert.equal(rec.phoneModel, null);
-  assert.match(rec.rationale, /complete all scenarios/i);
+  // Coverage is reported; a model is not chosen.
+  assert.equal(rec.evidenceComplete, false, 'presence is untouched');
+  assert.ok(Array.isArray(rec.perTask.phone), 'per-task coverage is reported');
+  for (const banned of ['strategy', 'presenceModel', 'phoneModel', 'rationale']) {
+    assert.ok(!(banned in rec), `readiness must not carry "${banned}"`);
+  }
 });
 
-test('I7. the page shows ranking only once a task is fully evaluated', () => {
+test('I7. the page presents evidence, not a leaderboard', () => {
   const html = page();
   const js = html.slice(html.indexOf('<script type="module">'));
-  assert.match(js, /Final ranking becomes available after all/,
-    'the ranking block must state when evidence is incomplete');
-  assert.match(js, /completenessFlag === 'COMPLETE'/,
-    'ranking must gate on completeness');
-  assert.match(js, /PRELIM/, 'partial metrics must be marked preliminary');
+  assert.ok(!js.includes('Final ranking becomes available after all'),
+    'the ranking gate is gone along with the ranking');
+  assert.match(js, /evaluationStatus/, 'status drives the table instead');
+  assert.match(js, /PRELIMINARY/, 'partial metrics are still marked');
+  assert.ok(!/finalRank/.test(js), 'no rank is read anywhere on the page');
 });
 
 // ── Inspector is diagnostic only ────────────────────────────────────────
