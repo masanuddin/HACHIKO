@@ -77,10 +77,14 @@ test('B4. the pose candidate is declared presence-only', () => {
 
 test('B5. one shared diagnostic threshold for every candidate', () => {
   assert.ok(BENCH_SCORE_THRESHOLD >= 0.05 && BENCH_SCORE_THRESHOLD <= 0.10);
-  // Production config must be untouched by the bake-off.
+  // The diagnostic floor is NOT the operating point. Production runs at the
+  // 0.30 frozen by Perception DEVELOPMENT; the bake-off floor stays far
+  // below it so a candidate's weak detections remain observable.
+  assert.ok(BENCH_SCORE_THRESHOLD < CONFIG.objectDetector.minPersonConfidence,
+    'the diagnostic floor must sit below the operating point');
   assert.equal(CONFIG.objectDetector.scoreThreshold, 0.30);
-  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.40);
-  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.50);
+  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.30);
+  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.30);
 });
 
 test('B6. scenario lists cover the required cases with negative controls', () => {
@@ -515,7 +519,10 @@ test('B24. the benchmark is isolated from the production AI core', () => {
   // Production config must expose no benchmark concepts.
   assert.equal(CONFIG.objectDetector.benchmarkMode, undefined);
   assert.equal(CONFIG.benchmark, undefined);
-  // And production still points at its own model.
-  assert.ok(CONFIG.objectDetector.modelAssetPath.includes('efficientdet_lite0.tflite'));
-  assert.ok(!CONFIG.objectDetector.modelAssetPath.includes('/bench/'));
+  // Production points at its OWN asset copy. Perception DEVELOPMENT selected
+  // the same model the benchmark measured, but production must never load it
+  // out of the benchmark's gitignored research directory.
+  assert.ok(CONFIG.objectDetector.modelAssetPath.includes('yolo26n_w8a32.tflite'));
+  assert.ok(!CONFIG.objectDetector.modelAssetPath.includes('/bench/'),
+    'production must not depend on the benchmark asset directory');
 });

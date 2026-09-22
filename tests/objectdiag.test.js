@@ -18,6 +18,14 @@ import {
 } from '../src/ai/index.js';
 
 /** A MediaPipe-shaped detection. */
+/**
+ * The PHONE class index, taken from the frozen config rather than written
+ * out. It was 76 under EfficientDet's COCO-90 and is 67 under YOLO26n's
+ * COCO-80 — and 76 is a valid COCO-80 index meaning `scissors`, so a
+ * hardcoded literal here would silently test the wrong class.
+ */
+const PHONE_IDX = CONFIG.objectDetector.labelIndices.PHONE;
+
 const det = (index, categoryName, score, box = { originX: 10, originY: 20, width: 100, height: 200, angle: 0 }) => ({
   categories: [{ index, categoryName, displayName: categoryName, score }],
   boundingBox: box,
@@ -33,7 +41,7 @@ const engine = (overrides = {}) =>
 // ── Identification ──────────────────────────────────────────────────────
 test('D1. detections are accepted when the label map works', () => {
   const eng = engine();
-  const out = eng.normalize([det(0, 'person', 0.91), det(76, 'cell phone', 0.72)], 0);
+  const out = eng.normalize([det(0, 'person', 0.91), det(PHONE_IDX, 'cell phone', 0.72)], 0);
   assert.equal(out.length, 2);
   assert.equal(out[0].category, 'person');
   assert.equal(out[0].resolvedBy, 'NAME');
@@ -46,7 +54,7 @@ test('D2. EMPTY categoryName falls back to COCO index', () => {
   // still carries the true class. Name-only matching then drops EVERYTHING,
   // which looks exactly like "the detector sees nothing".
   const eng = engine();
-  const out = eng.normalize([det(0, '', 0.91), det(76, '', 0.72), det(62, '', 0.65)], 0);
+  const out = eng.normalize([det(0, '', 0.91), det(PHONE_IDX, '', 0.72), det(62, '', 0.65)], 0);
   assert.equal(out.length, 2, 'person and phone must still be recovered');
   assert.equal(out[0].category, 'person');
   assert.equal(out[0].resolvedBy, 'INDEX');
@@ -56,7 +64,7 @@ test('D2. EMPTY categoryName falls back to COCO index', () => {
 
 test('D3. index fallback can be disabled from config', () => {
   const eng = engine({ objectDetector: { matchByIndexWhenNameMissing: false } });
-  const out = eng.normalize([det(0, '', 0.91), det(76, '', 0.72)], 0);
+  const out = eng.normalize([det(0, '', 0.91), det(PHONE_IDX, '', 0.72)], 0);
   assert.equal(out.length, 0);
   assert.equal(eng.diagnostics.lastRejectReasons.UNRESOLVED_CATEGORY, 2);
 });
@@ -64,7 +72,7 @@ test('D3. index fallback can be disabled from config', () => {
 test('D4. label spelling variants are tolerated', () => {
   const eng = engine();
   const out = eng.normalize([
-    det(0, 'Person', 0.9), det(76, 'Cell Phone', 0.8), det(76, 'cell_phone', 0.7),
+    det(0, 'Person', 0.9), det(PHONE_IDX, 'Cell Phone', 0.8), det(PHONE_IDX, 'cell_phone', 0.7),
   ], 0);
   assert.equal(out.length, 3);
   assert.deepEqual(out.map((d) => d.category), ['person', 'cell phone', 'cell phone']);
@@ -80,7 +88,7 @@ test('D5. unrelated classes are still excluded', () => {
 // ── Zero-accepted is never unexplained ──────────────────────────────────
 test('D6. confidence rejection is recorded with an explicit reason', () => {
   const eng = engine();
-  const out = eng.normalize([det(0, 'person', 0.20), det(76, 'cell phone', 0.20)], 0);
+  const out = eng.normalize([det(0, 'person', 0.20), det(PHONE_IDX, 'cell phone', 0.20)], 0);
   assert.equal(out.length, 0);
   assert.equal(eng.diagnostics.lastRejectReasons.PERSON_BELOW_CONFIDENCE, 1);
   assert.equal(eng.diagnostics.lastRejectReasons.PHONE_BELOW_CONFIDENCE, 1);
@@ -101,7 +109,7 @@ test('D7. "model saw nothing" is distinguishable from "we rejected everything"',
 // ── Raw observability ───────────────────────────────────────────────────
 test('D8. raw detections are captured BEFORE filtering', () => {
   const eng = engine();
-  const raw = [det(62, 'chair', 0.99), det(0, 'person', 0.15), det(76, 'cell phone', 0.10)];
+  const raw = [det(62, 'chair', 0.99), det(0, 'person', 0.15), det(PHONE_IDX, 'cell phone', 0.10)];
   eng._recordDiagnostics(raw, 1000, 30, { videoWidth: 640, videoHeight: 480 });
   const d = eng.getDiagnostics();
 
@@ -139,10 +147,10 @@ test('D10. categoryNameAvailable reports whether the label map works', () => {
 
 test('D11. observed categories are tallied by index and name', () => {
   const eng = engine();
-  eng._recordDiagnostics([det(0, 'person', 0.9), det(0, 'person', 0.8), det(76, '', 0.7)], 0, 20, {});
+  eng._recordDiagnostics([det(0, 'person', 0.9), det(0, 'person', 0.8), det(PHONE_IDX, '', 0.7)], 0, 20, {});
   const seen = eng.getDiagnostics().observedCategories;
   assert.equal(seen['0:person'], 2);
-  assert.equal(seen['76:'], 1);
+  assert.equal(seen[`${PHONE_IDX}:`], 1);
 });
 
 // ── Diagnostic mode is observation only ─────────────────────────────────
@@ -151,9 +159,11 @@ test('D12. diagnostic mode does not alter production config', () => {
   assert.equal(diag.objectDetector.diagnosticMode, true);
   // The shared production config must be untouched.
   assert.equal(CONFIG.objectDetector.diagnosticMode, false);
+  // FROZEN operating point: the model floor and the accepted confidence are
+  // the same number, so there is no second threshold hidden below.
   assert.equal(CONFIG.objectDetector.scoreThreshold, 0.30);
-  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.40);
-  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.50);
+  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.30);
+  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.30);
   assert.deepEqual([...CONFIG.objectDetector.categoryAllowlist], ['person', 'cell phone']);
 });
 
@@ -187,14 +197,14 @@ test('D15. PhoneEventTracker consumes only accepted detections', () => {
   const F = 1000 / 30;
   // A low-confidence phone is filtered out and must not open an event.
   for (let t = 0; t < 3000; t += F) {
-    tracker.update(eng.normalize([det(76, 'cell phone', 0.20)], t), t);
+    tracker.update(eng.normalize([det(PHONE_IDX, 'cell phone', 0.20)], t), t);
   }
   assert.equal(tracker.getEvents().length, 0);
 
   // An accepted phone does.
   const tracker2 = new PhoneEventTracker(CONFIG);
   for (let t = 0; t < 3000; t += F) {
-    tracker2.update(eng.normalize([det(76, 'cell phone', 0.85)], t), t);
+    tracker2.update(eng.normalize([det(PHONE_IDX, 'cell phone', 0.85)], t), t);
   }
   assert.equal(tracker2.getEvents().length, 1);
 });

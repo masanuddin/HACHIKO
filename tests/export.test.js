@@ -589,9 +589,10 @@ test('U26e. the debug page keeps presence and phone visibly pending', () => {
 });
 
 test('U27. production AI config is untouched by the UI work', () => {
+  // Frozen by Perception DEVELOPMENT; the UI work did not move them.
   assert.equal(CONFIG.objectDetector.scoreThreshold, 0.30);
-  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.40);
-  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.50);
+  assert.equal(CONFIG.objectDetector.minPersonConfidence, 0.30);
+  assert.equal(CONFIG.objectDetector.minPhoneConfidence, 0.30);
   assert.equal(CONFIG.state.STRONG_YAW_DELTA_DEG, 25);
   assert.equal(CONFIG.state.EYE_CLOSED_PERSIST_MS, 3000);
   assert.equal(CONFIG.presence.BOTH_MISSING_ENTER_MS, 2000);

@@ -70,13 +70,38 @@ export class ObjectDetectorEngine {
       modelAssetPath:
         overrides.objectModelAssetPath ?? config.objectDetector.modelAssetPath,
       wasmPath: overrides.wasmPath ?? config.landmarker.wasmPath,
+      // LiteRT.js wasm for the YOLO path. Null lets the runtime use its own
+      // default; a self-hosted path is required on a cross-origin-isolated
+      // page, where the worker cannot be started from a CDN.
+      litertWasmPath: overrides.litertWasmPath
+        ?? config.objectDetector.litertWasmPath ?? null,
     };
+
+    // LiteRT path only: at most one inference in flight, plus the newest
+    // completed observation waiting to be consumed by `detect`.
+    this.yolo = null;
+    this._yoloPending = false;
+    this._yoloObs = null;
   }
 
   /** Load WASM + model, falling back GPU -> CPU like the face engine. */
   async initialize() {
-    const { FilesetResolver, ObjectDetector } = this.deps;
     const cfg = this.config.objectDetector;
+
+    // FROZEN PERCEPTION PATH. YOLO26n is a LiteRT artefact and does not
+    // satisfy MediaPipe ObjectDetector's tensor/metadata contract, so it
+    // runs through the official @ultralytics/yolo runtime instead. Only the
+    // ENGINE differs: the accepted confidence, the class mapping and the
+    // detection shape this class emits are identical either way.
+    //
+    // The MediaPipe branch below is retained for DEVELOPMENT tooling and for
+    // any deployment that still injects a MediaPipe detector; production
+    // config selects LiteRT.
+    if (cfg.runtime === 'litert.js') {
+      return this._initializeYolo(cfg);
+    }
+
+    const { FilesetResolver, ObjectDetector } = this.deps;
     const fileset = await FilesetResolver.forVisionTasks(this.assetPaths.wasmPath);
 
     const diagnostic = !!cfg.diagnosticMode;
@@ -131,6 +156,52 @@ export class ObjectDetectorEngine {
    * @param {number} nowMs monotonic
    * @returns {{detections:ObjectDetection[], inferenceMs:number, ran:boolean}}
    */
+  /**
+   * Load the frozen YOLO26n model through the LiteRT runtime.
+   *
+   * Class ids are re-read from the model's own `names` map and cross-checked
+   * against config, because a wrong phone index does not fail loudly — it
+   * quietly scores another class as a phone for an entire session.
+   */
+  async _initializeYolo(cfg) {
+    const { YOLO, YoloBenchmarkModel } = this.deps;
+    if (!YOLO || !YoloBenchmarkModel) {
+      throw new Error('MODEL_INIT_ERROR: the LiteRT runtime '
+        + '(@ultralytics/yolo) was not provided to ObjectDetectorEngine');
+    }
+    this.yolo = await YoloBenchmarkModel.load(this.deps,
+      this.assetPaths.modelAssetPath,
+      { id: 'yolo26n', labelIndices: cfg.labelIndices,
+        inputWidth: 640, inputHeight: 640 },
+      { device: cfg.delegate, litertWasmUrl: this.assetPaths.litertWasmPath });
+
+    const meta = this.yolo.describe();
+    if (meta.labelIndexMismatches?.length) {
+      throw new Error('MODEL_INIT_ERROR: YOLO class map disagrees with the '
+        + `frozen config — ${meta.labelIndexMismatches.join('; ')}`);
+    }
+    this.activeDelegate = meta.delegate ?? null;
+    this.detector = this.yolo;          // keeps `initialized` checks truthful
+    return true;
+  }
+
+  /**
+   * One LiteRT inference, kept to a single in-flight request.
+   *
+   * `detect` is synchronous and cannot await, so the newest completed
+   * observation is held here and consumed on the next call. Without the
+   * in-flight guard a slow backend would be handed a new frame every tick
+   * and fall further behind on each one.
+   */
+  _pumpYolo(video, nowMs) {
+    if (this._yoloPending) return;
+    this._yoloPending = true;
+    this.yolo.observe(video, { conf: this.config.objectDetector.scoreThreshold })
+      .then((obs) => { this._yoloObs = obs; })
+      .catch((err) => { console.warn('[HACHIKO] yolo inference failed:', err); })
+      .finally(() => { this._yoloPending = false; });
+  }
+
   detect(video, nowMs) {
     if (!this.shouldRun(nowMs)) {
       return { detections: null, inferenceMs: 0, ran: false };
@@ -144,13 +215,42 @@ export class ObjectDetectorEngine {
 
     const t0 = performance.now();
     let result;
-    try {
-      result = this.detector.detectForVideo(video, nowMs);
-    } catch (err) {
-      console.warn('[HACHIKO] object detectForVideo failed:', err);
-      return { detections: [], inferenceMs: performance.now() - t0, ran: true };
+    let inferenceMs;
+    if (this.yolo) {
+      // Start the next inference, then take whatever has already landed.
+      this._pumpYolo(video, nowMs);
+      const obs = this._yoloObs;
+      this._yoloObs = null;                 // consume once; never re-read
+      if (!obs) return { detections: null, inferenceMs: 0, ran: false };
+      // The engine's own timing, so it means the same thing the benchmark
+      // reported rather than including the wait for a queued promise.
+      inferenceMs = Number.isFinite(obs.engineInferenceMs)
+        ? obs.engineInferenceMs : performance.now() - t0;
+      // SHAPE ADAPTATION, at the boundary and nowhere else. Everything
+      // downstream (diagnostics, normalize, per-category floors) reads the
+      // MediaPipe shape `{ categories: [...], boundingBox }`, so the flat
+      // adapter detections are re-wrapped here rather than teaching two
+      // shapes to every consumer.
+      result = {
+        detections: (obs.detections ?? []).map((d) => ({
+          categories: [{
+            index: d.index,
+            categoryName: d.categoryName,
+            displayName: d.displayName ?? '',
+            score: d.score,
+          }],
+          boundingBox: d.boundingBox,
+        })),
+      };
+    } else {
+      try {
+        result = this.detector.detectForVideo(video, nowMs);
+      } catch (err) {
+        console.warn('[HACHIKO] object detectForVideo failed:', err);
+        return { detections: [], inferenceMs: performance.now() - t0, ran: true };
+      }
+      inferenceMs = performance.now() - t0;
     }
-    const inferenceMs = performance.now() - t0;
     const raw = result?.detections ?? [];
 
     // Record RAW output before any filtering, so "zero accepted" can always be
@@ -317,6 +417,17 @@ export class ObjectDetectorEngine {
   }
 
   close() {
+    // The two runtimes release differently: MediaPipe exposes close(), the
+    // LiteRT model exposes free(). Calling the wrong one leaks the wasm
+    // module for the lifetime of the page.
+    if (this.yolo) {
+      this.yolo.free?.();
+      this.yolo = null;
+      this._yoloObs = null;
+      this._yoloPending = false;
+      this.detector = null;
+      return;
+    }
     if (this.detector) {
       this.detector.close();
       this.detector = null;
