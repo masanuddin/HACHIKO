@@ -1,5 +1,7 @@
 import { FilesetResolver, FaceLandmarker, ObjectDetector } from '@mediapipe/tasks-vision'
+import { YOLO } from '@ultralytics/yolo'
 import { FaceLandmarkerEngine, HachikoAI, ObjectDetectorEngine, withOverrides } from '../ai/index.js'
+import { YoloRuntimeModel } from './yoloRuntime'
 
 /**
  * Host-side construction of the vendored AI-Engine runtime. This is the ONLY
@@ -13,9 +15,22 @@ import { FaceLandmarkerEngine, HachikoAI, ObjectDetectorEngine, withOverrides } 
 
 export const WASM_PATH = '/wasm'
 export const FACE_MODEL_PATH = '/models/face_landmarker.task'
-// FINAL object-detector model decision (Phase 2). Injected so the vendored
-// config.js defaults stay untouched.
-export const OBJECT_MODEL_PATH = '/models/edl2_float16.tflite'
+/**
+ * PRODUCTION object detector, frozen by Perception DEVELOPMENT (270 evaluable
+ * trials): YOLO26n w8a32, serving Person AND Phone from one inference.
+ *
+ * This previously pointed at `edl2_float16.tflite`, which SILENTLY DEFEATED
+ * the freeze: the vendored config named YOLO while the host override handed
+ * the engine an EfficientDet asset, so the product ran a model the freeze had
+ * not selected. The override now matches the frozen config rather than
+ * contradicting it.
+ */
+export const OBJECT_MODEL_PATH = '/models/yolo26n_w8a32.tflite'
+/**
+ * LiteRT.js wasm, self-hosted. `@litertjs/core` would otherwise start its
+ * worker from a CDN, which a cross-origin-isolated page blocks.
+ */
+export const LITERT_WASM_PATH = '/wasm/litertjs/'
 
 /**
  * Object inference cadence for the first integrated build. The AI-Engine
@@ -52,12 +67,19 @@ export async function createAiRuntime(): Promise<AiRuntime> {
   }
   const faceEngine = new FaceLandmarkerEngine(config, faceEngineDeps)
 
+  // The vendored engine selects its runtime from `config.objectDetector.runtime`
+  // ('litert.js' after the perception freeze). MediaPipe classes stay injected
+  // so the engine's MediaPipe branch remains available to debug tooling; the
+  // frozen config is what decides which branch actually runs.
   const objectEngineDeps = {
     FilesetResolver,
     ObjectDetector,
+    YOLO,
+    YoloBenchmarkModel: YoloRuntimeModel,
     assetPaths: {
       objectModelAssetPath: OBJECT_MODEL_PATH,
       wasmPath: WASM_PATH,
+      litertWasmPath: LITERT_WASM_PATH,
     },
   }
   const objectEngine = new ObjectDetectorEngine(config, objectEngineDeps)

@@ -31,3 +31,49 @@ for (const name of readdirSync(src)) {
 }
 
 console.log(`[copy-wasm] copied ${copied} file(s) into public/wasm/`)
+
+// LiteRT.js wasm for the frozen YOLO26n detector. Same rule as above: the
+// runtime would otherwise fetch its worker from a CDN, which breaks the
+// no-network constraint and is blocked outright on a cross-origin-isolated
+// page. Copied into public/wasm/litertjs/ and served same-origin.
+const litertSrc = join(root, 'node_modules', '@litertjs', 'core', 'wasm')
+const litertDest = join(dest, 'litertjs')
+
+if (!existsSync(litertSrc)) {
+  console.warn(
+    `[copy-wasm] ${litertSrc} not found - run "npm install" first. ` +
+      'The YOLO detector will not load without it.',
+  )
+} else {
+  mkdirSync(litertDest, { recursive: true })
+  let litertCopied = 0
+  for (const name of readdirSync(litertSrc)) {
+    const from = join(litertSrc, name)
+    if (statSync(from).isFile()) {
+      copyFileSync(from, join(litertDest, name))
+      litertCopied += 1
+    }
+  }
+  console.log(`[copy-wasm] copied ${litertCopied} LiteRT file(s) into public/wasm/litertjs/`)
+}
+
+// The LiteRT.js ES modules themselves. `@ultralytics/yolo` loads its .tflite
+// backend with `await import("@litertjs/core")` behind a @vite-ignore, so the
+// specifier survives bundling and the BROWSER has to resolve it. Bare
+// specifiers are not resolvable in a browser, so index.html declares an
+// import map pointing at these vendored copies - same origin, same versions
+// npm installed, and identical in dev and in the production build.
+for (const [pkg, out] of [
+  ['@litertjs/core', 'core.js'],
+  ['@litertjs/wasm-utils', 'wasm-utils.js'],
+]) {
+  const from = join(root, 'node_modules', ...pkg.split('/'), 'dist', 'index.js')
+  if (!existsSync(from)) {
+    console.warn(`[copy-wasm] ${from} not found - the YOLO detector will not load.`)
+    continue
+  }
+  const to = join(root, 'public', 'vendor', 'litertjs', out)
+  mkdirSync(dirname(to), { recursive: true })
+  copyFileSync(from, to)
+  console.log(`[copy-wasm] vendored ${pkg} -> public/vendor/litertjs/${out}`)
+}

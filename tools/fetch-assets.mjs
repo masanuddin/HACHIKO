@@ -6,7 +6,8 @@
 // concern, same distinction the READMEs already document: the app itself
 // makes zero network requests once built (CLAUDE.md constraint 2) - this
 // script's downloads happen before that build exists.
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { createWriteStream } from 'node:fs'
@@ -37,15 +38,29 @@ const ASSETS = [
     required: true,
   },
   {
-    // SELECTED production object-detector model for the AI integration
-    // (EfficientDet-Lite2, float16). Decision is final; do not substitute
-    // edl0_float16.tflite. Consumed by the AI runtime from Phase 3 onward;
-    // fetched now so the asset exists ahead of the runtime switch.
-    // URL = official Google/MediaPipe model host, verified against
-    // AI-Engine tools/benchmark/candidates.js.
+    // SUPERSEDED. EfficientDet-Lite2 was the provisional pick before
+    // Perception DEVELOPMENT ran; 270 evaluable trials then selected
+    // YOLO26n w8a32 (below) as one detector for Person AND Phone. Kept
+    // only because the legacy runtime still references it; it is NOT the
+    // production model any more.
     dest: join(root, 'public', 'models', 'edl2_float16.tflite'),
     url: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite',
     required: true,
+  },
+  {
+    // PRODUCTION object detector, frozen by Perception DEVELOPMENT.
+    // One model serves Person (class 0) and Phone (class 67) in a single
+    // inference, run through LiteRT.js.
+    //
+    // Integrity is CHECKED, not assumed: this is a GitHub release asset,
+    // and a release asset can be replaced in place upstream. A mismatch
+    // means the product would measure a model nobody benchmarked.
+    dest: join(root, 'public', 'models', 'yolo26n_w8a32.tflite'),
+    url: 'https://github.com/ultralytics/yolo-flutter-app/releases/download/'
+       + 'v0.6.6/yolo26n_w8a32.tflite',
+    required: true,
+    sizeBytes: 2875553,
+    sha256: 'd9cef07ce652ccfa9ce58e4ac8a4df98ff037739a9dad20a8afcae21b545df73',
   },
   {
     dest: join(root, 'public', 'models', 'blaze_face_short_range.tflite'),
@@ -64,10 +79,36 @@ const ASSETS = [
   },
 ]
 
-async function fetchOne({ dest, url, required }) {
+/**
+ * Verify a downloaded asset against its declared identity.
+ *
+ * Only what is declared is checked, so assets without an expected hash are
+ * unaffected. Returns null when the file is good, or a reason when it is not.
+ */
+function integrityError(dest, { sizeBytes, sha256 }) {
+  if (sizeBytes === undefined && sha256 === undefined) return null
+  const buf = readFileSync(dest)
+  if (sizeBytes !== undefined && buf.length !== sizeBytes) {
+    return `size ${buf.length} != expected ${sizeBytes}`
+  }
+  if (sha256 !== undefined) {
+    const actual = createHash('sha256').update(buf).digest('hex')
+    if (actual !== sha256) return `sha256 ${actual} != expected ${sha256}`
+  }
+  return null
+}
+
+async function fetchOne({ dest, url, required, sizeBytes, sha256 }) {
   if (existsSync(dest)) {
-    console.log(`[fetch-assets] ${dest} already present, skipping`)
-    return
+    // A cached file is not trusted on sight: a truncated download and an
+    // upstream replacement both leave a file that exists.
+    const bad = integrityError(dest, { sizeBytes, sha256 })
+    if (!bad) {
+      console.log(`[fetch-assets] ${dest} already present, skipping`)
+      return
+    }
+    console.warn(`[fetch-assets] cached ${dest} REJECTED - ${bad}; re-fetching`)
+    rmSync(dest, { force: true })
   }
   console.log(`[fetch-assets] downloading ${url}`)
   try {
@@ -77,7 +118,14 @@ async function fetchOne({ dest, url, required }) {
     }
     mkdirSync(dirname(dest), { recursive: true })
     await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
-    console.log(`[fetch-assets] wrote ${dest}`)
+    const bad = integrityError(dest, { sizeBytes, sha256 })
+    if (bad) {
+      // Delete rather than keep: a later run must not mistake it for cache.
+      rmSync(dest, { force: true })
+      throw new Error(`integrity check failed - ${bad}`)
+    }
+    console.log(`[fetch-assets] wrote ${dest}`
+      + (sha256 ? ' (verified size + sha256)' : ''))
   } catch (err) {
     if (required) throw new Error(`[fetch-assets] failed to download required asset ${url}: ${err.message}`)
     console.warn(`[fetch-assets] failed to download optional asset ${url}: ${err.message} - continuing without it`)

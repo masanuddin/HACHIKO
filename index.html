@@ -28,6 +28,22 @@
   <body>
     <a class="skip-link" href="#app">Langsung ke konten</a>
     <div id="app" tabindex="-1">HACHIKO</div>
+    <!--
+      `@ultralytics/yolo` loads its .tflite backend with a runtime
+      `await import("@litertjs/core")` that is deliberately hidden from the
+      bundler, so the BROWSER must resolve that bare specifier. These modules
+      are vendored into public/vendor/litertjs/ by tools/copy-wasm.mjs at the
+      versions npm installed - same origin, no CDN, identical in dev and in
+      the production build.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@litertjs/core": "/vendor/litertjs/core.js",
+          "@litertjs/wasm-utils": "/vendor/litertjs/wasm-utils.js"
+        }
+      }
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
