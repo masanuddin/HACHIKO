@@ -158,8 +158,17 @@ export const CONFIG = deepFreeze({
     eligibility: {
       /** Beyond this |yawDelta| one eye foreshortens; EAR stops being comparable. */
       EYE_MAX_ABS_YAW_DEG: 20,     // PROVISIONAL — must be revalidated after pilot.
-      /** Beyond this |pitchDelta| the lid aperture is projected away. */
-      EYE_MAX_ABS_PITCH_DEG: 15,   // PROVISIONAL — must be revalidated after pilot.
+      /**
+       * Beyond this |pitchDelta| the lid aperture is projected away.
+       *
+       * FROZEN after Behavioral DEVELOPMENT (was 15, PROVISIONAL). At 15° a
+       * head-down reading posture still counted as eligible, so the
+       * foreshortened lid read as a closed eye and accumulated prolonged
+       * eye-closure evidence — a false positive on the most ordinary study
+       * behaviour there is. Tightening to 10° makes the eye channel abstain
+       * during head-down work instead of guessing.
+       */
+      EYE_MAX_ABS_PITCH_DEG: 10,
       /**
        * Left/right agreement check. Both eyes should read similarly when the
        * head is frontal; a large asymmetry means one eye is occluded or
@@ -275,7 +284,12 @@ export const CONFIG = deepFreeze({
      * Reading / writing / looking at notes. Recorded and exposed as supporting
      * evidence; CANNOT trigger TERALIH alone and is never a primaryReason.
      */
-    DOWN_PITCH_SUPPORT_DEG: 25,   // PROVISIONAL — must be revalidated after pilot.
+    // FROZEN after Behavioral DEVELOPMENT (was 25, PROVISIONAL). 25° only
+    // fired on a deliberate, exaggerated look-down; ordinary reading and
+    // writing sit well under it, so the support channel stayed silent during
+    // exactly the posture it exists to describe. 10° is baseline-relative, so
+    // it is 10° below THIS person's calibrated neutral, not an absolute pose.
+    DOWN_PITCH_SUPPORT_DEG: 10,
     DOWN_PITCH_SUPPORT_PERSIST_MS: 2000, // PROVISIONAL — must be revalidated after pilot.
 
     // ── SUPPORT ONLY: roll ───────────────────────────────────────────────
@@ -326,13 +340,24 @@ export const CONFIG = deepFreeze({
    */
   objectDetector: {
     enabled: true,
-    modelAssetPath: './assets/efficientdet_lite0.tflite',
-    delegate: 'GPU',            // falls back to CPU automatically
+    // ── FROZEN after Perception DEVELOPMENT (270 evaluable trials) ───────
+    // YOLO26n w8a32 serves BOTH Person and Phone from one inference. It is
+    // a LiteRT artefact and does NOT load through MediaPipe ObjectDetector,
+    // so `runtime` selects the engine; see ObjectDetectorEngine.initialize.
+    //
+    // Identity verified against the DEVELOPMENT asset:
+    //   2,875,553 bytes
+    //   sha256 d9cef07ce652ccfa9ce58e4ac8a4df98ff037739a9dad20a8afcae21b545df73
+    // Production's OWN copy, byte-identical to the benchmark asset and
+    // tracked like every other production model. Pointing at
+    // assets/bench/ would make the product depend on a gitignored
+    // research directory that a fresh clone does not have.
+    modelAssetPath: './assets/yolo26n_w8a32.tflite',
+    runtime: 'litert.js',
+    delegate: 'auto',           // webgpu when available, else CPU/wasm
     /**
-     * EXACT label strings, read from the model's own metadata (labels.txt
-     * inside the .tflite bundle), not guessed. EfficientDet-Lite0 is COCO-90:
-     * line 1 = "person", line 77 = "cell phone" (two words, lowercase).
-     * Verified identical across the int8 and float32 variants.
+     * EXACT label strings as the YOLO runtime reports them. Resolution is by
+     * INDEX first (below); these names are the cross-check, not the source.
      */
     labels: {
       PERSON: 'person',
@@ -345,11 +370,19 @@ export const CONFIG = deepFreeze({
      * Model-level floor. Per-category thresholds below are applied on top, so
      * this stays permissive enough not to pre-filter them away.
      */
-    scoreThreshold: 0.30,          // PROVISIONAL — must be revalidated after pilot.
-    /** Per-category acceptance. Person is the safety-critical one: a missed */
-    /** person can cause a false TIDAK_HADIR, so it is deliberately lower.   */
-    minPersonConfidence: 0.40,     // PROVISIONAL — must be revalidated after pilot.
-    minPhoneConfidence: 0.50,      // PROVISIONAL — must be revalidated after pilot.
+    scoreThreshold: 0.30,
+    /**
+     * THE OPERATING POINT, frozen from Perception DEVELOPMENT: >= 0.30 for
+     * both channels.
+     *
+     * These were 0.40 / 0.50 while the model floor sat at 0.30, so the
+     * acceptance production actually applied was NOT the point DEVELOPMENT
+     * measured — a second, higher operating point hidden one layer down.
+     * Both now equal the frozen value, so the model floor and the accepted
+     * confidence describe the same threshold.
+     */
+    minPersonConfidence: 0.30,
+    minPhoneConfidence: 0.30,
     /**
      * Object detection does NOT run at camera FPS. Face AI keeps its own
      * cadence; this throttles only the second model to protect runtime.
@@ -378,17 +411,19 @@ export const CONFIG = deepFreeze({
     /** How many raw detections to retain per inference for inspection. */
     diagnosticMaxRawDetections: 20,
     /**
-     * Fallback identification when runtime `categoryName` is empty.
+     * YOLO26n class indices. FROZEN, and verified against the model's own
+     * `names` map at load time rather than trusted from here.
      *
-     * COCO-90 class indices, read from the model's own labels.txt
-     * (line 1 = person, line 77 = cell phone -> zero-based 0 and 76).
-     * Matching on index is robust to a missing/unmapped label map, which
-     * string matching is not.
+     * THE INDEX TRAP: YOLO ships 80-class COCO with no background row, so
+     * `cell phone` is 67. The previous value, 76, is EfficientDet's COCO-90
+     * index — and 76 is a VALID index under COCO-80, where it means
+     * `scissors`. Carried over unchanged it would have scored scissors as a
+     * phone without ever throwing.
      */
     matchByIndexWhenNameMissing: true,
     labelIndices: {
       PERSON: 0,
-      PHONE: 76,
+      PHONE: 67,
     },
   },
 

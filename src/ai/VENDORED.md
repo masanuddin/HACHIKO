@@ -9,9 +9,47 @@
   (no `git merge`, no subtree), no files were rewritten to TypeScript, and no
   algorithms, thresholds, calibration, smoothing, temporal logic, or
   phone-context semantics were modified.
-- **Integration provenance date**: 2026-09-14 (Phase 1 of the HACHIKO AI
-  integration; source state = AI-Engine commit `4a7e90b` "AI Engine Fix phone
-  detection", package `hachiko-ai@0.2.1`).
+- **Integration provenance date**: 2026-09-22 (AI freeze integration; source
+  state = AI-Engine commit `c474982` "freeze perception config: YOLO26n
+  person/phone at 0.30").
+- **Previous provenance**: 2026-09-14, AI-Engine commit `4a7e90b` "AI Engine
+  Fix phone detection", package `hachiko-ai@0.2.1`.
+
+## Frozen configuration carried by this copy
+
+Two component freezes, both decided in AI-Engine from DEVELOPMENT evidence
+and re-copied here unchanged. They are NOT tunable from this repository.
+
+**Behavioral** (AI-Engine `6f6c55c`)
+
+| parameter | value |
+|---|---|
+| strong yaw | 25° / 1500 ms |
+| pitch-up | 30° / 2000 ms |
+| pitch-down (SUPPORT only) | 10° / 2000 ms |
+| roll (SUPPORT only) | 22° / 2000 ms |
+| relative EAR | 0.70 / 3000 ms |
+| eye eligibility \|pitch\| | 10° |
+| eye eligibility \|yaw\| | 20° |
+| EAR L/R ratio guard | 1.6 |
+| invalid grace | 1000 ms |
+| face-missing entry | 2000 ms |
+| face-present recovery | 500 ms |
+| state recovery | 750 ms |
+| EMA α | 0.35 |
+
+**Perception** (AI-Engine `c474982`), from 270 evaluable DEVELOPMENT trials
+
+| parameter | value |
+|---|---|
+| model | `yolo26n_w8a32.tflite` |
+| identity | 2,875,553 bytes · sha256 `d9cef07c…b545df73` |
+| runtime | LiteRT.js via `@ultralytics/yolo` |
+| Person class | 0 |
+| Phone class | **67** (COCO-80; 76 is `scissors`) |
+| Person / Phone acceptance | >= 0.30 / >= 0.30 |
+
+One detector serves both Person and Phone in a single inference.
 
 ## Source of truth
 
