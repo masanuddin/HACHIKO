@@ -93,19 +93,25 @@ test('U1. candidate evaluation never mutates the shared config', () => {
   assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_PITCH_DEG, beforePitch);
 });
 
-test('U2. the baselines remain the documented comparison points', () => {
-  assert.equal(CONFIG.state.DOWN_PITCH_SUPPORT_DEG, 25,
-    'pitch-down support baseline');
-  assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_PITCH_DEG, 15,
-    'eye eligibility baseline');
-  // Neither was changed by this task. Any change must be a separate,
-  // deliberate decision made on the evidence.
+test('U2. the shipped config is the value DEVELOPMENT selected', () => {
+  // This used to assert the PRE-DEVELOPMENT baselines (25 / 15) as the live
+  // config. DEVELOPMENT has since selected 10 / 10 and they are frozen, so
+  // the live values are asserted here instead.
+  //
+  // The comparisons below are unaffected: every candidate — including the
+  // old baselines — is still evaluated through `withCfg`, against an
+  // injected config, never by reading the shipped one. U3 and U9 are the
+  // evidence for these two changes and still run on 25 and 15.
+  assert.equal(CONFIG.state.DOWN_PITCH_SUPPORT_DEG, 10,
+    'pitch-down support: frozen at 10 (was 25)');
+  assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_PITCH_DEG, 10,
+    'eye eligibility: frozen at 10 (was 15)');
 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // §7 — pitch-down SUPPORT threshold
 // ═══════════════════════════════════════════════════════════════════════
-test('U3. the baseline 25° cannot capture natural study posture', () => {
+test('U3. the former 25° could not capture natural study posture', () => {
   // The pilot measured natural D06 downward posture at 14.7°–16.9°. The
   // baseline sits above that entire range, so the support cue it exists to
   // record never fires during real studying.
@@ -163,7 +169,7 @@ test('U7. no pitch-down candidate produces ANY strong evidence', () => {
 // ═══════════════════════════════════════════════════════════════════════
 // §12 — eye eligibility (EYE_MAX_ABS_PITCH_DEG)
 // ═══════════════════════════════════════════════════════════════════════
-test('U8. the baseline 15° admits reading/writing false closure', () => {
+test('U8. the former 15° admitted reading/writing false closure', () => {
   // This is the reported problem, reproduced against the real engine: eyes
   // OPEN, but a downward reading pose with depressed EAR stays eligible long
   // enough to complete the 3 s closure persistence.

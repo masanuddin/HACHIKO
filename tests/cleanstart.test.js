@@ -345,10 +345,17 @@ test('C17. the targeted rerun scenarios all exist and are unchanged', () => {
   }
 });
 
-test('C18. no AI parameter was frozen by this task', () => {
-  assert.equal(S.DOWN_PITCH_SUPPORT_DEG, 25, 'pitch-down stays at baseline');
-  assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_PITCH_DEG, 15,
-    'eye eligibility stays at baseline');
+test('C18. the behavioral configuration matches the DEVELOPMENT freeze', () => {
+  // This guard previously asserted the PRE-DEVELOPMENT baseline. DEVELOPMENT
+  // has now selected the values below, so the guard's job is to hold THEM:
+  // a later edit that drifts a behavioral parameter must fail here.
+  //
+  // Two values changed; every other one was already at the frozen value.
+  assert.equal(S.DOWN_PITCH_SUPPORT_DEG, 10, 'frozen (was 25)');
+  assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_PITCH_DEG, 10, 'frozen (was 15)');
+
+  // Unchanged by the freeze, asserted so they cannot drift either.
+  assert.equal(S.DOWN_PITCH_SUPPORT_PERSIST_MS, 2000);
   assert.equal(S.EAR_RELATIVE_THRESHOLD, 0.7);
   assert.equal(S.EYE_CLOSED_PERSIST_MS, 3000);
   assert.equal(S.STRONG_YAW_DELTA_DEG, 25);
@@ -356,4 +363,15 @@ test('C18. no AI parameter was frozen by this task', () => {
   assert.equal(S.STRONG_UP_PITCH_DELTA_DEG, 30);
   assert.equal(S.PITCH_UP_PERSIST_MS, 2000);
   assert.equal(S.ROLL_SUPPORT_DEG, 22);
+  assert.equal(S.ROLL_SUPPORT_PERSIST_MS, 2000);
+  assert.equal(CONFIG.eye.eligibility.EYE_MAX_ABS_YAW_DEG, 20);
+  assert.equal(CONFIG.eye.eligibility.EYE_MAX_LR_RATIO, 1.6);
+
+  // Temporal / validity configuration is explicitly NOT part of the freeze
+  // change, but is pinned so a behavioral edit cannot quietly move it.
+  assert.equal(CONFIG.validity.SIGNAL_INVALID_GRACE_MS, 1000);
+  assert.equal(S.FACE_MISSING_ENTER_MS, 2000);
+  assert.equal(S.FACE_PRESENT_RECOVER_MS, 500);
+  assert.equal(S.STATE_RECOVERY_MS, 750);
+  assert.equal(CONFIG.temporal.EMA_ALPHA, 0.35);
 });

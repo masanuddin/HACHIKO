@@ -158,8 +158,17 @@ export const CONFIG = deepFreeze({
     eligibility: {
       /** Beyond this |yawDelta| one eye foreshortens; EAR stops being comparable. */
       EYE_MAX_ABS_YAW_DEG: 20,     // PROVISIONAL — must be revalidated after pilot.
-      /** Beyond this |pitchDelta| the lid aperture is projected away. */
-      EYE_MAX_ABS_PITCH_DEG: 15,   // PROVISIONAL — must be revalidated after pilot.
+      /**
+       * Beyond this |pitchDelta| the lid aperture is projected away.
+       *
+       * FROZEN after Behavioral DEVELOPMENT (was 15, PROVISIONAL). At 15° a
+       * head-down reading posture still counted as eligible, so the
+       * foreshortened lid read as a closed eye and accumulated prolonged
+       * eye-closure evidence — a false positive on the most ordinary study
+       * behaviour there is. Tightening to 10° makes the eye channel abstain
+       * during head-down work instead of guessing.
+       */
+      EYE_MAX_ABS_PITCH_DEG: 10,
       /**
        * Left/right agreement check. Both eyes should read similarly when the
        * head is frontal; a large asymmetry means one eye is occluded or
@@ -275,7 +284,12 @@ export const CONFIG = deepFreeze({
      * Reading / writing / looking at notes. Recorded and exposed as supporting
      * evidence; CANNOT trigger TERALIH alone and is never a primaryReason.
      */
-    DOWN_PITCH_SUPPORT_DEG: 25,   // PROVISIONAL — must be revalidated after pilot.
+    // FROZEN after Behavioral DEVELOPMENT (was 25, PROVISIONAL). 25° only
+    // fired on a deliberate, exaggerated look-down; ordinary reading and
+    // writing sit well under it, so the support channel stayed silent during
+    // exactly the posture it exists to describe. 10° is baseline-relative, so
+    // it is 10° below THIS person's calibrated neutral, not an absolute pose.
+    DOWN_PITCH_SUPPORT_DEG: 10,
     DOWN_PITCH_SUPPORT_PERSIST_MS: 2000, // PROVISIONAL — must be revalidated after pilot.
 
     // ── SUPPORT ONLY: roll ───────────────────────────────────────────────

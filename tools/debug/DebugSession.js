@@ -680,8 +680,12 @@ export class DebugSession {
     const b = this._baseline();
     const all = scenarioConfigSnapshot();
     const pending = all.filter((x) => x.pending).length;
+    // COMPLETION IS EVALUABLE-BASED. `repetitionCount` is the attempt
+    // counter used to NUMBER a trial (r1, r2, r3...) and must stay that way;
+    // using it here let three INVALID attempts mark a scenario complete,
+    // which reports a protocol as finished on evidence that proves nothing.
     const complete = all.filter(
-      (x) => !x.pending && this.repetitionCount(x.id) >= this.requiredRepetitions).length;
+      (x) => !x.pending && this.evaluableCount(x.id) >= this.requiredRepetitions).length;
 
     return {
       schemaVersion: DEBUG_SCHEMA_VERSION,
@@ -716,6 +720,15 @@ export class DebugSession {
         pendingModelScenarios: pending,
         scenariosComplete: complete,
         scenariosAttempted: new Set(this.trials.map((t) => t.scenario)).size,
+        // ATTEMPTS vs EVALUABLE are different questions and used to share
+        // one field. `totalValidTrials` counted every saved attempt despite
+        // its name, so a reader comparing it against `scenariosComplete`
+        // got two numbers derived on different rules.
+        totalAttempts: this.trials.length,
+        totalEvaluableTrials: this.trials.filter(isEvaluable).length,
+        totalInvalidTrials: this.trials.filter((t) => !isEvaluable(t)).length,
+        // RETAINED for existing consumers, with its historical meaning
+        // (= every saved attempt) unchanged. Prefer the explicit fields.
         totalValidTrials: this.trials.length,
         perScenario: this.progress(all),
       },
